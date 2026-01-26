@@ -89,7 +89,7 @@ clipboard_setPng(const void *png_data, size_t png_size)
     bih->bV5GreenMask = 0x0000FF00;
     bih->bV5BlueMask = 0x000000FF;
     bih->bV5AlphaMask = 0xFF000000;
-    bih->bV5CSType = LCS_sRGB;
+    bih->bV5CSType = 0x73524742; // 'sRGB'
     bih->bV5Intent = LCS_GM_IMAGES;
     unsigned char *dst = (unsigned char *)(bih + 1);
     memcpy(dst, buffer, total_bytes);

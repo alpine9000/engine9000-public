@@ -1,15 +1,22 @@
-// Profile viewer launcher (Windows)
-#include "profile_view.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include "debug.h"
-#include "file.h"
-
+#include <stdio.h>
 #include <windows.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#include "profile_view.h"
+#include "debug.h"
+#include "file.h"
 
 #define PROFILE_VIEWER_PYTHON_ENV "E9K_PROFILE_VIEWER_PYTHON"
 #define PROFILE_VIEWER_SCRIPT_ENV "E9K_PROFILE_VIEWER_SCRIPT"
