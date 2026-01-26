@@ -4,6 +4,16 @@
 
 Neo Geo debugger/profiler developed while I was learning Neo Geo programming over the xmas vacation.
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=Q24F6S8J57U">
+    <img
+      src="assets/video.png"
+      style="width: 50%; min-width: 180px; max-width: 400px;"
+      alt="Demo video"
+    >
+  </a>
+</p>
+
 ![Debugger UI](assets/debugger.png)
 
 The debugger includes the `geo9000` emulator which is a fork of `geolith-libretro`, which is itself a fork of the original `geolith` emulator:
