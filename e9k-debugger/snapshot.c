@@ -79,6 +79,10 @@ snapshot_snapshotSaveDir(void)
 static const char *
 snapshot_snapshotRomPath(void)
 {
+    const char *activeRom = libretro_host_getRomPath();
+    if (activeRom) {
+        return activeRom;
+    }
     if (debugger.libretro.romPath[0]) {
         return debugger.libretro.romPath;
     }
@@ -464,6 +468,10 @@ snapshot_loadDebugStateOnBoot(void)
         return;
     }
     if (savedChecksum != romChecksum) {
+        snapshot_clearBreakpointsCore();
+        protect_clear();
+        breakpoints_markDirty();
+        trainer_markDirty();
         alloc_free(root);
         return;
     }

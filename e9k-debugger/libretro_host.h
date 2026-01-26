@@ -192,6 +192,9 @@ libretro_host_resetCore(void);
 uint64_t
 libretro_host_getFrameCount(void);
 
+const char *
+libretro_host_getRomPath(void);
+
 bool
 libretro_host_setVblankCallback(void (*cb)(void *), void *user);
 
@@ -206,5 +209,4 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff);
 
 bool
 libretro_host_restoreState(size_t *out_size);
-
 

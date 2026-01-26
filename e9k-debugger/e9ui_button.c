@@ -44,9 +44,24 @@ e9ui_button_scaleColor(SDL_Color src, float scale)
     int r = (int)(src.r * scale);
     int g = (int)(src.g * scale);
     int b = (int)(src.b * scale);
-    if (r < 0) r = 0; if (r > 255) r = 255;
-    if (g < 0) g = 0; if (g > 255) g = 255;
-    if (b < 0) b = 0; if (b > 255) b = 255;
+    if (r < 0){
+      r = 0;
+    }
+    if (r > 255) {
+      r = 255;
+    }
+    if (g < 0) {
+      g = 0;
+    }
+    if (g > 255) {
+      g = 255;
+    }
+    if (b < 0) {
+      b = 0;
+    }
+    if (b > 255) {
+      b = 255;
+    }
     SDL_Color out = { (Uint8)r, (Uint8)g, (Uint8)b, src.a };
     return out;
 }

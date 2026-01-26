@@ -813,7 +813,7 @@ libretro_host_loadRomData(const char *path, void **data, size_t *size)
         fclose(file);
         return false;
     }
-    if ((unsigned long)length > SIZE_MAX) {
+    if ((size_t)length > SIZE_MAX) {
         fprintf(stderr, "libretro: rom %s is too large\n", path);
         fclose(file);
         return false;
@@ -1733,6 +1733,12 @@ uint64_t
 libretro_host_getFrameCount(void)
 {
     return libretro_host.frameSeq;
+}
+
+const char *
+libretro_host_getRomPath(void)
+{
+    return libretro_host.romPath[0] ? libretro_host.romPath : NULL;
 }
 
 bool
