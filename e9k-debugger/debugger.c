@@ -218,7 +218,7 @@ debugger_cleanup(void)
   state_buffer_shutdown();
   machine_shutdown(&debugger.machine);
   linebuf_dtor(&debugger.console);
-  analyseShutdown();
+  analyse_shutdown();
   dasm_shutdown();
   source_shutdown();
   shader_ui_shutdown();
@@ -240,7 +240,7 @@ debugger_ctor(void)
   debugger.opts.completionListRows = 30; // default completion popup rows
   linebuf_init(&debugger.console, 2000);
   linebuf_push(&debugger.console, "--== PRESS F1 FOR HELP ==--");
-  if (!analyseInit()) {
+  if (!analyse_init()) {
     debugger_analyseInitFailed = 1;
   }
   debugger.geo.connected = 0;

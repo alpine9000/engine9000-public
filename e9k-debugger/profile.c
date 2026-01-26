@@ -54,7 +54,7 @@ profile_updateEnabled(int enabled)
 static void
 profile_streamStart(void)
 {
-    if (!analyseReset()) {
+    if (!analyse_reset()) {
         debug_error("profile: aggregator reset failed");
     }
     debugger.geo.streamPacketCount = 0;
@@ -78,7 +78,7 @@ profile_handleStreamLine(const char *line)
     } else if (strstr(line, "\"enabled\":\"disabled\"")) {
         profile_updateEnabled(0);
     }
-    analyseHandlePacket(line, strlen(line));
+    analyse_handlePacket(line, strlen(line));
     profile_list_notifyUpdate();
 }
 
@@ -140,7 +140,7 @@ profile_uiAnalyse(e9ui_context_t *ctx, void *user)
     jsonPath[sizeof(jsonPath) - 1] = '\0';
     unsigned int start_ticks = SDL_GetTicks();
     debug_printf("Profile analysis started (output=%s)\n", jsonPath);
-    if (!analyseWriteFinalJson(jsonPath)) {
+    if (!analyse_writeFinalJson(jsonPath)) {
         unsigned int elapsed = SDL_GetTicks() - start_ticks;
         debug_error("profile: analysis failed after %u ms; see earlier logs", elapsed);
         return;

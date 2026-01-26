@@ -208,19 +208,19 @@ profile_list_rebuild(profile_list_state_t *st, e9ui_context_t *ctx, e9ui_compone
     // Clear old entries (stack expected to remove/destroy its children)
     e9ui_stack_removeAll(entries, ctx);
 
-    analyseProfileSampleEntry *samples = NULL;
+    analyse_profile_sample_entry *samples = NULL;
     size_t count = 0;
 
-    if (!analyseProfileSnapshot(&samples, &count) || count == 0) {
+    if (!analyse_profileSnapshot(&samples, &count) || count == 0) {
         e9ui_component_t *empty = profile_empty_make();
         if (empty) {
             e9ui_stack_addFlex(entries, empty);
         }
-        analyseProfileSnapshotFree(samples);
+        analyse_profileSnapshotFree(samples);
         return;
     }
 
-    analysePopulateSampleLocations(samples, count);
+    analyse_populateSampleLocations(samples, count);
 
     profile_aggregate_entry_t *aggregates = NULL;
     size_t aggregateCount = 0;
@@ -270,7 +270,7 @@ profile_list_rebuild(profile_list_state_t *st, e9ui_context_t *ctx, e9ui_compone
         }
     }
 
-    analyseProfileSnapshotFree(samples);
+    analyse_profileSnapshotFree(samples);
 }
 
 

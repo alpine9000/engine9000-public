@@ -16,30 +16,30 @@ typedef struct {
     unsigned int pc;
     unsigned long long samples;
     char location[ANALYSE_LOCATION_TEXT_CAP];
-} analyseProfileSampleEntry;
+} analyse_profile_sample_entry;
 
 int
-analyseInit(void);
+analyse_init(void);
 
 void
-analyseShutdown(void);
+analyse_shutdown(void);
 
 int
-analyseReset(void);
+analyse_reset(void);
 
 int
-analyseHandlePacket(const char *line, size_t len);
+analyse_handlePacket(const char *line, size_t len);
 
 int
-analyseWriteFinalJson(const char *jsonPath);
+analyse_writeFinalJson(const char *jsonPath);
 
 int
-analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count);
+analyse_profileSnapshot(analyse_profile_sample_entry **out, size_t *count);
 
 void
-analyseProfileSnapshotFree(analyseProfileSampleEntry *entries);
+analyse_profileSnapshotFree(analyse_profile_sample_entry *entries);
 
 void
-analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count);
+analyse_populateSampleLocations(analyse_profile_sample_entry *entries, size_t count);
 
 

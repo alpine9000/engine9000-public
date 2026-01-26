@@ -6,10 +6,6 @@
  * See COPYING for license details
  */
 
-#include "analyse.h"
-#include "debug.h"
-#include "debugger.h"
-
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -22,6 +18,10 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
+#include "analyse.h"
+#include "debug.h"
+#include "debugger.h"
+
 #define ADDR2LINE_BIN "m68k-neogeo-elf-addr2line"
 #define ANALYSE_MAP_INITIAL_CAP 1024
 
@@ -32,14 +32,14 @@ typedef struct {
     unsigned long long lastSamples;
     unsigned long long lastCycles;
     int used;
-} analyseProfileEntry;
+} analyse_profile_entry;
 
 typedef struct {
     char *function;
     char *file;
     int line;
     char *loc;
-} analyseFrame;
+} analyse_frame;
 
 typedef struct {
     char *file;
@@ -49,66 +49,61 @@ typedef struct {
     char address[16];
     char *source;
     char *chain;
-    analyseFrame *frames;
+    analyse_frame *frames;
     size_t frameCount;
     unsigned long long bestCycles;
-} analyseLineEntry;
+} analyse_line_entry;
 
 typedef struct {
     char address[16];
     unsigned long long samples;
     unsigned long long cycles;
-    analyseFrame *frames;
+    analyse_frame *frames;
     size_t frameCount;
     char *chain;
     char *source;
     const char *topFile;
     int topLine;
-} analyseResolvedEntry;
+} analyse_resolved_entry;
 
 typedef struct {
     unsigned int pc;
     char text[ANALYSE_LOCATION_TEXT_CAP];
-} analyseLocationEntry;
+} analyse_location_entry;
 
 static const char *
-analyseStripSourceBase(const char *srcBase, const char *path);
-
+analyse_stripSourceBase(const char *srcBase, const char *path);
 static void
-analyseEmitString(FILE *f, const char *value);
-
+analyse_emitString(FILE *f, const char *value);
 static void
-analysePrintFrames(FILE *f, const analyseFrame *frames, size_t count, const char *srcBase);
-
-static analyseFrame *
-analyseBuildFrames(char **lines, size_t count, size_t *outCount);
-
+analyse_printFrames(FILE *f, const analyse_frame *frames, size_t count, const char *srcBase);
+static analyse_frame *
+analyse_buildFrames(char **lines, size_t count, size_t *outCount);
 static int
-analyseResolveFramesBatch(const char *elf, analyseResolvedEntry *entries, size_t count);
-
+analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, size_t count);
 void
-analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count);
+analyse_populateSampleLocations(analyse_profile_sample_entry *entries, size_t count);
 static int
-analyseResolveLocations(const unsigned int *pcs, size_t count);
-static analyseLocationEntry *
-analyseLocationLookup(unsigned int pc);
-static analyseLocationEntry *
-analyseLocationAdd(unsigned int pc);
+analyse_resolveLocations(const unsigned int *pcs, size_t count);
+static analyse_location_entry *
+analyse_locationLookup(unsigned int pc);
+static analyse_location_entry *
+analyse_locationAdd(unsigned int pc);
 static void
-analyseLocationSetFallback(analyseLocationEntry *entry, unsigned int pc);
+analyse_locationSetFallback(analyse_location_entry *entry, unsigned int pc);
 static void
-analyseLocationSetFromResolved(analyseLocationEntry *entry, const analyseResolvedEntry *resolved, unsigned int pc);
+analyse_locationSetFromResolved(analyse_location_entry *entry, const analyse_resolved_entry *resolved, unsigned int pc);
 
-static analyseProfileEntry *analyseProfileMap = NULL;
-static size_t analyseProfileCapacity = 0;
-static size_t analyseProfileCount = 0;
-static int analyseProfileReady = 0;
-static analyseLocationEntry *analyseLocationCache = NULL;
-static size_t analyseLocationCacheCount = 0;
-static size_t analyseLocationCacheCap = 0;
+static analyse_profile_entry *analyse_profileMap = NULL;
+static size_t analyse_profileCapacity = 0;
+static size_t analyse_profileCount = 0;
+static int analyse_profileReady = 0;
+static analyse_location_entry *analyse_locationCache = NULL;
+static size_t analyse_locationCacheCount = 0;
+static size_t analyse_locationCacheCap = 0;
 
 static char *
-analyseStrndup(const char *str, size_t len)
+analyse_strndup(const char *str, size_t len)
 {
     char *dup = alloc_alloc(len + 1);
     if (!dup) {
@@ -120,14 +115,14 @@ analyseStrndup(const char *str, size_t len)
 }
 
 static int
-analyseProfileMapInsert(unsigned int pc, unsigned long long samples, unsigned long long cycles)
+analyse_profileMapInsert(unsigned int pc, unsigned long long samples, unsigned long long cycles)
 {
-    if (!analyseProfileMap || analyseProfileCapacity == 0) {
+    if (!analyse_profileMap || analyse_profileCapacity == 0) {
         return 0;
     }
-    size_t idx = (size_t)pc % analyseProfileCapacity;
-    for (size_t step = 0; step < analyseProfileCapacity; ++step) {
-        analyseProfileEntry *entry = &analyseProfileMap[idx];
+    size_t idx = (size_t)pc % analyse_profileCapacity;
+    for (size_t step = 0; step < analyse_profileCapacity; ++step) {
+        analyse_profile_entry *entry = &analyse_profileMap[idx];
         if (!entry->used) {
             entry->used = 1;
             entry->pc = pc;
@@ -135,7 +130,7 @@ analyseProfileMapInsert(unsigned int pc, unsigned long long samples, unsigned lo
             entry->cycles = cycles;
             entry->lastSamples = samples;
             entry->lastCycles = cycles;
-            analyseProfileCount++;
+            analyse_profileCount++;
             return 1;
         }
         if (entry->pc == pc) {
@@ -147,94 +142,94 @@ analyseProfileMapInsert(unsigned int pc, unsigned long long samples, unsigned lo
             entry->cycles += deltaCycles;
             return 1;
         }
-        idx = (idx + 1) % analyseProfileCapacity;
+        idx = (idx + 1) % analyse_profileCapacity;
     }
     return 0;
 }
 
 static int
-analyseProfileMapResize(size_t newCapacity)
+analyse_profileMapResize(size_t newCapacity)
 {
     if (newCapacity < 16) {
         newCapacity = 16;
     }
-    analyseProfileEntry *newEntries = alloc_calloc(newCapacity, sizeof(analyseProfileEntry));
+    analyse_profile_entry *newEntries = alloc_calloc(newCapacity, sizeof(analyse_profile_entry));
     if (!newEntries) {
         return 0;
     }
-    analyseProfileEntry *oldEntries = analyseProfileMap;
-    size_t oldCapacity = analyseProfileCapacity;
-    analyseProfileMap = newEntries;
-    analyseProfileCapacity = newCapacity;
-    analyseProfileCount = 0;
+    analyse_profile_entry *oldEntries = analyse_profileMap;
+    size_t oldCapacity = analyse_profileCapacity;
+    analyse_profileMap = newEntries;
+    analyse_profileCapacity = newCapacity;
+    analyse_profileCount = 0;
     if (oldEntries) {
         size_t migrated = 0;
         for (size_t i = 0; i < oldCapacity; ++i) {
             if (!oldEntries[i].used) {
                 continue;
             }
-            size_t idx = (size_t)oldEntries[i].pc % analyseProfileCapacity;
+            size_t idx = (size_t)oldEntries[i].pc % analyse_profileCapacity;
             while (newEntries[idx].used) {
-                idx = (idx + 1) % analyseProfileCapacity;
+                idx = (idx + 1) % analyse_profileCapacity;
             }
             newEntries[idx] = oldEntries[i];
             migrated++;
         }
-        analyseProfileCount = migrated;
+        analyse_profileCount = migrated;
         alloc_free(oldEntries);
     }
     return 1;
 }
 
 int
-analyseInit(void)
+analyse_init(void)
 {
-    if (analyseProfileReady) {
+    if (analyse_profileReady) {
         return 1;
     }
-    int ok = analyseProfileMapResize(ANALYSE_MAP_INITIAL_CAP);
-    analyseProfileReady = ok;
+    int ok = analyse_profileMapResize(ANALYSE_MAP_INITIAL_CAP);
+    analyse_profileReady = ok;
     return ok;
 }
 
 void
-analyseShutdown(void)
+analyse_shutdown(void)
 {
-    if (!analyseProfileMap) {
+    if (!analyse_profileMap) {
         return;
     }
-    alloc_free(analyseProfileMap);
-    analyseProfileMap = NULL;
-    analyseProfileCapacity = 0;
-    analyseProfileCount = 0;
-    analyseProfileReady = 0;
-    if (analyseLocationCache) {
-        alloc_free(analyseLocationCache);
-        analyseLocationCache = NULL;
+    alloc_free(analyse_profileMap);
+    analyse_profileMap = NULL;
+    analyse_profileCapacity = 0;
+    analyse_profileCount = 0;
+    analyse_profileReady = 0;
+    if (analyse_locationCache) {
+        alloc_free(analyse_locationCache);
+        analyse_locationCache = NULL;
     }
-    analyseLocationCacheCount = 0;
-    analyseLocationCacheCap = 0;
+    analyse_locationCacheCount = 0;
+    analyse_locationCacheCap = 0;
 }
 
 int
-analyseReset(void)
+analyse_reset(void)
 {
-    analyseShutdown();
-    return analyseInit();
+    analyse_shutdown();
+    return analyse_init();
 }
 
 static int
-analyseEnsureCapacity(void)
+analyse_ensureCapacity(void)
 {
-    if (!analyseProfileReady && !analyseInit()) {
+    if (!analyse_profileReady && !analyse_init()) {
         return 0;
     }
-    if ((analyseProfileCount + 1) * 2 >= analyseProfileCapacity) {
-        size_t next = analyseProfileCapacity * 2;
-        if (next <= analyseProfileCapacity) {
-            next = analyseProfileCapacity + 1;
+    if ((analyse_profileCount + 1) * 2 >= analyse_profileCapacity) {
+        size_t next = analyse_profileCapacity * 2;
+        if (next <= analyse_profileCapacity) {
+            next = analyse_profileCapacity + 1;
         }
-        if (!analyseProfileMapResize(next)) {
+        if (!analyse_profileMapResize(next)) {
             return 0;
         }
     }
@@ -242,7 +237,7 @@ analyseEnsureCapacity(void)
 }
 
 static unsigned int
-analyseParseHex(const char *value)
+analyse_parseHex(const char *value)
 {
     if (!value) {
         return 0;
@@ -259,7 +254,7 @@ analyseParseHex(const char *value)
 }
 
 static unsigned long long
-analyseParseDecimal(const char *value)
+analyse_parseDecimal(const char *value)
 {
     if (!value) {
         return 0;
@@ -271,7 +266,7 @@ analyseParseDecimal(const char *value)
 }
 
 static int
-analyseConsumeKeyValue(const char **cursor, char *keyBuf, size_t keyBufCap)
+analyse_consumeKeyValue(const char **cursor, char *keyBuf, size_t keyBufCap)
 {
     const char *ptr = *cursor;
     while (*ptr && isspace((unsigned char)*ptr)) {
@@ -308,12 +303,12 @@ analyseConsumeKeyValue(const char **cursor, char *keyBuf, size_t keyBufCap)
 }
 
 static int
-analyseProfileParseStreamLine(const char *line, size_t len)
+analyse_profileParseStreamLine(const char *line, size_t len)
 {
     if (!line || len == 0) {
         return 1;
     }
-    char *mutable = analyseStrndup(line, len);
+    char *mutable = analyse_strndup(line, len);
     if (!mutable) {
         return 0;
     }
@@ -360,7 +355,7 @@ analyseProfileParseStreamLine(const char *line, size_t len)
                 continue;
             }
             char key[16] = {0};
-            if (!analyseConsumeKeyValue(&cursor, key, sizeof(key))) {
+            if (!analyse_consumeKeyValue(&cursor, key, sizeof(key))) {
                 break;
             }
             if (strcmp(key, "pc") == 0) {
@@ -379,16 +374,16 @@ analyseProfileParseStreamLine(const char *line, size_t len)
                     if (*cursor == '"') {
                         cursor++;
                     }
-                    pc = analyseParseHex(value);
+                    pc = analyse_parseHex(value);
                     hasPc = 1;
                 }
             } else if (strcmp(key, "samples") == 0) {
-                samples = analyseParseDecimal(cursor);
+                samples = analyse_parseDecimal(cursor);
                 while (*cursor && *cursor != ',' && *cursor != '}' && *cursor != ']') {
                     cursor++;
                 }
             } else if (strcmp(key, "cycles") == 0) {
-                cycles = analyseParseDecimal(cursor);
+                cycles = analyse_parseDecimal(cursor);
                 while (*cursor && *cursor != ',' && *cursor != '}' && *cursor != ']') {
                     cursor++;
                 }
@@ -408,12 +403,12 @@ analyseProfileParseStreamLine(const char *line, size_t len)
             cursor++;
         }
         if (hasPc) {
-            if (!analyseEnsureCapacity()) {
+            if (!analyse_ensureCapacity()) {
                 alloc_free(mutable);
                 debug_error("profile: unable to expand aggregator");
                 return 0;
             }
-            if (!analyseProfileMapInsert(pc, samples, cycles)) {
+            if (!analyse_profileMapInsert(pc, samples, cycles)) {
                 alloc_free(mutable);
                 debug_error("profile: unable to aggregate hits (out of memory)");
                 return 0;
@@ -425,16 +420,16 @@ analyseProfileParseStreamLine(const char *line, size_t len)
 }
 
 int
-analyseHandlePacket(const char *line, size_t len)
+analyse_handlePacket(const char *line, size_t len)
 {
-    if (!analyseProfileReady && !analyseInit()) {
+    if (!analyse_profileReady && !analyse_init()) {
         return 0;
     }
-    return analyseProfileParseStreamLine(line, len);
+    return analyse_profileParseStreamLine(line, len);
 }
 
 static int
-analyseResolveFramesBatch(const char *elf, analyseResolvedEntry *entries, size_t count)
+analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, size_t count)
 {
     if (!elf || !entries) {
         return 0;
@@ -533,7 +528,7 @@ analyseResolveFramesBatch(const char *elf, analyseResolvedEntry *entries, size_t
                 }
                 size_t frameCount = 0;
                 if (currentCount > 0) {
-                    entries[entryIdx].frames = analyseBuildFrames(currentLines, currentCount, &frameCount);
+                    entries[entryIdx].frames = analyse_buildFrames(currentLines, currentCount, &frameCount);
                     entries[entryIdx].frameCount = frameCount;
                 } else {
                     entries[entryIdx].frames = NULL;
@@ -568,7 +563,7 @@ analyseResolveFramesBatch(const char *elf, analyseResolvedEntry *entries, size_t
         } else {
             size_t frameCount = 0;
             if (currentCount > 0) {
-                entries[entryIdx].frames = analyseBuildFrames(currentLines, currentCount, &frameCount);
+                entries[entryIdx].frames = analyse_buildFrames(currentLines, currentCount, &frameCount);
                 entries[entryIdx].frameCount = frameCount;
             } else {
                 entries[entryIdx].frames = NULL;
@@ -599,8 +594,8 @@ analyseResolveFramesBatch(const char *elf, analyseResolvedEntry *entries, size_t
     return ok;
 }
 
-static analyseFrame *
-analyseBuildFrames(char **lines, size_t count, size_t *outCount)
+static analyse_frame *
+analyse_buildFrames(char **lines, size_t count, size_t *outCount)
 {
     if (!lines || count < 2 || !outCount) {
         if (lines) {
@@ -612,7 +607,7 @@ analyseBuildFrames(char **lines, size_t count, size_t *outCount)
         return NULL;
     }
     size_t frameCount = count / 2;
-    analyseFrame *frames = alloc_calloc(frameCount, sizeof(analyseFrame));
+    analyse_frame *frames = alloc_calloc(frameCount, sizeof(analyse_frame));
     if (!frames) {
         return NULL;
     }
@@ -659,7 +654,7 @@ analyseBuildFrames(char **lines, size_t count, size_t *outCount)
         return NULL;
     }
     for (size_t i = 0; i < idx / 2; ++i) {
-        analyseFrame tmp = frames[i];
+        analyse_frame tmp = frames[i];
         frames[i] = frames[idx - 1 - i];
         frames[idx - 1 - i] = tmp;
     }
@@ -667,7 +662,7 @@ analyseBuildFrames(char **lines, size_t count, size_t *outCount)
 }
 
 static char *
-analyseBuildFunctionChain(const analyseFrame *frames, size_t count)
+analyse_buildFunctionChain(const analyse_frame *frames, size_t count)
 {
     if (!frames || count == 0) {
         return alloc_strdup("");
@@ -696,7 +691,7 @@ analyseBuildFunctionChain(const analyseFrame *frames, size_t count)
 }
 
 static char *
-analyseReadSourceLine(const char *srcBase, const char *filePath, int lineNo)
+analyse_readSourceLine(const char *srcBase, const char *filePath, int lineNo)
 {
     if (!filePath || lineNo <= 0) {
         return NULL;
@@ -737,37 +732,8 @@ analyseReadSourceLine(const char *srcBase, const char *filePath, int lineNo)
     return result;
 }
 
-#if 0
-static int
-analyseBuildRawJsonPath(const char *destPath, char *outBuf, size_t cap)
-{
-    if (!destPath || !outBuf || cap == 0) {
-        return 0;
-    }
-    const char *slash = strrchr(destPath, '/');
-    size_t dirLen = 0;
-    const char *name = destPath;
-    if (slash) {
-        dirLen = (size_t)(slash - destPath + 1);
-        name = slash + 1;
-    }
-    size_t nameLen = strlen(name);
-    size_t needed = dirLen + 4 + nameLen + 1;
-    if (needed > cap) {
-        return 0;
-    }
-    if (dirLen > 0) {
-        memcpy(outBuf, destPath, dirLen);
-    }
-    memcpy(outBuf + dirLen, "raw-", 4);
-    memcpy(outBuf + dirLen + 4, name, nameLen);
-    outBuf[dirLen + 4 + nameLen] = '\0';
-    return 1;
-}
-#endif
-
 static void
-analyseFreeFrames(analyseFrame *frames, size_t count)
+analyse_freeFrames(analyse_frame *frames, size_t count)
 {
     if (!frames) {
         return;
@@ -780,8 +746,8 @@ analyseFreeFrames(analyseFrame *frames, size_t count)
     alloc_free(frames);
 }
 
-static analyseLineEntry *
-analyseFindLineEntry(analyseLineEntry *lines, size_t count, const char *file, int line)
+static analyse_line_entry *
+analyse_findLineEntry(analyse_line_entry *lines, size_t count, const char *file, int line)
 {
     if (!lines || !file) {
         return NULL;
@@ -795,13 +761,13 @@ analyseFindLineEntry(analyseLineEntry *lines, size_t count, const char *file, in
 }
 
 static int
-analyseResolvedEntryValid(const analyseResolvedEntry *entry)
+analyse_resolvedEntryValid(const analyse_resolved_entry *entry)
 {
     return entry && entry->frames && entry->frameCount > 0 && entry->topLine > 0 && entry->topFile && *entry->topFile && strcmp(entry->topFile, "??") != 0;
 }
 
 static void
-analyseFreeLineEntries(analyseLineEntry *lines, size_t count)
+analyse_freeLineEntries(analyse_line_entry *lines, size_t count)
 {
     if (!lines) {
         return;
@@ -819,12 +785,12 @@ analyseFreeLineEntries(analyseLineEntry *lines, size_t count)
             alloc_free(lines[i].source);
             lines[i].source = NULL;
         }
-        analyseFreeFrames(lines[i].frames, lines[i].frameCount);
+        analyse_freeFrames(lines[i].frames, lines[i].frameCount);
     }
 }
 
 void
-analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count)
+analyse_populateSampleLocations(analyse_profile_sample_entry *entries, size_t count)
 {
     if (!entries || count == 0) {
         return;
@@ -833,7 +799,7 @@ analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count)
     size_t pendingCount = 0;
     if (pending) {
         for (size_t i = 0; i < count; ++i) {
-            analyseLocationEntry *cache = analyseLocationLookup(entries[i].pc);
+            analyse_location_entry *cache = analyse_locationLookup(entries[i].pc);
             if (cache && cache->text[0]) {
                 strncpy(entries[i].location, cache->text, ANALYSE_LOCATION_TEXT_CAP - 1);
                 entries[i].location[ANALYSE_LOCATION_TEXT_CAP - 1] = '\0';
@@ -851,12 +817,12 @@ analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count)
             }
         }
         if (pendingCount > 0) {
-            analyseResolveLocations(pending, pendingCount);
+            analyse_resolveLocations(pending, pendingCount);
         }
         alloc_free(pending);
     }
     for (size_t i = 0; i < count; ++i) {
-        analyseLocationEntry *cache = analyseLocationLookup(entries[i].pc);
+        analyse_location_entry *cache = analyse_locationLookup(entries[i].pc);
         if (cache && cache->text[0]) {
             strncpy(entries[i].location, cache->text, ANALYSE_LOCATION_TEXT_CAP - 1);
             entries[i].location[ANALYSE_LOCATION_TEXT_CAP - 1] = '\0';
@@ -867,79 +833,79 @@ analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count)
 }
 
 static int
-analyseResolveLocations(const unsigned int *pcs, size_t count)
+analyse_resolveLocations(const unsigned int *pcs, size_t count)
 {
     if (!pcs || count == 0) {
         return 0;
     }
     const char *elfPath = debugger.config.elfPath;
-    analyseResolvedEntry *resolved = NULL;
+    analyse_resolved_entry *resolved = NULL;
     int didResolve = 0;
     if (elfPath && *elfPath) {
-        resolved = (analyseResolvedEntry*)alloc_calloc(count, sizeof(analyseResolvedEntry));
+        resolved = (analyse_resolved_entry*)alloc_calloc(count, sizeof(analyse_resolved_entry));
         if (resolved) {
             for (size_t i = 0; i < count; ++i) {
                 snprintf(resolved[i].address, sizeof(resolved[i].address), "0x%06X", pcs[i]);
             }
-            if (analyseResolveFramesBatch(elfPath, resolved, count)) {
+            if (analyse_resolveFramesBatch(elfPath, resolved, count)) {
                 didResolve = 1;
             }
         }
     }
     for (size_t i = 0; i < count; ++i) {
-        analyseLocationEntry *cache = analyseLocationLookup(pcs[i]);
+        analyse_location_entry *cache = analyse_locationLookup(pcs[i]);
         if (!cache) {
-            cache = analyseLocationAdd(pcs[i]);
+            cache = analyse_locationAdd(pcs[i]);
         }
         if (!cache) {
             continue;
         }
         if (didResolve && resolved) {
-            analyseLocationSetFromResolved(cache, &resolved[i], pcs[i]);
+            analyse_locationSetFromResolved(cache, &resolved[i], pcs[i]);
         } else {
-            analyseLocationSetFallback(cache, pcs[i]);
+            analyse_locationSetFallback(cache, pcs[i]);
         }
     }
     if (resolved) {
         for (size_t i = 0; i < count; ++i) {
-            analyseFreeFrames(resolved[i].frames, resolved[i].frameCount);
+            analyse_freeFrames(resolved[i].frames, resolved[i].frameCount);
         }
         alloc_free(resolved);
     }
     return didResolve;
 }
 
-static analyseLocationEntry *
-analyseLocationLookup(unsigned int pc)
+static analyse_location_entry *
+analyse_locationLookup(unsigned int pc)
 {
-    for (size_t i = 0; i < analyseLocationCacheCount; ++i) {
-        if (analyseLocationCache[i].pc == pc) {
-            return &analyseLocationCache[i];
+    for (size_t i = 0; i < analyse_locationCacheCount; ++i) {
+        if (analyse_locationCache[i].pc == pc) {
+            return &analyse_locationCache[i];
         }
     }
     return NULL;
 }
 
-static analyseLocationEntry *
-analyseLocationAdd(unsigned int pc)
+static analyse_location_entry *
+analyse_locationAdd(unsigned int pc)
 {
-    if (analyseLocationCacheCount == analyseLocationCacheCap) {
-        size_t next = analyseLocationCacheCap ? (analyseLocationCacheCap * 2) : 64;
-        analyseLocationEntry *tmp = (analyseLocationEntry*)alloc_realloc(analyseLocationCache, next * sizeof(analyseLocationEntry));
+    if (analyse_locationCacheCount == analyse_locationCacheCap) {
+        size_t next = analyse_locationCacheCap ? (analyse_locationCacheCap * 2) : 64;
+        analyse_location_entry *tmp = (analyse_location_entry*)alloc_realloc(analyse_locationCache, next * sizeof(analyse_location_entry));
         if (!tmp) {
             return NULL;
         }
-        analyseLocationCache = tmp;
-        analyseLocationCacheCap = next;
+        analyse_locationCache = tmp;
+        analyse_locationCacheCap = next;
     }
-    analyseLocationEntry *entry = &analyseLocationCache[analyseLocationCacheCount++];
+    analyse_location_entry *entry = &analyse_locationCache[analyse_locationCacheCount++];
     entry->pc = pc;
     entry->text[0] = '\0';
     return entry;
 }
 
 static void
-analyseLocationSetFallback(analyseLocationEntry *entry, unsigned int pc)
+analyse_locationSetFallback(analyse_location_entry *entry, unsigned int pc)
 {
     if (!entry) {
         return;
@@ -948,15 +914,15 @@ analyseLocationSetFallback(analyseLocationEntry *entry, unsigned int pc)
 }
 
 static void
-analyseLocationSetFromResolved(analyseLocationEntry *entry, const analyseResolvedEntry *resolved, unsigned int pc)
+analyse_locationSetFromResolved(analyse_location_entry *entry, const analyse_resolved_entry *resolved, unsigned int pc)
 {
     if (!entry) {
         return;
     }
     if (resolved && resolved->frames && resolved->frameCount > 0) {
-        const analyseFrame *best = NULL;
+        const analyse_frame *best = NULL;
         for (size_t j = resolved->frameCount; j-- > 0;) {
-            const analyseFrame *frame = &resolved->frames[j];
+            const analyse_frame *frame = &resolved->frames[j];
             if (frame->file && frame->line > 0 && strcmp(frame->file, "??") != 0) {
                 best = frame;
                 break;
@@ -978,56 +944,11 @@ analyseLocationSetFromResolved(analyseLocationEntry *entry, const analyseResolve
             return;
         }
     }
-    analyseLocationSetFallback(entry, pc);
+    analyse_locationSetFallback(entry, pc);
 }
 
-#if 0
 static int
-analyseWriteRawJsonFromLines(const analyseLineEntry *lines, size_t count, const char *rawPath)
-{
-    if (!lines || !rawPath || !*rawPath) {
-        debug_error("profile: missing raw output path");
-        return 0;
-    }
-    FILE *out = fopen(rawPath, "w");
-    if (!out) {
-        debug_error("profile: failed to open %s: %s", rawPath, strerror(errno));
-        return 0;
-    }
-    fprintf(out, "[\n");
-    int first = 1;
-    for (size_t i = 0; i < count; ++i) {
-        const analyseLineEntry *entry = &lines[i];
-        if (!first) {
-            fprintf(out, ",\n");
-        }
-        first = 0;
-        fprintf(out, "  {\n");
-        fprintf(out, "    \"file\": ");
-        analyseEmitString(out, entry->file ? entry->file : "");
-        fprintf(out, ",\n");
-        fprintf(out, "    \"line\": %d,\n", entry->line);
-        fprintf(out, "    \"cycles\": %llu,\n", entry->cycles);
-        fprintf(out, "    \"count\": %llu,\n", entry->count);
-        fprintf(out, "    \"address\": ");
-        analyseEmitString(out, entry->address);
-        fprintf(out, ",\n");
-        fprintf(out, "    \"source\": ");
-        analyseEmitString(out, entry->source ? entry->source : "");
-        fprintf(out, "\n  }");
-    }
-    if (!first) {
-        fprintf(out, "\n");
-    }
-    fprintf(out, "]\n");
-    fclose(out);
-    debug_printf("Profile analysis raw JSON wrote to %s\n", rawPath);
-    return 1;
-}
-#endif
-
-static int
-analyseWriteResolvedJsonFromLines(const analyseLineEntry *lines, size_t count, const char *jsonPath, const char *srcBase)
+analyse_writeResolvedJsonFromLines(const analyse_line_entry *lines, size_t count, const char *jsonPath, const char *srcBase)
 {
     if (!lines || !jsonPath || !*jsonPath) {
         debug_error("profile: missing output path");
@@ -1041,35 +962,35 @@ analyseWriteResolvedJsonFromLines(const analyseLineEntry *lines, size_t count, c
     fprintf(out, "[\n");
     int first = 1;
     for (size_t i = 0; i < count; ++i) {
-        const analyseLineEntry *entry = &lines[i];
+        const analyse_line_entry *entry = &lines[i];
         if (!first) {
             fprintf(out, ",\n");
         }
         first = 0;
         fprintf(out, "  {\n");
         fprintf(out, "    \"pc\": ");
-        analyseEmitString(out, entry->address);
+        analyse_emitString(out, entry->address);
         fprintf(out, ",\n");
         fprintf(out, "    \"address\": ");
-        analyseEmitString(out, entry->address);
+        analyse_emitString(out, entry->address);
         fprintf(out, ",\n");
         fprintf(out, "    \"count\": %llu,\n", entry->count);
         fprintf(out, "    \"cycles\": %llu,\n", entry->cycles);
         fprintf(out, "    \"function_chain\": ");
-        analyseEmitString(out, entry->chain ? entry->chain : "");
+        analyse_emitString(out, entry->chain ? entry->chain : "");
         fprintf(out, ",\n");
         fprintf(out, "    \"function_chain_frames\": [\n");
         if (entry->frames && entry->frameCount > 0) {
-            analysePrintFrames(out, entry->frames, entry->frameCount, srcBase);
+            analyse_printFrames(out, entry->frames, entry->frameCount, srcBase);
             fprintf(out, "\n");
         }
         fprintf(out, "    ],\n");
         fprintf(out, "    \"file\": ");
-        analyseEmitString(out, analyseStripSourceBase(srcBase, entry->file ? entry->file : ""));
+        analyse_emitString(out, analyse_stripSourceBase(srcBase, entry->file ? entry->file : ""));
         fprintf(out, ",\n");
         fprintf(out, "    \"line\": %d,\n", entry->line);
         fprintf(out, "    \"source\": ");
-        analyseEmitString(out, entry->source ? entry->source : "");
+        analyse_emitString(out, entry->source ? entry->source : "");
         fprintf(out, "\n  }");
     }
     if (!first) {
@@ -1082,21 +1003,21 @@ analyseWriteResolvedJsonFromLines(const analyseLineEntry *lines, size_t count, c
 }
 
 static void
-analyseFreeResolvedEntries(analyseResolvedEntry *entries, size_t count)
+analyse_freeResolvedEntries(analyse_resolved_entry *entries, size_t count)
 {
     if (!entries) {
         return;
     }
     for (size_t i = 0; i < count; ++i) {
-        analyseResolvedEntry *entry = &entries[i];
-        analyseFreeFrames(entry->frames, entry->frameCount);
+        analyse_resolved_entry *entry = &entries[i];
+        analyse_freeFrames(entry->frames, entry->frameCount);
         alloc_free(entry->chain);
         alloc_free(entry->source);
     }
 }
 
 static void
-analyseEmitString(FILE *f, const char *value)
+analyse_emitString(FILE *f, const char *value)
 {
     fputc('"', f);
     if (value) {
@@ -1127,7 +1048,7 @@ analyseEmitString(FILE *f, const char *value)
 }
 
 static void
-analysePrintFrames(FILE *f, const analyseFrame *frames, size_t count, const char *srcBase)
+analyse_printFrames(FILE *f, const analyse_frame *frames, size_t count, const char *srcBase)
 {
     for (size_t i = 0; i < count; ++i) {
         if (i > 0) {
@@ -1135,20 +1056,20 @@ analysePrintFrames(FILE *f, const analyseFrame *frames, size_t count, const char
         }
         fprintf(f, "      {\n");
         fprintf(f, "        \"function\": ");
-        analyseEmitString(f, frames[i].function ? frames[i].function : "");
+        analyse_emitString(f, frames[i].function ? frames[i].function : "");
         fprintf(f, ",\n");
         fprintf(f, "        \"file\": ");
-        analyseEmitString(f, analyseStripSourceBase(srcBase, frames[i].file ? frames[i].file : ""));
+        analyse_emitString(f, analyse_stripSourceBase(srcBase, frames[i].file ? frames[i].file : ""));
         fprintf(f, ",\n");
         fprintf(f, "        \"line\": %d,\n", frames[i].line);
         fprintf(f, "        \"loc\": ");
-        analyseEmitString(f, frames[i].loc ? frames[i].loc : "");
+        analyse_emitString(f, frames[i].loc ? frames[i].loc : "");
         fprintf(f, "\n      }");
     }
 }
 
 static const char *
-analyseStripSourceBase(const char *srcBase, const char *path)
+analyse_stripSourceBase(const char *srcBase, const char *path)
 {
     if (!srcBase || !*srcBase || !path || !*path) {
         return path;
@@ -1195,13 +1116,13 @@ analyseStripSourceBase(const char *srcBase, const char *path)
 }
 
 int
-analyseWriteFinalJson(const char *jsonPath)
+analyse_writeFinalJson(const char *jsonPath)
 {
     if (!jsonPath || !*jsonPath) {
         debug_error("profile: missing output path");
         return 0;
     }
-    if (!analyseEnsureCapacity()) {
+    if (!analyse_ensureCapacity()) {
         return 0;
     }
     const char *elfPath = debugger.config.elfPath;
@@ -1210,44 +1131,44 @@ analyseWriteFinalJson(const char *jsonPath)
         return 0;
     }
     const char *srcBase = debugger.config.sourceDir;
-    size_t entryCap = analyseProfileCount;
+    size_t entryCap = analyse_profileCount;
     int ok = 1;
-    analyseResolvedEntry *entries = alloc_calloc(entryCap ? entryCap : 1, sizeof(analyseResolvedEntry));
+    analyse_resolved_entry *entries = alloc_calloc(entryCap ? entryCap : 1, sizeof(analyse_resolved_entry));
     if (!entries) {
         debug_error("profile: failed to allocate resolved entries");
         return 0;
     }
     size_t resolvedCount = 0;
-    for (size_t i = 0; i < analyseProfileCapacity; ++i) {
-        analyseProfileEntry *slot = &analyseProfileMap[i];
+    for (size_t i = 0; i < analyse_profileCapacity; ++i) {
+        analyse_profile_entry *slot = &analyse_profileMap[i];
         if (!slot || !slot->used) {
             continue;
         }
-        analyseResolvedEntry *entry = &entries[resolvedCount++];
+        analyse_resolved_entry *entry = &entries[resolvedCount++];
         entry->samples = slot->samples;
         entry->cycles = slot->cycles;
         snprintf(entry->address, sizeof(entry->address), "0x%06X", slot->pc);
     }
-    analyseLineEntry *lines = NULL;
+    analyse_line_entry *lines = NULL;
     size_t lineCount = 0;
     size_t lineCap = 0;
-    if (!analyseResolveFramesBatch(elfPath, entries, resolvedCount)) {
+    if (!analyse_resolveFramesBatch(elfPath, entries, resolvedCount)) {
         debug_error("profile: failed to resolve symbols");
         ok = 0;
         goto cleanup;
     }
     for (size_t i = 0; i < resolvedCount; ++i) {
-        analyseResolvedEntry *entry = &entries[i];
-        entry->chain = analyseBuildFunctionChain(entry->frames, entry->frameCount);
+        analyse_resolved_entry *entry = &entries[i];
+        entry->chain = analyse_buildFunctionChain(entry->frames, entry->frameCount);
         if (!entry->chain) {
             entry->chain = alloc_strdup("");
         }
         entry->topFile = "";
         entry->topLine = 0;
         if (entry->frames && entry->frameCount > 0) {
-            const analyseFrame *best = NULL;
+            const analyse_frame *best = NULL;
             for (size_t j = entry->frameCount; j-- > 0;) {
-                const analyseFrame *f = &entry->frames[j];
+                const analyse_frame *f = &entry->frames[j];
                 if (f->file && f->line > 0 && strcmp(f->file, "??") != 0) {
                     best = f;
                     break;
@@ -1262,18 +1183,18 @@ analyseWriteFinalJson(const char *jsonPath)
             entry->topFile = best->file ? best->file : "";
             entry->topLine = best->line;
         }
-        entry->source = analyseReadSourceLine(srcBase, entry->topFile, entry->topLine);
+        entry->source = analyse_readSourceLine(srcBase, entry->topFile, entry->topLine);
     }
     for (size_t i = 0; i < resolvedCount; ++i) {
-        analyseResolvedEntry *entry = &entries[i];
-        if (!analyseResolvedEntryValid(entry)) {
+        analyse_resolved_entry *entry = &entries[i];
+        if (!analyse_resolvedEntryValid(entry)) {
             continue;
         }
-        analyseLineEntry *line = analyseFindLineEntry(lines, lineCount, entry->topFile, entry->topLine);
+        analyse_line_entry *line = analyse_findLineEntry(lines, lineCount, entry->topFile, entry->topLine);
         if (!line) {
             if (lineCount == lineCap) {
                 size_t next = lineCap ? lineCap * 2 : 16;
-                analyseLineEntry *tmp = (analyseLineEntry *)alloc_realloc(lines, next * sizeof(analyseLineEntry));
+                analyse_line_entry *tmp = (analyse_line_entry *)alloc_realloc(lines, next * sizeof(analyse_line_entry));
                 if (!tmp) {
                     debug_error("profile: failed to expand line entries");
                     ok = 0;
@@ -1305,7 +1226,7 @@ analyseWriteFinalJson(const char *jsonPath)
             line->bestCycles = entry->cycles;
             strncpy(line->address, entry->address, sizeof(line->address));
             line->address[sizeof(line->address) - 1] = '\0';
-            analyseFreeFrames(line->frames, line->frameCount);
+            analyse_freeFrames(line->frames, line->frameCount);
             line->frames = entry->frames;
             line->frameCount = entry->frameCount;
             entry->frames = NULL;
@@ -1317,7 +1238,7 @@ analyseWriteFinalJson(const char *jsonPath)
             line->source = entry->source;
             entry->source = NULL;
         } else {
-            analyseFreeFrames(entry->frames, entry->frameCount);
+            analyse_freeFrames(entry->frames, entry->frameCount);
             entry->frames = NULL;
             entry->frameCount = 0;
             alloc_free(entry->chain);
@@ -1326,36 +1247,23 @@ analyseWriteFinalJson(const char *jsonPath)
             entry->source = NULL;
         }
     }
-    /*
-     * Raw JSON output has been disabled.
-     */
-#if 0
-    char rawPath[PATH_MAX];
-    if (!analyseBuildRawJsonPath(jsonPath, rawPath, sizeof(rawPath))) {
-        debug_error("profile: unable to compute raw JSON path for %s", jsonPath);
-        ok = 0;
-        goto cleanup;
-    }
-    if (!analyseWriteRawJsonFromLines(lines, lineCount, rawPath)) {
-        ok = 0;
-    }
-#endif
-    if (ok && !analyseWriteResolvedJsonFromLines(lines, lineCount, jsonPath, srcBase)) {
+
+    if (ok && !analyse_writeResolvedJsonFromLines(lines, lineCount, jsonPath, srcBase)) {
         ok = 0;
     }
 cleanup:
-    analyseFreeLineEntries(lines, lineCount);
+    analyse_freeLineEntries(lines, lineCount);
     alloc_free(lines);
-    analyseFreeResolvedEntries(entries, resolvedCount);
+    analyse_freeResolvedEntries(entries, resolvedCount);
     alloc_free(entries);
     return ok;
 }
 
 static int
-analyseProfileSampleCompare(const void *a, const void *b)
+analyse_profileSampleCompare(const void *a, const void *b)
 {
-    const analyseProfileSampleEntry *ea = (const analyseProfileSampleEntry*)a;
-    const analyseProfileSampleEntry *eb = (const analyseProfileSampleEntry*)b;
+    const analyse_profile_sample_entry *ea = (const analyse_profile_sample_entry*)a;
+    const analyse_profile_sample_entry *eb = (const analyse_profile_sample_entry*)b;
     if (ea->samples > eb->samples) {
         return -1;
     }
@@ -1372,23 +1280,23 @@ analyseProfileSampleCompare(const void *a, const void *b)
 }
 
 int
-analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count)
+analyse_profileSnapshot(analyse_profile_sample_entry **out, size_t *count)
 {
     if (!out || !count) {
         return 0;
     }
     *out = NULL;
     *count = 0;
-    if (!analyseProfileReady || analyseProfileCount == 0) {
+    if (!analyse_profileReady || analyse_profileCount == 0) {
         return 1;
     }
-    analyseProfileSampleEntry *entries = (analyseProfileSampleEntry*)alloc_alloc(analyseProfileCount * sizeof(*entries));
+    analyse_profile_sample_entry *entries = (analyse_profile_sample_entry*)alloc_alloc(analyse_profileCount * sizeof(*entries));
     if (!entries) {
         return 0;
     }
     size_t idx = 0;
-    for (size_t i = 0; i < analyseProfileCapacity && idx < analyseProfileCount; ++i) {
-        analyseProfileEntry *slot = &analyseProfileMap[i];
+    for (size_t i = 0; i < analyse_profileCapacity && idx < analyse_profileCount; ++i) {
+        analyse_profile_entry *slot = &analyse_profileMap[i];
         if (slot->used) {
             entries[idx].pc = slot->pc;
             entries[idx].samples = slot->samples;
@@ -1396,7 +1304,7 @@ analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count)
         }
     }
     if (idx > 1) {
-        qsort(entries, idx, sizeof(*entries), analyseProfileSampleCompare);
+        qsort(entries, idx, sizeof(*entries), analyse_profileSampleCompare);
     }
     *out = entries;
     *count = idx;
@@ -1404,7 +1312,7 @@ analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count)
 }
 
 void
-analyseProfileSnapshotFree(analyseProfileSampleEntry *entries)
+analyse_profileSnapshotFree(analyse_profile_sample_entry *entries)
 {
     if (entries) {
         alloc_free(entries);

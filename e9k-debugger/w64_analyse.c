@@ -4,24 +4,24 @@
 #include "debugger.h"
 
 int
-analyseInit(void)
+analyse_init(void)
 {
     return 0;
 }
 
 void
-analyseShutdown(void)
+analyse_shutdown(void)
 {
 }
 
 int
-analyseReset(void)
+analyse_reset(void)
 {
     return 0;
 }
 
 int
-analyseHandlePacket(const char *line, size_t len)
+analyse_handlePacket(const char *line, size_t len)
 {
     (void)line;
     (void)len;
@@ -29,14 +29,14 @@ analyseHandlePacket(const char *line, size_t len)
 }
 
 int
-analyseWriteFinalJson(const char *jsonPath)
+analyse_writeFinalJson(const char *jsonPath)
 {
     (void)jsonPath;
     return 0;
 }
 
 int
-analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count)
+analyse_profileSnapshot(analyse_profile_sample_entry **out, size_t *count)
 {
     if (out) {
         *out = NULL;
@@ -48,13 +48,13 @@ analyseProfileSnapshot(analyseProfileSampleEntry **out, size_t *count)
 }
 
 void
-analyseProfileSnapshotFree(analyseProfileSampleEntry *entries)
+analyse_profileSnapshotFree(analyse_profile_sample_entry *entries)
 {
     (void)entries;
 }
 
 void
-analysePopulateSampleLocations(analyseProfileSampleEntry *entries, size_t count)
+analyse_populateSampleLocations(analyse_profile_sample_entry *entries, size_t count)
 {
     (void)entries;
     (void)count;
