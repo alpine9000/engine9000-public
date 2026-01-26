@@ -1,11 +1,13 @@
-// e9ui scroll view component
-#include "e9ui_scroll.h"
-#include "e9ui_scale.h"
-#include "alloc.h"
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include <SDL.h>
-#include <SDL_ttf.h>
+#include "e9ui.h"
+#include "debugger.h"
 
 typedef struct e9ui_scroll_state {
     e9ui_component_t *child;

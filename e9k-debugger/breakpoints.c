@@ -13,14 +13,6 @@
 #include "debugger.h"
 #include "addr2line.h"
 
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <limits.h>
-
 typedef struct breakpoints_record {
     machine_breakpoint_t data;
     int                 present;

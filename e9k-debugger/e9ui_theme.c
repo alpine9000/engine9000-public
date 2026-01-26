@@ -1,13 +1,20 @@
-// Theme management implementation
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+#include <SDL_ttf.h>
+#include <limits.h>
+
 #include "e9ui_theme.h"
 #include "e9ui_theme_defaults.h"
 #include "e9ui_text_cache.h"
 #include "debugger.h"
 #include "file.h"
 #include "debug.h"
-
-#include <SDL_ttf.h>
-#include <limits.h>
 
 static const e9k_theme_button_t kThemeButtonRed = {
     .mask = E9K_THEME_BUTTON_MASK_HIGHLIGHT |

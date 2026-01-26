@@ -1,10 +1,13 @@
-// CRT settings used by the GL composite path and UI.
-// The legacy CPU CRT renderer has been moved to e9k-debugger/reference/crt_cpu.c.
-#include "crt.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <limits.h>
-#include <stdlib.h>
-#include <string.h>
+#include "crt.h"
 
 static int crt_enabled = 1;
 static int crt_geometryEnabled = 1;

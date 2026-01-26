@@ -1,14 +1,19 @@
-// Save-state timeline buffer (keyframes + diffs)
-#include "state_buffer.h"
-
-#include "libretro_host.h"
-#include "debug.h"
-#include "alloc.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+#include "state_buffer.h"
+#include "libretro_host.h"
+#include "alloc.h"
 
 
 typedef struct {

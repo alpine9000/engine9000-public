@@ -8,14 +8,7 @@
 
 #include "geo9000.h"
 #include "runtime.h"
-#include "crt.h"
 #include "gl_composite.h"
-
-#include <SDL.h>
-#include <ctype.h>
-#include <math.h>
-#include <stdio.h>
-
 #include "alloc.h"
 #include "libretro.h"
 #include "libretro_host.h"

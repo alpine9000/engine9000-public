@@ -1,11 +1,18 @@
-// POSIX signal handling
-#include "debugger_signal.h"
-
-#include "debug.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
+
+#include "debugger_signal.h"
+#include "debug.h"
+
 
 static volatile sig_atomic_t debugger_exit_signal = 0;
 

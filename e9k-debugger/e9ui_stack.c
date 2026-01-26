@@ -1,7 +1,15 @@
-// e9ui vertical stack container
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+
 #include "e9ui.h"
 #include "debugger.h"
-#include <stdlib.h>
+
 
 typedef struct e9ui_stack_item {
     int isFlex;  // 0 = fixed, 1 = flex

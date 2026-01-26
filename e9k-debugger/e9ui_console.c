@@ -1,12 +1,13 @@
-// e9ui console component
-#include "e9ui_console.h"
-#include "e9ui_context.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_types.h"
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include <SDL_ttf.h>
-#include <stdlib.h>
+#include "e9ui.h"
+#include "debugger.h"
 
 typedef struct e9ui_console_state {
     int unused;

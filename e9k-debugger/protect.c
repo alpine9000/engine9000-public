@@ -7,7 +7,6 @@
  */
 
 #include "protect.h"
-
 #include "debug.h"
 #include "libretro_host.h"
 

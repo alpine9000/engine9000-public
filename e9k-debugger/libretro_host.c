@@ -6,13 +6,6 @@
  * See COPYING for license details
  */
 
-#include "libretro_host.h"
-#include "debugger.h"
-#include "input_record.h"
-#include "alloc.h"
-
-#include <SDL.h>
-
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -32,6 +25,12 @@
 #include <direct.h>
 #endif
 #include <stdbool.h>
+
+#include "libretro_host.h"
+#include "debugger.h"
+#include "input_record.h"
+#include "alloc.h"
+
 
 typedef void (*retro_set_environment_fn_t)(retro_environment_t);
 typedef void (*retro_set_video_refresh_fn_t)(retro_video_refresh_t);

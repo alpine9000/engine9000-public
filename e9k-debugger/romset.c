@@ -15,7 +15,6 @@
 #include <sys/stat.h>
 
 #include "romset.h"
-
 #include "debugger.h"
 
 int

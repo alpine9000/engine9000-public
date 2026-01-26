@@ -1,17 +1,21 @@
-// Prompt input component implementation
-#include "prompt.h"
-#include "debugger.h"
-#include "console_cmd.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_textbox.h"
-#include "e9ui.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
+#include <stdio.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include <ctype.h>
 #include <string.h>
 
- 
+#include "e9ui.h" 
+#include "prompt.h"
+#include "debugger.h"
+#include "console_cmd.h"
 
 static int font_line_height_local(TTF_Font *font) {
     if (font) {
@@ -24,28 +28,25 @@ static int font_line_height_local(TTF_Font *font) {
 }
 
  
-
-// e9kgui adapter
 typedef struct prompt_state {
     char killBuf[PROMPT_MAX];
     char historyPath[1024];
-    int  histNavActive;
-    int  histNavIndex;
+    int histNavActive;
+    int histNavIndex;
     char histSavedLine[PROMPT_MAX];
-    int  histSavedLen;
-    int  histSavedCursor;
+    int histSavedLen;
+    int histSavedCursor;
     e9ui_component_t *textbox;
-    // transient completions
     char **cmpl;
-    int    cmplCount;
-    int    cmplCap;
-    int    cmplVisible;
-    int    cmplSel;
-    int    cmplPrefixLen;
-    char   cmplPrefix[PROMPT_MAX];
-    char   cmplRest[PROMPT_MAX];
-    int    cmplPageStart;      // index of first visible candidate
-    int    cmplPageCycleDone;  // 0 until we've shown the last page; then single-step cycling
+    int cmplCount;
+    int cmplCap;
+    int cmplVisible;
+    int cmplSel;
+    int cmplPrefixLen;
+    char cmplPrefix[PROMPT_MAX];
+    char cmplRest[PROMPT_MAX];
+    int cmplPageStart;
+    int cmplPageCycleDone;
 } prompt_state_t;
 
 static const char *
@@ -229,7 +230,7 @@ prompt_render(e9ui_component_t *self, e9ui_context_t *ctx)
   if (self->disabled && st) {
       st->cmplVisible = 0;
   }
-  // Render transient completions panel above prompt
+
   if (st->cmplVisible && st->cmplCount > 0 && useFont) {
     int rows = debugger.opts.completionListRows > 0 ? debugger.opts.completionListRows : 30;
     int maxw = 0; int start = st->cmplPageStart;
@@ -245,7 +246,7 @@ prompt_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     int vis = remaining;
     if (vis > rows) {
-      vis = rows; // cap visible rows
+      vis = rows;
     }
     for (int i=0;i<vis;i++) {
       int tw=0, th=0;
@@ -259,7 +260,7 @@ prompt_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     int showMore = (start + vis < st->cmplCount);
     int pad = 8;
-    // Account for width of the more-indicator as well
+
     int moreW = 0;
     if (showMore) {
       char more[64]; snprintf(more, sizeof(more), "(+%d more)", st->cmplCount - (start + vis));
@@ -412,7 +413,7 @@ prompt_applyCompletion(e9ui_context_t *ctx, int prefixLen, const char *insert)
     if (insLen == 0) {
         return;
     }
-    // Ensure space
+
     if (inputLen + (int)insLen >= PROMPT_MAX - 1) {
         insLen = (size_t)((PROMPT_MAX - 1) - inputLen);
     }

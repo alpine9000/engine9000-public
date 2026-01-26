@@ -6,14 +6,9 @@
  * See COPYING for license details
  */
 
-#include "clipboard.h"
-
 #include <SDL.h>
 #include <SDL_image.h>
 #include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #ifdef _WIN32
 #include <io.h>
@@ -22,7 +17,9 @@
 #include <unistd.h>
 #endif
 
+#include "clipboard.h"
 #include "debug.h"
+
 
 static int
 clipboard_makeTempPath(char *out, size_t cap)

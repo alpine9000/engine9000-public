@@ -19,7 +19,6 @@
 #include "debugger.h"
 #include "e9ui.h"
 
-
 typedef enum profile_list_role {
     PROFILE_LIST_ROLE_ENTRIES = 1,
 } profile_list_role_t;

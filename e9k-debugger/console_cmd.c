@@ -1,11 +1,17 @@
-// Console command handlers (GDB removed)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+#include <errno.h>
 #include "console_cmd.h"
-#include "debug.h"
 #include "debugger.h"
 #include "config.h"
 #include "alloc.h"
 #include "breakpoints.h"
-#include "e9ui.h"
 #include "libretro_host.h"
 #include "transition.h"
 #include "machine.h"
@@ -14,12 +20,6 @@
 #include "state_buffer.h"
 #include "protect.h"
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 typedef int (*console_cmd_handler_t)(int argc, char **argv);
 typedef int (*console_cmd_complete_t)(const char *prefix, char ***out_list, int *out_count);

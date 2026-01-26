@@ -6,13 +6,7 @@
  * See COPYING for license details
  */
 
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "config.h"
-
 #include "crt.h"
 #include "debugger.h"
 #include "e9ui.h"

@@ -6,9 +6,9 @@
  * See COPYING for license details
  */
 
-#include "resource.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include "resource.h"
 
 #ifdef TRACK_RESOURCES
 

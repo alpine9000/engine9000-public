@@ -6,10 +6,9 @@
  * See COPYING for license details
  */
 
-#include "train.h"
 
 #include <string.h>
-
+#include "train.h"
 #include "alloc.h"
 #include "list.h"
 

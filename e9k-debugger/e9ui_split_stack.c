@@ -1,9 +1,13 @@
-// e9ui vertical split stack container (component)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include "e9ui.h"
 #include "debugger.h"
-#include <SDL.h>
-#include <stdio.h>
-#include <string.h>
 
 typedef struct e9ui_split_stack_panel {
     float ratio;

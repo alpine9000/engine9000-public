@@ -6,30 +6,14 @@
  * See COPYING for license details
  */
 
-#include <SDL_image.h>
-#include <SDL.h>
-#include <SDL_ttf.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <time.h>
-#include <limits.h>
-#include <readline/readline.h>
-#include <readline/history.h>
-#include <ctype.h>
 
 #include "e9ui.h"
 #include "libretro_host.h"
-#include "resource.h"
 #include "debugger.h"
 #include "profile.h"
-#include "debug.h"
+
 #include "analyse.h"
 #include "linebuf.h"
 #include "sprite_debug.h"

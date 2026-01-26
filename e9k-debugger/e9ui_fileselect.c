@@ -6,11 +6,7 @@
  * See COPYING for license details
  */
 
-#include <SDL.h>
-#include <SDL_ttf.h>
 #include <sys/stat.h>
-#include <string.h>
-#include <limits.h>
 #include <unistd.h>
 
 #include "e9ui.h"

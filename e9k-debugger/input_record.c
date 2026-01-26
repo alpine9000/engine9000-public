@@ -6,17 +6,16 @@
  * See COPYING for license details
  */
 
-#include "input_record.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "input_record.h"
 #include "alloc.h"
 #include "debug.h"
 #include "libretro_host.h"
 #include "geo_checkpoint.h"
-#include "SDL.h"
 
 typedef enum input_record_type {
     INPUT_RECORD_JOYPAD = 1,

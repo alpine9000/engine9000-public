@@ -1,4 +1,11 @@
-// registers panel implementation (app-specific)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
@@ -8,8 +15,7 @@
 
 #include "registers.h"
 #include "debugger.h"
-#include "machine.h"
- 
+#include "machine.h" 
 
 static int
 registers_findAny(const char **cands, int ncand, unsigned long *out)

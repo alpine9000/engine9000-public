@@ -1,8 +1,15 @@
-// Framework text cache implementation
-#include "e9ui_text_cache.h"
-#include "alloc.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <string.h>
+
+#include "e9ui_text_cache.h"
+#include "alloc.h"
 
 typedef struct e9ui_text_cache_entry {
     char *text;

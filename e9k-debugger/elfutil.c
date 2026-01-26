@@ -1,10 +1,18 @@
-// Minimal ELF reader utilities to fetch .text bounds
-#include "elfutil.h"
-#include "alloc.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "elfutil.h"
+#include "alloc.h"
 
 #ifndef EI_NIDENT
 #define EI_NIDENT 16

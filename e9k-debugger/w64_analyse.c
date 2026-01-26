@@ -1,7 +1,12 @@
-// Windows stubs for analyse features
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include "analyse.h"
-#include "debug.h"
-#include "debugger.h"
 
 int
 analyse_init(void)

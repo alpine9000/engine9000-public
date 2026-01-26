@@ -9,15 +9,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <SDL.h>
 
 #include "runtime.h"
 #include "ui.h"
-
 #include "debug.h"
 #include "e9ui.h"
-#include "geo9000.h"
 #include "input_record.h"
 #include "libretro_host.h"
 #include "linebuf.h"

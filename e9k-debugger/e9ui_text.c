@@ -1,16 +1,22 @@
-// e9ui static text component
-#include "e9ui_text.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_scale.h"
-#include "debugger.h"
-#include "file.h"
-#include "alloc.h"
-#include "debug.h"
-#include "e9ui_theme_defaults.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 
 #include <SDL_ttf.h>
 #include <string.h>
 #include <limits.h>
+
+#include "e9ui.h"
+#include "debugger.h"
+#include "file.h"
+#include "alloc.h"
+#include "debug.h"
+
 
 typedef struct e9ui_text_state {
     char *text;

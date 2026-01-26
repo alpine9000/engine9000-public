@@ -1,12 +1,13 @@
-// e9ui split container (component)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include "e9ui.h"
 #include "debugger.h"
-#include <SDL.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-
-#include <stdlib.h>
 
 typedef struct e9ui_split_state {
   e9ui_component_t *a;

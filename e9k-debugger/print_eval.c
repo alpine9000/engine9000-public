@@ -6,15 +6,6 @@
  * See COPYING for license details
  */
 
-#include "print_eval.h"
-
-#include "alloc.h"
-#include "debug.h"
-#include "debugger.h"
-#include "libretro.h"
-#include "libretro_host.h"
-#include "machine.h"
-
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -23,6 +14,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "print_eval.h"
+#include "alloc.h"
+#include "debug.h"
+#include "debugger.h"
+#include "libretro.h"
+#include "libretro_host.h"
+#include "machine.h"
 
 typedef enum print_dwarf_tag {
     print_dwarf_tag_unknown = 0,

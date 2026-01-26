@@ -6,8 +6,15 @@
  * See COPYING for license details
  */
 
-#include "memory_track_ui.h"
+#include <SDL.h>
+#include <SDL_ttf.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 
+#include "memory_track_ui.h"
 #include "alloc.h"
 #include "debug.h"
 #include "debugger.h"
@@ -24,14 +31,6 @@
 #include "libretro_host.h"
 #include "protect.h"
 #include "state_buffer.h"
-
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <ctype.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
 
 #define MEMORY_TRACK_UI_TITLE "ENGINE9000 DEBUGGER - MEMORY TRACKER"
 #define MEMORY_TRACK_UI_REGION_BASE 0x00100000u

@@ -1,10 +1,16 @@
-// Transition selection helpers and startup transition runner
-#include "transition.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include "transition.h"
 
 const char *
 transition_modeName(e9k_transition_mode_t mode)

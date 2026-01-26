@@ -1,7 +1,11 @@
-// e9ui center container
-#include "e9ui_center.h"
-#include "e9ui_scale.h"
-#include "e9ui.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include "debugger.h"
 
 typedef struct e9ui_center_state {

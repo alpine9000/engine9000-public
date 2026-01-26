@@ -1,10 +1,15 @@
-// Explode transition (centered start + fade-in)
-#include "transition.h"
-
-#include "alloc.h"
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
+#include "transition.h"
+#include "alloc.h"
+#include "debugger.h"
 
 typedef struct transition_explode_item {
     e9ui_component_t *comp;

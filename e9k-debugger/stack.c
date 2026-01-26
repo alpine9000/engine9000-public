@@ -1,11 +1,10 @@
-// stack panel implementation (app-specific)
-#include "stack.h"
-#include "e9ui_context.h"
-#include "e9ui_event.h"
-#include "e9ui_text_cache.h"
-#include "debugger.h"
-#include "ui.h"
-#include "debug.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
 #include <SDL_ttf.h>
@@ -13,15 +12,12 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "stack.h"
+#include "e9ui_context.h"
+#include "e9ui_text_cache.h"
+#include "debugger.h"
+#include "ui.h"
 #include "machine.h"
-
- 
-
-// no per-component cache anymore
-
-// no per-component cache anymore
-
-// no fetching from renderer; machine gets updated centrally
 
 static int
 stack_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
@@ -50,7 +46,6 @@ stack_render(e9ui_component_t *self, e9ui_context_t *ctx)
     if (lh <= 0) {
         lh = 16;
     }
-    // Draw from machine snapshot
     const machine_frame_t *frames = NULL; int count = 0;
     machine_getStack(&debugger.machine, &frames, &count);
     int pad = 8; int y = r.y + pad;

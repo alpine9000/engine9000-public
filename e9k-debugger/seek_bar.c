@@ -1,14 +1,20 @@
-// Simple seek bar component (app-specific)
-#include "seek_bar.h"
-
-#include "alloc.h"
-#include "state_buffer.h"
-#include "e9ui_text_cache.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "seek_bar.h"
+#include "alloc.h"
+#include "state_buffer.h"
+#include "e9ui_text_cache.h"
 
 typedef struct seek_bar_state {
     float percent;

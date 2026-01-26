@@ -13,11 +13,13 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <SDL_ttf.h>
+#include <SDL_image.h>
 #include "e9ui.h"
 #include "debug.h"
 #include "linebuf.h"
 #include "machine.h"
 #include "geo_debug_sprite.h"
+#include "file.h"
 
 #ifdef _WIN32
 #include "w64_debugger_platform.h"
@@ -31,8 +33,6 @@ typedef struct e9k_debug_options {
     int debugLayout; 
     int completionListRows;
 } e9k_debug_options_t;
-
-
 
 typedef struct e9k_hotkey_entry {
     int id;

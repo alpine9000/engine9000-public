@@ -6,16 +6,16 @@
  * See COPYING for license details
  */
 
-#include "sprite_debug.h"
-#include "debugger.h"
-#include "config.h"
-
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "sprite_debug.h"
+#include "debugger.h"
+#include "config.h"
 
 #define NG_COORD_SIZE 512
 #define NG_WRAP_MASK 0x1FF

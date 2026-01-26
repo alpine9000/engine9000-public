@@ -8,9 +8,6 @@
 
 #include "debugger.h"
 #include "cli.h"
-#ifdef _WIN32
-#include <SDL.h>
-#endif
 
 int
 #ifdef _WIN32

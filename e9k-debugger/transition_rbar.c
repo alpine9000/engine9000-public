@@ -1,11 +1,16 @@
-// Rotating diagonal bar wipe transition
-#include "transition.h"
-
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
 #include <SDL_version.h>
 #include <math.h>
+#include "transition.h"
+#include "debugger.h"
 
 typedef struct transition_rbar_point {
     float x;

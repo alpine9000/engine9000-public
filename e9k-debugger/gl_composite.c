@@ -6,13 +6,12 @@
  * See COPYING for license details
  */
 
-#include "gl_composite.h"
-
 #include <SDL_opengl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "gl_composite.h"
 #include "crt.h"
 #include "shader_advanced.h"
 #include "shader_base.h"

@@ -6,13 +6,7 @@
  * See COPYING for license details
  */
 
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "debugger.h"
-
 
 typedef struct e9ui_checkbox_state {
     char      *label;

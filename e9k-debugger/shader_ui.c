@@ -6,8 +6,12 @@
  * See COPYING for license details
  */
 
-#include "shader_ui.h"
+#include <SDL.h>
+#include <SDL_ttf.h>
+#include <stdio.h>
+#include <string.h>
 
+#include "shader_ui.h"
 #include "alloc.h"
 #include "crt.h"
 #include "debug.h"
@@ -16,17 +20,11 @@
 #include "e9ui.h"
 #include "e9ui_labeled_checkbox.h"
 #include "e9ui_vspacer.h"
-#include "e9ui_text.h"
 #include "e9ui_text_cache.h"
-#include "gl_composite.h"
 #include "seek_bar.h"
 #include "e9ui_button.h"
 #include "e9ui_theme.h"
 
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <stdio.h>
-#include <string.h>
 
 #define SHADER_UI_LABEL_W 185
 #define SHADER_UI_GAP 12

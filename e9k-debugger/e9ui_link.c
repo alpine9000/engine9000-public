@@ -6,16 +6,9 @@
  * See COPYING for license details
  */
 
-#include "e9ui_link.h"
+#include "e9ui.h"
 #include "debugger.h"
-#include "e9ui_context.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_scale.h"
 
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <stdlib.h>
-#include <string.h>
 
 typedef struct e9ui_link_state {
     char               *text;

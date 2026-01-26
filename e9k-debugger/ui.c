@@ -15,9 +15,6 @@
 #include <string.h>
 
 #include "ui.h"
-
-#include "alloc.h"
-#include "analyse.h"
 #include "breakpoints.h"
 #include "clipboard.h"
 #include "config.h"
@@ -27,7 +24,6 @@
 #include "e9ui.h"
 #include "file.h"
 #include "geo9000.h"
-#include "input_record.h"
 #include "libretro_host.h"
 #include "machine.h"
 #include "memory.h"
@@ -42,7 +38,6 @@
 #include "status_bar.h"
 #include "state_buffer.h"
 #include "trainer.h"
-#include "transition.h"
 
 static e9ui_component_t *ui_source_panes[2];
 

@@ -6,11 +6,7 @@
  * See COPYING for license details
  */
 
-#include <SDL.h>
 #include <SDL_image.h>
-#include <SDL_ttf.h>
-#include <limits.h>
-#include <string.h>
 
 #include "e9ui.h"
 #include "debugger.h"

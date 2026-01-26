@@ -1,19 +1,17 @@
-// e9ui button component
-#include "e9ui_button.h"
-#include "e9ui_context.h"
-#include "e9ui_scale.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_types.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+#include "e9ui.h"
 #include "debugger.h"
 #include "file.h"
-#include "debug.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
 #include <SDL_image.h>
 #include <stdint.h>
-
 
 typedef struct e9ui_button_state {
   char               *label;

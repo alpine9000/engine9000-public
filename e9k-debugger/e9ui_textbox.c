@@ -1,13 +1,18 @@
-// e9ui textbox component for single-line editable text
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "list.h"
 #include "e9ui_textbox.h"
 #include "debugger.h"
 #include "e9ui_text_cache.h"
-
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <stdlib.h>
-#include <string.h>
-#include "list.h"
 
 typedef struct textbox_state {
     char               *text;

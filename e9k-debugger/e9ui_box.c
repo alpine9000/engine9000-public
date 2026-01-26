@@ -1,21 +1,14 @@
-// e9ui box container
-#include "e9ui_box.h"
-#include "e9ui.h"
-#include "e9ui_context.h"
-#include "e9ui_text_cache.h"
-#include "e9ui_types.h"
-#include "debugger.h"
-#include "file.h"
-#include "debug.h"
-#include "e9ui_scale.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include <SDL.h>
-#include <SDL_ttf.h>
-#include <SDL_image.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "e9ui.h"
+#include "debugger.h"
+
 
 typedef struct e9ui_box_state {
     e9ui_component_t *child;

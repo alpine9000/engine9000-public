@@ -1,9 +1,15 @@
-// Card-flip transition (full-screen texture flip between two screens)
-#include "transition.h"
-
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
+#include "transition.h"
+#include "debugger.h"
+
 
 static void
 transition_flip_renderToTexture(e9ui_component_t *comp, SDL_Texture *target,

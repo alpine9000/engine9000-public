@@ -6,12 +6,12 @@
  * See COPYING for license details
  */
 
-#include "e9ui.h"
-#include "source.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "source.h"
+#include "alloc.h"
 
 typedef struct source_cache_entry {
     char  *path;

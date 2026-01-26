@@ -1,8 +1,10 @@
-// Profile viewer launcher (POSIX)
-#include "profile_view.h"
-
-#include "debug.h"
-#include "file.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <errno.h>
 #include <limits.h>
@@ -12,6 +14,10 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#include "profile_view.h"
+#include "debug.h"
+#include "file.h"
 
 #define PROFILE_VIEWER_PYTHON_ENV "E9K_PROFILE_VIEWER_PYTHON"
 #define PROFILE_VIEWER_SCRIPT_ENV "E9K_PROFILE_VIEWER_SCRIPT"

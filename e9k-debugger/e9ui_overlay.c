@@ -1,10 +1,13 @@
-// e9ui overlay container implementation (upgraded to framework-managed children)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include "e9ui.h"
 #include "debugger.h"
-
-#include <stdlib.h>
-#include <string.h>
-#include "e9ui_flow.h"
 
 typedef enum e9ui_overlay_role {
   E9UI_OVERLAY_ROLE_CONTENT = 1,

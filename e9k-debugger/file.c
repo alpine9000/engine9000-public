@@ -6,7 +6,6 @@
  * See COPYING for license details
  */
 
-#include "file.h"
 
 #include <limits.h>
 #include <string.h>
@@ -24,6 +23,8 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+
+#include "file.h"
 
 int
 file_getExeDir(char *out, size_t cap)

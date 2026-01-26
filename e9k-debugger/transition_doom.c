@@ -1,11 +1,16 @@
-// Doom-style slice transition (full-screen texture strips falling into place)
-#include "transition.h"
-
-#include "alloc.h"
-#include "debugger.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
 #include <SDL.h>
 #include <stdlib.h>
+#include "transition.h"
+#include "alloc.h"
+#include "debugger.h"
 
 static void
 transition_doom_renderToTexture(e9ui_component_t *comp, SDL_Texture *target,

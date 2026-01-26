@@ -1,4 +1,11 @@
-// Central snapshot of target machine state (registers, stack frames)
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -13,7 +20,6 @@
 #include "debugger.h"
 #include "ui.h"
 #include "alloc.h"
-#include "debug.h"
 #include "libretro_host.h"
 #include "addr2line.h"
 

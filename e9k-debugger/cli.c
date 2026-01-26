@@ -6,13 +6,8 @@
  * See COPYING for license details
  */
 
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "cli.h"
-
 #include "debugger.h"
 #include "debug.h"
 #include "smoke_test.h"

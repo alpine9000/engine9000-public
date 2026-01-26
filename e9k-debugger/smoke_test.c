@@ -6,7 +6,6 @@
  * See COPYING for license details
  */
 
-#include "smoke_test.h"
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -16,10 +15,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "debugger.h"
-#include "debug.h"
-#include "libretro_host.h"
-
 #ifdef _WIN32
 #include <windows.h>
 #include <direct.h>
@@ -27,6 +22,11 @@
 #include <dirent.h>
 #include <unistd.h>
 #endif
+
+#include "smoke_test.h"
+#include "debugger.h"
+#include "debug.h"
+#include "libretro_host.h"
 
 static char smoke_test_folder[PATH_MAX];
 static int smoke_test_enabled = 0;

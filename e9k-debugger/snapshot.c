@@ -14,11 +14,9 @@
 #include <sys/stat.h>
 
 #include "snapshot.h"
-
 #include "alloc.h"
 #include "breakpoints.h"
 #include "debugger.h"
-#include "geo9000.h"
 #include "json.h"
 #include "libretro_host.h"
 #include "machine.h"

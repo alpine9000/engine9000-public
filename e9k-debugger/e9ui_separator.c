@@ -1,11 +1,13 @@
-// e9ui separator component
-#include "e9ui_separator.h"
-#include "alloc.h"
-#include "debugger.h"
-#include "e9ui_scale.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include <SDL.h>
-#include <SDL_ttf.h>
+#include "e9ui.h"
+#include "debugger.h"
 
 typedef struct e9ui_separator_state {
     int width;

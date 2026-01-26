@@ -1,13 +1,13 @@
-// e9ui badge component implementation
-#include "e9ui_badge.h"
-#include "e9ui_context.h"
-#include "e9ui_text_cache.h"
-#include "debugger.h"
-#include "debug.h"
+/*
+ * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ *
+ * https://github.com/alpine9000/engine9000-public
+ *
+ * See COPYING for license details
+ */
 
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include "e9ui.h"
+#include "debugger.h"
 
 typedef struct e9ui_badge_state {
     char *left;
