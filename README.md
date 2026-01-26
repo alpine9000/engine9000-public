@@ -2,7 +2,9 @@
 
 *** NOTE - this is brand new software with almost no usage yet - expect instability/missing features/crashes ***
 
-ENGINE9000 DEBUGGER/PROFILER is a Neo Geo debugger/profiler developed mainly to assist with game dev.
+Neo Geo debugger/profiler developed while I was learning Neo Geo programming over the xmas vacation.
+
+![Debugger UI](assets/debugger.png)
 
 The debugger includes the `geo9000` emulator which is a fork of `geolith-libretro`, which is itself a fork of the original `geolith` emulator:
 
@@ -25,9 +27,11 @@ Supported platforms:
 - Smoke tester (record scenarios, replay, check all video frames identical)
 - Fake Neo Geo peripherals for debug console and profile checkpoints
 
-
 ### Debugging Features
 
+![Console](assets/console.png)
+
+- UI or Console based debug
 - Pause / continue
 - Step line / step instruction / next (step over)
 - Breakpoints by:
@@ -53,6 +57,8 @@ Supported platforms:
 - These overlay with ROM addresses - other emulators or real neo geo might crash if you use these
 
 ### Profiling Features
+
+![Console](assets/profile.png)
 
 There are two complementary profiling mechanisms:
 
@@ -84,6 +90,9 @@ The debugger keeps a rolling save-state timeline (“state buffer”) implemente
   - Designed for “record inputs + frames” and later replay/compare
 
 ### Sprite Debug Window
+
+![Sprite Debug](assets/sprite_debug.png)
+
 - Available via a hidden button in the emulator window - hover in top right hand corner to reveal
 - Renders a full view of the Neo Geo coordinate space allowing visualsation of off screen sprites
 - Renders a "sprite-line" histogram showing how close you are to hitting the Neo Geo sprites-per-line limits
