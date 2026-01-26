@@ -847,7 +847,7 @@ libretro_host_clearState(void)
 {
     libretro_host_clearFrame();
     if (libretro_host.stateData) {
-        free(libretro_host.stateData);
+        alloc_free(libretro_host.stateData);
         libretro_host.stateData = NULL;
         libretro_host.stateSize = 0;
     }
@@ -1043,7 +1043,7 @@ libretro_host_shutdown(void)
         libretro_host.romSize = 0;
     }
     if (libretro_host.stateData) {
-        free(libretro_host.stateData);
+        alloc_free(libretro_host.stateData);
         libretro_host.stateData = NULL;
         libretro_host.stateSize = 0;
     }
@@ -1777,22 +1777,22 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff)
     }
     uint8_t *prev = NULL;
     if (libretro_host.stateData && libretro_host.stateSize == size) {
-        prev = (uint8_t*)malloc(size);
+        prev = (uint8_t*)alloc_alloc(size);
         if (prev) {
             memcpy(prev, libretro_host.stateData, size);
         }
     }
     if (!libretro_host.stateData || libretro_host.stateSize != size) {
-        uint8_t *buf = (uint8_t*)realloc(libretro_host.stateData, size);
+        uint8_t *buf = (uint8_t*)alloc_realloc(libretro_host.stateData, size);
         if (!buf) {
-            free(prev);
+            alloc_free(prev);
             return false;
         }
         libretro_host.stateData = buf;
         libretro_host.stateSize = size;
     }
     if (!libretro_host.serialize(libretro_host.stateData, libretro_host.stateSize)) {
-        free(prev);
+        alloc_free(prev);
         return false;
     }
     if (out_size) {
@@ -1807,7 +1807,7 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff)
         }
         *out_diff = diff;
     }
-    free(prev);
+    alloc_free(prev);
     return true;
 }
 

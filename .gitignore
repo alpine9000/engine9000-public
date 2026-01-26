@@ -1,3 +1,6 @@
 .DS_Store
 TODO.txt
 .e9k-debugger.cfg
+*.pxd
+AGENTS.md
+e9k-debugger/docs

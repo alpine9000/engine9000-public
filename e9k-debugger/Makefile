@@ -1,7 +1,7 @@
 CC ?= cc
 PKG_CONFIG ?= pkg-config
 MINGW_HOME ?= /usr/local/mingw
-DEBUG_FLAGS=-g -fno-omit-frame-pointer #-fsanitize=address,undefined 
+DEBUG_FLAGS=-g -fno-omit-frame-pointer -fsanitize=address,undefined 
 CFLAGS += $(DEBUG_FLAGS) -Wall -Wextra -std=c99 -MMD -MP -Werror -pthread -O2 -flto
 CFLAGS += -I../geo9000/libretro
 CFLAGS += -I../geo9000/src

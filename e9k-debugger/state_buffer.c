@@ -50,22 +50,22 @@ state_buffer_reset(state_buffer_t *buf)
         state_frame_t *f = &buf->frames[buf->start + i];
         state_buffer_clearFrame(f);
     }
-    free(buf->frames);
+    alloc_free(buf->frames);
     buf->frames = NULL;
     buf->count = 0;
     buf->cap = 0;
     buf->start = 0;
     buf->total_bytes = 0;
     buf->next_id = 0;
-    free(buf->prev_state);
+    alloc_free(buf->prev_state);
     buf->prev_state = NULL;
     buf->prev_size = 0;
-    free(buf->temp_state);
+    alloc_free(buf->temp_state);
     buf->temp_state = NULL;
     buf->temp_size = 0;
-    free(buf->recon_a);
+    alloc_free(buf->recon_a);
     buf->recon_a = NULL;
-    free(buf->recon_b);
+    alloc_free(buf->recon_b);
     buf->recon_b = NULL;
     buf->recon_size = 0;
     buf->paused = 0;
@@ -78,7 +78,7 @@ state_buffer_clearFrame(state_frame_t *f)
     if (!f) {
         return;
     }
-    free(f->payload);
+    alloc_free(f->payload);
     f->payload = NULL;
     f->payload_size = 0;
     f->state_size = 0;
@@ -96,11 +96,11 @@ state_buffer_ensureRecon(state_buffer_t *buf, size_t size)
     if (buf->recon_size == size && buf->recon_a && buf->recon_b) {
         return 1;
     }
-    uint8_t *a = (uint8_t*)realloc(buf->recon_a, size);
+    uint8_t *a = (uint8_t*)alloc_realloc(buf->recon_a, size);
     if (!a) {
         return 0;
     }
-    uint8_t *b = (uint8_t*)realloc(buf->recon_b, size);
+    uint8_t *b = (uint8_t*)alloc_realloc(buf->recon_b, size);
     if (!b) {
         buf->recon_a = a;
         return 0;
@@ -240,16 +240,16 @@ state_buffer_rekey_next(state_buffer_t *buf)
     if (!first->is_keyframe || first->state_size == 0 || next->state_size != first->state_size) {
         return;
     }
-    uint8_t *full = (uint8_t*)malloc(first->state_size);
+    uint8_t *full = (uint8_t*)alloc_alloc(first->state_size);
     if (!full) {
         return;
     }
     if (!apply_diff(full, first->state_size, first->payload, first->state_size,
                     next->payload, next->payload_size)) {
-        free(full);
+        alloc_free(full);
         return;
     }
-    free(next->payload);
+    alloc_free(next->payload);
     next->payload = full;
     buf->total_bytes -= next->payload_size;
     next->payload_size = first->state_size;
@@ -307,7 +307,7 @@ state_buffer_capture(void)
         return;
     }
     if (!state_buffer.current.temp_state || state_buffer.current.temp_size != state_size) {
-        uint8_t *buf = (uint8_t*)realloc(state_buffer.current.temp_state, state_size);
+        uint8_t *buf = (uint8_t*)alloc_realloc(state_buffer.current.temp_state, state_size);
         if (!buf) {
             return;
         }
@@ -331,7 +331,7 @@ state_buffer_capture(void)
 
     if (state_buffer.current.count + state_buffer.current.start >= state_buffer.current.cap) {
         size_t new_cap = state_buffer.current.cap ? state_buffer.current.cap * 2 : 64;
-        state_frame_t *tmp = (state_frame_t*)realloc(state_buffer.current.frames, new_cap * sizeof(state_frame_t));
+        state_frame_t *tmp = (state_frame_t*)alloc_realloc(state_buffer.current.frames, new_cap * sizeof(state_frame_t));
         if (!tmp) {
             return;
         }
@@ -346,7 +346,7 @@ state_buffer_capture(void)
     frame->state_size = state_size;
     frame->is_keyframe = is_keyframe ? 1 : 0;
     frame->payload_size = payload_size;
-    frame->payload = (uint8_t*)malloc(payload_size);
+    frame->payload = (uint8_t*)alloc_alloc(payload_size);
     if (!frame->payload) {
         return;
     }
@@ -360,7 +360,7 @@ state_buffer_capture(void)
     state_buffer.current.total_bytes += payload_size;
 
     if (!state_buffer.current.prev_state || state_buffer.current.prev_size != state_size) {
-        uint8_t *prev = (uint8_t*)realloc(state_buffer.current.prev_state, state_size);
+        uint8_t *prev = (uint8_t*)alloc_realloc(state_buffer.current.prev_state, state_size);
         if (!prev) {
             return;
         }
@@ -664,7 +664,7 @@ state_buffer_trimAfterPercent(float percent)
     }
     state_buffer.current.count = idx + 1;
     if (!state_buffer.current.prev_state || state_buffer.current.prev_size != state_size) {
-        uint8_t *prev = (uint8_t*)realloc(state_buffer.current.prev_state, state_size);
+        uint8_t *prev = (uint8_t*)alloc_realloc(state_buffer.current.prev_state, state_size);
         if (!prev) {
             return 0;
         }
@@ -699,7 +699,7 @@ state_buffer_trimAfterFrameNo(uint64_t frame_no)
     }
     state_buffer.current.count = idx + 1;
     if (!state_buffer.current.prev_state || state_buffer.current.prev_size != state_size) {
-        uint8_t *prev = (uint8_t*)realloc(state_buffer.current.prev_state, state_size);
+        uint8_t *prev = (uint8_t*)alloc_realloc(state_buffer.current.prev_state, state_size);
         if (!prev) {
             return 0;
         }
@@ -727,7 +727,7 @@ state_buffer_clone(state_buffer_t *dst, const state_buffer_t *src)
     dst->current_frame_no = src->current_frame_no;
 
     if (src->count > 0) {
-        dst->frames = (state_frame_t*)calloc(src->count, sizeof(state_frame_t));
+        dst->frames = (state_frame_t*)alloc_calloc(src->count, sizeof(state_frame_t));
         if (!dst->frames) {
             state_buffer_reset(dst);
             return 0;
@@ -741,7 +741,7 @@ state_buffer_clone(state_buffer_t *dst, const state_buffer_t *src)
             d->state_size = s->state_size;
             d->payload_size = s->payload_size;
             if (s->payload_size > 0) {
-                d->payload = (uint8_t*)malloc(s->payload_size);
+                d->payload = (uint8_t*)alloc_alloc(s->payload_size);
                 if (!d->payload) {
                     state_buffer_reset(dst);
                     return 0;
@@ -751,7 +751,7 @@ state_buffer_clone(state_buffer_t *dst, const state_buffer_t *src)
         }
     }
     if (src->prev_state && src->prev_size > 0) {
-        dst->prev_state = (uint8_t*)malloc(src->prev_size);
+        dst->prev_state = (uint8_t*)alloc_alloc(src->prev_size);
         if (!dst->prev_state) {
             state_buffer_reset(dst);
             return 0;
