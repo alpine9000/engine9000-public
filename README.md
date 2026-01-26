@@ -36,6 +36,7 @@ Supported platforms:
 - Trainer/cheat mode
 - Smoke tester (record scenarios, replay, check all video frames identical)
 - Fake Neo Geo peripherals for debug console and profile checkpoints
+- Sprite debug visualiser
 
 ### Debugging Features
 
