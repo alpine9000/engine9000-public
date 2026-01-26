@@ -14,9 +14,11 @@
 #include "cli.h"
 
 #include "debugger.h"
+#include "debug.h"
 #include "smoke_test.h"
 
 static int cli_helpRequestedFlag = 0;
+static int cli_errorFlag = 0;
 static char cli_savedArgv0[PATH_MAX];
 
 static void
@@ -41,6 +43,15 @@ cli_copyPath(char *dest, size_t capacity, const char *src)
     }
     strncpy(dest, src, capacity - 1);
     dest[capacity - 1] = '\0';
+}
+
+static void
+cli_setError(const char *message)
+{
+    if (message && *message) {
+        debug_error("%s", message);
+    }
+    cli_errorFlag = 1;
 }
 
 void
@@ -206,7 +217,15 @@ cli_parseArgs(int argc, char **argv)
             debugger.smokeTestMode = SMOKE_TEST_MODE_RECORD;
             continue;
         }
+        if (strcmp(argv[i], "--make-smoke") == 0) {
+            cli_setError("make-smoke: missing folder path");
+            return;
+        }
         if (strncmp(argv[i], "--make-smoke=", sizeof("--make-smoke=") - 1) == 0) {
+            if (argv[i][sizeof("--make-smoke=") - 1] == '\0') {
+                cli_setError("make-smoke: missing folder path");
+                return;
+            }
             cli_copyPath(debugger.smokeTestPath, sizeof(debugger.smokeTestPath),
                          argv[i] + sizeof("--make-smoke=") - 1);
             debugger.smokeTestMode = SMOKE_TEST_MODE_RECORD;
@@ -217,7 +236,15 @@ cli_parseArgs(int argc, char **argv)
             debugger.smokeTestMode = SMOKE_TEST_MODE_COMPARE;
             continue;
         }
+        if (strcmp(argv[i], "--smoke-test") == 0) {
+            cli_setError("smoke-test: missing folder path");
+            return;
+        }
         if (strncmp(argv[i], "--smoke-test=", sizeof("--smoke-test=") - 1) == 0) {
+            if (argv[i][sizeof("--smoke-test=") - 1] == '\0') {
+                cli_setError("smoke-test: missing folder path");
+                return;
+            }
             cli_copyPath(debugger.smokeTestPath, sizeof(debugger.smokeTestPath),
                          argv[i] + sizeof("--smoke-test=") - 1);
             debugger.smokeTestMode = SMOKE_TEST_MODE_COMPARE;
@@ -238,6 +265,12 @@ int
 cli_helpRequested(void)
 {
     return cli_helpRequestedFlag;
+}
+
+int
+cli_hasError(void)
+{
+    return cli_errorFlag;
 }
 
 void

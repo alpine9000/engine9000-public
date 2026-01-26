@@ -20,6 +20,9 @@ cli_parseArgs(int argc, char **argv);
 int
 cli_helpRequested(void);
 
+int
+cli_hasError(void);
+
 void
 cli_printUsage(const char *argv0);
 

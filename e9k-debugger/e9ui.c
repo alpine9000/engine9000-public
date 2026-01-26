@@ -38,6 +38,7 @@
 #include "debug_font.h"
 #include "e9ui_theme.h"
 #include "debug.h"
+#include "smoke_test.h"
 #include "sprite_debug.h"
 #include "libretro_host.h"
 #include "libretro.h"
@@ -755,7 +756,7 @@ e9ui_findById(e9ui_component_t *root, const char *id)
 void
 e9ui_loadLayoutComponents(void)
 {
-    if (debugger.smokeTestMode != 0) {
+    if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
         e9ui_component_t *geoBox = e9ui_findById(debugger.ui.root, "libretro_box");
         if (geoBox) {
             debugger.ui.fullscreen = geoBox;

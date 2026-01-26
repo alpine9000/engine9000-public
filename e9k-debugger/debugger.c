@@ -297,8 +297,14 @@ debugger_main(int argc, char **argv)
     cli_printUsage(argv && argv[0] ? argv[0] : NULL);
     return 0;
   }
+  if (cli_hasError()) {
+    cli_printUsage(argv && argv[0] ? argv[0] : NULL);
+    return 1;
+  }
   if (debugger.smokeTestMode != SMOKE_TEST_MODE_NONE) {
-    debugger.speedMultiplier = 10;
+    if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
+      debugger.speedMultiplier = 10;
+    }
     if (debugger.smokeTestMode == SMOKE_TEST_MODE_RECORD) {
       if (debugger.playbackPath[0]) {
         debug_error("make-smoke: cannot use --playback with --make-smoke");
