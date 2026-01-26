@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__TITLE__</title>
+    <style>
+      :root { --bg:#0b0f12; --panel:#12181d; --text:#e5eef5; --muted:#9bb0bf; --accent:#4cc3ff; --accent-weak:rgba(76,195,255,.2); }
+      *{box-sizing:border-box}
+      /* Pixel Operator fonts embedding (optional, injected by generator) */
+      /*__PIXEL_FACES__*/
+      :root{ --ui-font: 'Pixel Operator'; --mono-font: 'Pixel Operator Mono'; --ui-size: 14px; --mono-size: 12px; }
+      html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--ui-font), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; font-size: var(--ui-size);}
+      #app{max-width:1200px;margin:24px auto;padding:0 16px}
+      .header{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px}
+      .logo{flex:0 0 auto}
+      .head-right{display:flex;flex-direction:column;gap:6px;flex:1}
+      .brand{font-size:20px;font-weight:700;letter-spacing:.08em;color:var(--text);font-family:'PixelOperator8-Bold','Pixel Operator',ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+      .stats-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+      .meta{color:var(--muted);font-size:12px}
+      .controls{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+      .controls input,.controls select{background:var(--panel);color:var(--text);border:1px solid #1f2a33;padding:6px 8px;border-radius:6px}
+      .pill{padding:6px 10px;border-radius:999px;border:1px solid #20303b;background:#0f151a;color:var(--muted);cursor:pointer}
+      .pill.active{border-color:var(--accent);color:var(--accent);background:var(--accent-weak)}
+      .summary{display:flex;gap:16px;flex-wrap:wrap;margin:0 0 12px}
+      .card{background:var(--panel);padding:10px 12px;border-radius:8px;border:1px solid #1f2a33}
+      .value{font-weight:600}
+      .label{color:var(--muted);font-size:12px}
+      table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid #1f2a33;border-radius:8px;overflow:hidden}
+      thead th{text-align:left;color:var(--muted);font-weight:500;font-size:12px;letter-spacing:.02em;background:#0f151a}
+      th,td{padding:8px 10px;border-bottom:1px solid #1b252d;vertical-align:top}
+      tbody tr:hover{background:#0f1419}
+      .mono{font-family:var(--mono-font), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: var(--mono-size)}
+      .fontSel{background:var(--panel);color:var(--text);border:1px solid #1f2a33;padding:4px 6px;border-radius:6px;font-size:12px}
+      .nowrap{white-space:nowrap}
+      .pct{height:6px;border-radius:4px;background:#0c1217;position:relative}
+      .pct>span{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--accent)}
+      .source{color:#cfe7ff;white-space:pre-wrap}
+      .footer{color:var(--muted);font-size:12px;margin-top:12px}
+      .badge{display:inline-block;padding:2px 6px;border-radius:999px;border:1px solid #2a3a45;background:#0f151a;color:#cfe7ff;font-size:11px}
+      .badge.ok{border-color:#1c6f3a;background:#0e1a15;color:#9ef2c3}
+      .badge.warn{border-color:#6f3a1c;background:#1a110e;color:#ffd7b3}
+      /* Source rows */
+      /* Two-column layout for rows: address | data */
+      .srcRow{display:grid;grid-template-columns:60px 1fr;column-gap:8px;align-items:baseline}
+      .srcRow .ln{color:#9bb0bf;text-align:right;padding:0 4px;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .srcRow .code{min-width:0;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}
+      /* Wider address column for ASM and Mixed views */
+      #bodyAsm .srcRow{grid-template-columns:140px 1fr}
+      #bodyMix .srcRow{grid-template-columns:140px 1fr}
+      .srcRow.hl{background:#203345;border-left:4px solid var(--accent)}
+      .srcRow.hl .ln{background:#203345;color:#cfe7ff}
+      /* Mixed view: do not highlight C source rows */
+      #bodyMix .srcRow.src.hl{background:transparent;border-left:none}
+      #bodyMix .srcRow.src.hl .ln{background:transparent;color:var(--muted)}
+      /* Link styling for readability and accessibility */
+      a{color:var(--accent);text-decoration:none}
+      a:hover{color:#8ad7ff;text-decoration:underline;text-underline-offset:2px}
+      a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+      a.viewSrc{color:var(--text);text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:2px}
+      a.viewSrc:hover{color:var(--accent)}
+      a.viewSrc:visited{color:var(--text)}
+      /* Source overlay */
+      .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:none;align-items:center;justify-content:center}
+      .overlay.show{display:flex}
+      .modal{background:var(--panel);border:1px solid #1f2a33;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);width:80vw;max-width:1100px;max-height:85vh;display:flex;flex-direction:column}
+      .modal-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1f2a33;padding:8px 12px}
+      .modal-body{flex:1;overflow:auto}
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="header">
+        <div class="logo"><img id="logo" src="__LOGO_IMG__" alt="Geo Profiler" style="height:50px"/></div>
+        <div class="head-right">
+          <div class="brand">ENGINE9000 PROFILER (NEO GEO 68K)</div>
+          <div class="stats-row">
+            <div class="stats-left" style="display:flex;gap:8px;align-items:center;">
+              <div id="status" class="meta"></div>
+              <div class="meta" id="meta"></div>
+            </div>
+            <div class="stats-right">
+              <button id="toggleConfig" class="pill">Settings</button>
+            </div>
+          </div>
+          <div id="configPanel" class="card" style="display:none; padding:8px;">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <label for="uiFont" class="meta">UI Font</label>
+              <select id="uiFont" class="fontSel"></select>
+              <label for="monoFont" class="meta" style="margin-left:8px;">Mono Font</label>
+              <select id="monoFont" class="fontSel"></select>
+              <label for="uiSize" class="meta" style="margin-left:12px;">UI Size</label>
+              <select id="uiSize" class="fontSel"></select>
+              <label for="monoSize" class="meta" style="margin-left:8px;">Mono Size</label>
+              <select id="monoSize" class="fontSel"></select>
+              <button id="resetPrefs" class="pill" style="margin-left:8px;">Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="summary" id="summary"></div>
+      <div id="diagBox" class="card" style="display:none; padding:8px 12px; white-space:pre-wrap;">
+        <div style="color: var(--muted); font-size: 12px; margin-bottom: 6px;">Diagnostics</div>
+        <div id="diagContent" class="mono"></div>
+      </div>
+      <div class="controls">
+        <input id="q" type="text" placeholder="Search source / file / address…" />
+        <select id="file">
+          <option value="">All files</option>
+        </select>
+        <div id="sortCycles" class="pill">Sort: cycles</div>
+        <div id="sortCount" class="pill">Sort: count</div>
+        <select id="limit">
+          <option>100</option><option>200</option><option selected>500</option><option>1000</option><option>2000</option><option>5000</option>
+        </select>
+      </div>
+      <div id="flameWrap" style="margin: 8px 0 16px; display:none;">
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding: 8px 12px; border-bottom: 1px solid #1f2a33; color: var(--muted); font-size: 12px;">
+            <div>Flame Graph</div>
+            <div>
+              <button id="flameReset" class="pill">Reset</button>
+            </div>
+          </div>
+          <div id="flame" style="width: 100%; overflow-x: auto; position:relative"></div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>File:Line</th><th>Cycles</th><th>%</th><th>Samples</th><th>PC</th><th>Source</th><th>Inline chain</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="footer">Tip: Use search to filter; toggle sort for cycles vs samples.</div>
+      <div id="srcPane" class="overlay">
+        <div class="modal" id="srcModal">
+          <div class="modal-header" style="gap:8px;">
+            <div class="mono" id="srcTitle" style="flex:1"></div>
+            <div>
+              <button id="tabSrc" class="pill">Source</button>
+              <button id="tabAsm" class="pill">ASM</button>
+              <button id="tabMix" class="pill">Mixed</button>
+              <button id="srcClose" class="pill">Close</button>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div id="bodySrc"><pre id="srcCode" class="mono" style="margin:0;padding:12px 12px 12px 0;"></pre></div>
+            <div id="bodyAsm" style="display:none"><pre id="asmCode" class="mono" style="margin:0;padding:12px;"></pre></div>
+            <div id="bodyMix" style="display:none"><pre id="mixCode" class="mono" style="margin:0;padding:12px;"></pre></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script id="data" type="application/json">__DATA_JSON__</script>
+    <script id="sources" type="application/json">__SOURCES_JSON__</script>
+    <script id="asm" type="application/json">__ASM_JSON__</script>
+    <script id="asmMix" type="application/json">__ASM_MIX_JSON__</script>
+    <script id="statusJson" type="application/json">__STATUS_JSON__</script>
+    <script id="flameJson" type="application/json">__FLAME_JSON__</script>
+    <script id="fontsJson" type="application/json">__FONTS_JSON__</script>
+    <script>
+      const $ = (s)=>document.querySelector(s);
+      const fmtNum = (n)=> (n||0).toLocaleString('en-US');
+      const fmtPct = (x)=> isFinite(x)&&!isNaN(x)?((x*100).toFixed(x>=0.1?1:2)+'%'):'0%';
+
+      const data = JSON.parse(document.getElementById('data').textContent);
+      const sources = JSON.parse(document.getElementById('sources').textContent);
+      const asmMap = JSON.parse(document.getElementById('asm').textContent);
+      const asmMix = JSON.parse(document.getElementById('asmMix').textContent);
+      const statusObj = JSON.parse(document.getElementById('statusJson').textContent);
+      const flameObj = JSON.parse(document.getElementById('flameJson').textContent);
+      const fontsObj = JSON.parse(document.getElementById('fontsJson').textContent);
+
+      function renderStatus(){
+        const s = statusObj||{};
+        const parts = [];
+        if (s.asm){
+          const ok = s.asm.ok; const mixed = s.asm.mixed; const tool = s.asm.tool || 'n/a'; const src = s.asm.source||'n/a';
+          parts.push(`<span class="badge ${ok?'ok':'warn'}">ASM: ${ok?'OK':'Off'} (${src})</span>`);
+          parts.push(`<span class="badge ${mixed?'ok':'warn'}">Mixed: ${mixed?'Yes':'No'}</span>`);
+          parts.push(`<span class="badge">Tool: ${tool}</span>`);
+        }
+        if (s.sources){
+          const mode = s.sources.mode; const files = s.sources.files; const base = (s.sources.base||'').toString().split('/').pop();
+          parts.push(`<span class="badge">Src: ${mode} (${files})</span>`);
+          if (base) parts.push(`<span class="badge">Base: ${base}</span>`);
+        }
+        if (Array.isArray(s.errors) && s.errors.length){
+          parts.push(`<span id=\"diagBtn\" class=\"badge warn\" style=\"cursor:pointer\">Diagnostics (${s.errors.length})</span>`);
+        }
+        document.getElementById('status').innerHTML = parts.join(' ');
+        const btn = document.getElementById('diagBtn');
+        if (btn){
+          btn.addEventListener('click', ()=>{
+            const box = document.getElementById('diagBox');
+            box.style.display = (box.style.display==='none'||!box.style.display)?'block':'none';
+          });
+        }
+      }
+
+      function getSourceLine(file, line){
+        if (!sources || !sources.files || !sources.files[file]) return '';
+        const info = sources.files[file];
+        if (info.content){
+          const lines = info.content.split('\n');
+          return lines[line-1] || '';
+        }
+        if (info.ranges){
+          for (const r of info.ranges){
+            const base = r.start||1;
+            const arr = (r.content||'').split('\n');
+            if (line >= base && line < base + arr.length){
+              return arr[line - base] || '';
+            }
+          }
+        }
+        return '';
+      }
+      const state = { q:'', file:'', sort:(data.meta&&data.meta.sort)||'cycles', limit:500 };
+
+      // Header: logo image used; hide meta details (timestamp, path)
+      const metaEl = $('#meta'); if (metaEl) metaEl.style.display = 'none';
+
+      // Font dropdowns
+      function populateFonts(){
+        const ui = fontsObj && Array.isArray(fontsObj.ui) ? fontsObj.ui : [];
+        const mono = fontsObj && Array.isArray(fontsObj.mono) ? fontsObj.mono : [];
+        const uiSel = document.getElementById('uiFont');
+        const monoSel = document.getElementById('monoFont');
+        const uiOptions = [''].concat(ui);
+        const monoOptions = [''].concat(mono);
+        const label = (n, sys) => (n? n : sys);
+        uiSel.innerHTML = uiOptions.map(n=>`<option value="${n}">${label(n,'System UI')}</option>`).join('');
+        monoSel.innerHTML = monoOptions.map(n=>`<option value="${n}">${label(n,'System Mono')}</option>`).join('');
+        // Always default to System fonts on load
+        uiSel.value = '';
+        monoSel.value = '';
+        applyFonts(uiSel.value, monoSel.value);
+        uiSel.addEventListener('change', ()=>{ localStorage.setItem('prof_ui_font', uiSel.value); applyFonts(uiSel.value, monoSel.value); });
+        monoSel.addEventListener('change', ()=>{ localStorage.setItem('prof_mono_font', monoSel.value); applyFonts(uiSel.value, monoSel.value); });
+      }
+      function applyFonts(uiName, monoName){
+        const root = document.documentElement;
+        const q = s => (s && s.includes(' ') ? `'${s}'` : s);
+        root.style.setProperty('--ui-font', uiName ? q(uiName) : 'ui-sans-serif');
+        root.style.setProperty('--mono-font', monoName ? q(monoName) : 'ui-monospace');
+      }
+
+      // Font size dropdowns
+      function populateSizes(){
+        const sizes = [8,9,10,11,12,14,16,18,20,24];
+        const uiSel = document.getElementById('uiSize');
+        const monoSel = document.getElementById('monoSize');
+        uiSel.innerHTML = sizes.map(n=>`<option value="${n}">${n}px</option>`).join('');
+        monoSel.innerHTML = sizes.map(n=>`<option value="${n}">${n}px</option>`).join('');
+        const savedUi = parseInt(localStorage.getItem('prof_ui_size')||'',10);
+        const savedMono = parseInt(localStorage.getItem('prof_mono_size')||'',10);
+        const defUi = isFinite(savedUi)? savedUi : 14;
+        const defMono = isFinite(savedMono)? savedMono : 12;
+        uiSel.value = String(defUi);
+        monoSel.value = String(defMono);
+        applySizes(defUi, defMono);
+        uiSel.addEventListener('change', ()=>{ const v=parseInt(uiSel.value,10); localStorage.setItem('prof_ui_size', String(v)); applySizes(v, parseInt(monoSel.value,10)); });
+        monoSel.addEventListener('change', ()=>{ const v=parseInt(monoSel.value,10); localStorage.setItem('prof_mono_size', String(v)); applySizes(parseInt(uiSel.value,10), v); });
+      }
+      function applySizes(uiPx, monoPx){
+        const root = document.documentElement;
+        if (uiPx) root.style.setProperty('--ui-size', uiPx+'px');
+        if (monoPx) root.style.setProperty('--mono-size', monoPx+'px');
+      }
+
+      // Summary
+      function renderSummary(){
+        const meta = data.meta||{}; const files = meta.files||[];
+        const top = files.slice().sort((a,b)=>b.cycles-a.cycles)[0];
+        const el = $('#summary');
+        el.innerHTML = `
+          <div class="card"><div class="value">${fmtNum(meta.totalCycles||0)}</div><div class="label">Total cycles</div></div>
+          <div class="card"><div class="value">${fmtNum(meta.totalCount||0)}</div><div class="label">Total samples</div></div>
+          <div class="card"><div class="value">${fmtNum(files.length)}</div><div class="label">Files</div></div>
+          ${top?`<div class="card"><div class="value">${top.file}</div><div class="label">Top file by cycles</div></div>`:''}
+        `;
+      }
+
+      // Controls
+      function setupControls(){
+        const files = (data.meta&&data.meta.files)||[];
+        const sel = $('#file');
+        files.sort((a,b)=>b.cycles-a.cycles).forEach(f=>{
+          const o=document.createElement('option');o.value=f.file;o.textContent=`${f.file} (${fmtPct(f.cyclesPct)})`;sel.appendChild(o);
+        });
+        $('#q').addEventListener('input', ev=>{state.q=ev.target.value.toLowerCase(); renderTable();});
+        sel.addEventListener('change', ev=>{state.file=ev.target.value; renderTable();});
+        $('#limit').addEventListener('change', ev=>{state.limit=+ev.target.value; renderTable();});
+        const sc=$('#sortCycles'), sn=$('#sortCount');
+        function updateSortPills(){ sc.classList.toggle('active', state.sort==='cycles'); sn.classList.toggle('active', state.sort==='count'); }
+        sc.addEventListener('click', ()=>{state.sort='cycles'; updateSortPills(); renderTable();});
+        sn.addEventListener('click', ()=>{state.sort='count'; updateSortPills(); renderTable();});
+        updateSortPills();
+      }
+
+      // Table
+      function renderChain(it){
+        const frames = it.function_chain_frames;
+        if (Array.isArray(frames) && frames.length){
+          return frames.map(fr=>{
+            const f = fr.function || fr.loc || (fr.file? (fr.file.split('/').pop()+":"+fr.line): '');
+            const file = fr.file || '';
+            const line = fr.line || 1;
+            return `<a href="#" class="viewSrc" data-file="${escapeHtml(file)}" data-line="${line}" data-pc="${escapeHtml(it.address||'')}">${escapeHtml(f)}</a>`;
+          }).join(' → ');
+        }
+        return escapeHtml(it.function_chain||'');
+      }
+      function row(it){
+        return `
+          <tr>
+            <td class="nowrap mono"><a href="#" class="viewSrc" data-file="${escapeHtml(it.file)}" data-line="${it.line}" data-pc="${escapeHtml(it.address||'')}">${escapeHtml(it.file)}:${it.line}</a></td>
+            <td class="mono nowrap">${fmtNum(it.cycles)}</td>
+            <td><div class="pct"><span style="width:${(Math.max(0,Math.min(1,it.cyclesPct))*100).toFixed(2)}%"></span></div></td>
+            <td class="mono nowrap">${fmtNum(it.count)}</td>
+            <td class="mono nowrap">${escapeHtml(it.address||'')}</td>
+            <td class="source">${escapeHtml(it.source||'')}</td>
+            <td>${renderChain(it)}</td>
+          </tr>`;
+      }
+      function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      function renderTable(){
+        const q = state.q; const sortKey = state.sort==='count'?'count':'cycles';
+        let items = data.entries || [];
+        if(state.file) items = items.filter(it=>it.file===state.file);
+        if(q) items = items.filter(it=>{
+          if ((it.source && it.source.toLowerCase().includes(q)) ||
+              it.file.toLowerCase().includes(q) ||
+              (it.function_chain && it.function_chain.toLowerCase().includes(q)) ||
+              (it.address && it.address.toLowerCase().includes(q))) return true;
+          const frames = it.function_chain_frames;
+          if (Array.isArray(frames)){
+            for (const fr of frames){
+              const f = (fr.function||'') + ' ' + (fr.loc||'') + ' ' + (fr.file||'');
+              if (f.toLowerCase().includes(q)) return true;
+            }
+          }
+          return false;
+        });
+        items = items.slice().sort((a,b)=> (b[sortKey]-a[sortKey]) || a.file.localeCompare(b.file) || (a.line-b.line)).slice(0,state.limit);
+        const tbody = $('#tbody');
+        tbody.innerHTML = items.map(row).join('');
+        tbody.querySelectorAll('a.viewSrc').forEach(a=>{
+          a.addEventListener('click', (ev)=>{
+            ev.preventDefault();
+            openSource(a.dataset.file, parseInt(a.dataset.line,10)||1, a.dataset.pc||'');
+          });
+        });
+      }
+
+      // Source pane management
+      const srcPane = document.getElementById('srcPane');
+      const srcModal = document.getElementById('srcModal');
+      function closeSrc(){ srcPane.classList.remove('show'); }
+      document.getElementById('srcClose').addEventListener('click', closeSrc);
+      srcPane.addEventListener('click', (ev)=>{ if (ev.target===srcPane) closeSrc(); });
+      document.addEventListener('keydown', (ev)=>{ if (ev.key==='Escape') closeSrc(); });
+      const tabSrc = document.getElementById('tabSrc');
+      const tabAsm = document.getElementById('tabAsm');
+      const tabMix = document.getElementById('tabMix');
+      let currentTab = 'src';
+      let srcScroll = 0;
+      let asmScroll = 0;
+      let mixScroll = 0;
+      function showTab(which){
+        const container = document.querySelector('#srcModal .modal-body');
+        if (currentTab === 'src') srcScroll = container.scrollTop; else if (currentTab==='asm') asmScroll = container.scrollTop; else mixScroll = container.scrollTop;
+        document.getElementById('bodySrc').style.display = which==='src'?'block':'none';
+        document.getElementById('bodyAsm').style.display = which==='asm'?'block':'none';
+        document.getElementById('bodyMix').style.display = which==='mix'?'block':'none';
+        tabSrc.classList.toggle('active', which==='src');
+        tabAsm.classList.toggle('active', which==='asm');
+        tabMix.classList.toggle('active', which==='mix');
+        container.scrollTop = which==='src' ? srcScroll : which==='asm' ? asmScroll : mixScroll;
+        // Center highlight in ASM/Mixed when switching to those tabs
+        if (which==='asm'){
+          const hl = document.querySelector('#bodyAsm .srcRow.hl');
+          if (hl){
+            const desired = hl.offsetTop - (container.clientHeight/2) + (hl.clientHeight/2);
+            container.scrollTop = Math.max(0, desired);
+          }
+        } else if (which==='mix'){
+          const hlm = document.querySelector('#bodyMix .srcRow.insn.hl');
+          if (hlm){
+            const desired = hlm.offsetTop - (container.clientHeight/2) + (hlm.clientHeight/2);
+            container.scrollTop = Math.max(0, desired);
+          }
+        }
+        currentTab = which;
+      }
+      tabSrc.addEventListener('click', ()=>showTab('src'));
+      tabAsm.addEventListener('click', ()=>showTab('asm'));
+      tabMix.addEventListener('click', ()=>showTab('mix'));
+
+      function openSource(file, line, pc){
+        if(!sources || !sources.files || !sources.files[file]){
+          alert('Source not embedded. Re-run generator with --src-base and --embed-source full or context');
+          return;
+        }
+        const info = sources.files[file];
+        let html = '';
+        let scrollToIndex = 0;
+        if (info.content) {
+          const lines = info.content.split('\n');
+          html = lines.map((txt, idx)=>{
+            const ln = idx+1;
+            const esc = escapeHtml(txt);
+            const isHl = (ln===line);
+            return `<div class="srcRow${isHl?' hl':''}"><div class="ln">${ln}</div><div class="code">${esc}</div></div>`;
+          }).join('');
+          scrollToIndex = Math.max(0, line-1);
+        } else if (info.ranges && info.ranges.length) {
+          const found = info.ranges.find(r => {
+            const len = r.content.split('\n').length;
+            return line >= r.start && line < r.start + len;
+          });
+          const r = found || info.ranges[0];
+          const base = r.start;
+          const lines = r.content.split('\n');
+          html = lines.map((txt, idx)=>{
+            const ln = base + idx;
+            const esc = escapeHtml(txt);
+            const isHl = (ln===line);
+            return `<div class="srcRow${isHl?' hl':''}"><div class="ln">${ln}</div><div class="code">${esc}</div></div>`;
+          }).join('');
+          scrollToIndex = Math.max(0, Math.min(lines.length-1, line - base));
+        } else {
+          alert('Source data missing');
+          return;
+        }
+        document.getElementById('srcTitle').textContent = `${file}  (line ${line})`;
+        const pre = document.getElementById('srcCode');
+        pre.innerHTML = html;
+        srcPane.classList.add('show');
+        // Ensure Source tab is visible before computing offsets
+        currentTab = 'src';
+        showTab('src');
+        const container = document.querySelector('#srcModal .modal-body');
+        const target = pre.children[scrollToIndex];
+        if (target) {
+          const desired = target.offsetTop - (container.clientHeight / 2) + (target.clientHeight / 2);
+          container.scrollTop = Math.max(0, desired);
+        }
+        // Persist centered scroll for Source tab
+        srcScroll = container.scrollTop;
+        // Render ASM
+        const asmPre = document.getElementById('asmCode');
+        if (pc && asmMap && asmMap[pc.toLowerCase()]){
+          const rows = asmMap[pc.toLowerCase()];
+          asmPre.innerHTML = rows.map(r=>{
+            const addr = r.address||'';
+            const txt = r.text||'';
+            const hl = r.isPC ? ' hl' : '';
+            return `<div class="srcRow${hl}"><div class="ln">${addr}</div><div class="code">${escapeHtml(txt)}</div></div>`;
+          }).join('');
+          // keep source active by default
+        } else {
+          asmPre.textContent = 'No ASM available';
+          // stay on source tab
+        }
+        // Render Mixed (interleave source+asm if file/line present)
+        const mixPre = document.getElementById('mixCode');
+        const key = pc ? pc.toLowerCase() : '';
+        if (key && asmMix && asmMix[key]){
+          const rows2 = asmMix[key];
+          const mixHtml = rows2.map(r=>{
+            if (r.kind==='src'){
+              const ln = r.line || '';
+              const txt = r.text || '';
+              return `<div class=\"srcRow src hl\"><div class=\"ln\">${ln}</div><div class=\"code\">${escapeHtml(txt)}</div></div>`;
+            } else {
+              const addr2 = r.address||'';
+              const txt2 = r.text||'';
+              const hl2 = r.isPC ? ' hl' : '';
+              return `<div class=\"srcRow insn${hl2}\"><div class=\"ln\">${addr2}</div><div class=\"code\">${escapeHtml(txt2)}</div></div>`;
+            }
+          }).join('');
+          mixPre.innerHTML = mixHtml || 'No mixed view available';
+        } else {
+          mixPre.textContent = 'No mixed view available';
+        }
+      }
+
+      renderSummary();
+      renderStatus();
+      populateFonts();
+      populateSizes();
+      // Interactive flame graph
+      (function(){
+        const data = flameObj;
+        const wrap = document.getElementById('flameWrap');
+        const host = document.getElementById('flame');
+        if (!data || !wrap || !host) return;
+        wrap.style.display = 'block';
+        let focus = data; // current root (zoom)
+        function total(n){
+          if (!n) return 0;
+          let v = n.value||0;
+          if (Array.isArray(n.children)) for (const c of n.children) v += total(c);
+          return v;
+        }
+        function layout(n, x, y, w, level, nodes){
+          const h = 18; const pad = 2;
+          if (!n) return;
+          nodes.push({x,y,w,h,name:n.name,value:n.value,node:n});
+          if (!n.children || !n.children.length) return;
+          let curX = x;
+          const sum = n.children.reduce((s,c)=> s + total(c), 0) || 1;
+          for (const c of n.children){
+            const cw = w * (total(c)/sum);
+            if (cw <= 0.5) continue;
+            layout(c, curX, y + h + pad, cw, level+1, nodes);
+            curX += cw;
+          }
+        }
+        function render(){
+          host.innerHTML = '';
+          const W = host.clientWidth || 800;
+          const nodes = [];
+          const sum = total(focus) || 1;
+          layout(focus, 0, 0, W, 0, nodes);
+          const svgNS = 'http://www.w3.org/2000/svg';
+          const svg = document.createElementNS(svgNS, 'svg');
+          const H = nodes.length ? (Math.max(...nodes.map(n=>n.y + n.h))+2) : 40;
+          svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+          svg.setAttribute('width', '100%');
+          function color(name){ let h=0; for (const ch of name) h=(h*131+ch.charCodeAt(0))>>>0; return `hsl(${h%360} 65% 55%)`; }
+          nodes.forEach((r)=>{
+            const g = document.createElementNS(svgNS,'g');
+            const rect = document.createElementNS(svgNS,'rect');
+            rect.setAttribute('x', r.x.toFixed(2)); rect.setAttribute('y', r.y);
+            rect.setAttribute('width', r.w.toFixed(2)); rect.setAttribute('height', r.h);
+            rect.setAttribute('fill', color(r.name)); rect.setAttribute('stroke','#111'); rect.setAttribute('stroke-width','0.5');
+            rect.addEventListener('click', (ev)=>{ ev.stopPropagation(); focus = r.node; render(); });
+            const title = document.createElementNS(svgNS,'title');
+            title.textContent = `${r.name} • ${Math.round((total(r.node)/sum)*1000)/10}%`;
+            rect.appendChild(title);
+            g.appendChild(rect);
+            if (r.w >= 40){
+              const text = document.createElementNS(svgNS,'text');
+              text.setAttribute('x', (r.x+4).toFixed(2)); text.setAttribute('y', r.y + r.h - 5);
+              text.setAttribute('fill', '#000'); text.setAttribute('font-size','11'); text.textContent = r.name;
+              g.appendChild(text);
+            }
+            svg.appendChild(g);
+          });
+          svg.addEventListener('click', ()=>{ if (focus && focus!==data){ focus = data; render(); } });
+          host.appendChild(svg);
+        }
+        render();
+        const reset = document.getElementById('flameReset');
+        if (reset) reset.addEventListener('click', ()=>{ focus = data; render(); });
+        // Rerender on resize
+        window.addEventListener('resize', ()=>{ render(); });
+      })();
+      // Toggle UI config panel
+      (function(){
+        const btn = document.getElementById('toggleConfig');
+        const panel = document.getElementById('configPanel');
+        if (btn && panel){
+          btn.addEventListener('click', ()=>{
+            panel.style.display = (panel.style.display==='none' || !panel.style.display) ? 'block' : 'none';
+          });
+        }
+      })();
+      // Reset button: restore defaults and clear saved preferences
+      (function(){
+        const btn = document.getElementById('resetPrefs');
+        if (!btn) return;
+        btn.addEventListener('click', ()=>{
+          try{
+            localStorage.removeItem('prof_ui_font');
+            localStorage.removeItem('prof_mono_font');
+            localStorage.removeItem('prof_ui_size');
+            localStorage.removeItem('prof_mono_size');
+          }catch(e){}
+          const uiF = document.getElementById('uiFont');
+          const moF = document.getElementById('monoFont');
+          const uiS = document.getElementById('uiSize');
+          const moS = document.getElementById('monoSize');
+          if (uiF) uiF.value = '';
+          if (moF) moF.value = '';
+          applyFonts('', '');
+          if (uiS) uiS.value = '14';
+          if (moS) moS.value = '12';
+          applySizes(14, 12);
+        });
+      })();
+      // Populate diagnostics
+      (function(){
+        const s = statusObj||{}; const el = document.getElementById('diagContent');
+        if (!el) return;
+        const errs = Array.isArray(s.errors)? s.errors: [];
+        const lines = [];
+        if (s.asm){
+          lines.push(`ASM ok: ${s.asm.ok} source: ${s.asm.source||'n/a'} tool: ${s.asm.tool||'n/a'} mixed: ${s.asm.mixed}`);
+        }
+        if (s.sources){
+          lines.push(`Sources mode: ${s.sources.mode} base: ${s.sources.base||'n/a'} files: ${s.sources.files||0}`);
+        }
+        if (errs.length){
+          lines.push('Errors:');
+          for (const e of errs) lines.push(` - ${e}`);
+        }
+        el.textContent = lines.join('\n');
+      })();
+      // Show flame if present
+      (function(){ const f = document.getElementById('flame'); if (f && f.innerHTML.trim()!=='' && !/No data|failed/i.test(f.innerHTML)) document.getElementById('flameWrap').style.display='block'; })();
+      setupControls();
+      renderTable();
+    </script>
+  </body>
+  </html>

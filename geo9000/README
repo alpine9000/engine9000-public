@@ -1,0 +1,114 @@
+--== hacked version for ENGINE9000 DEBUGGER PROFILER ==--
+
+This version extends the libretro API for many additional debugger functions.
+
+This is not useful outside of the ENGINE9000 DEBUGGER PROFILER, use the original.
+
+Thanks to all authors for such great software that's so easy to hack!
+
+--== ORIGINAL README.MD FOLLOWS ==--
+
+geolith-libretro
+----------------
+Geolith is a highly accurate emulator for the Neo Geo AES and MVS.
+
+This emulator supports TerraOnion's .NEO file format only.
+
+BIOS files from a recent MAME set are required:
+ - aes.zip for Neo Geo AES (Home Console)
+ - neogeo.zip for Neo Geo MVS (Arcade) and Unibios
+
+This is the libretro port of the Geolith emulator, whose upstream repository
+lives at: https://gitlab.com/jgemu/geolith
+
+ROM Set Support
+---------------
+This emulator was written against ROMs with checksums equal to those of the
+LunaGarlic set. It is recommended to use these checksums to verify your
+legally obtained dumps are correct. Check the included "rename-neo.sh" for
+more information.
+
+Input Devices
+-------------
+geolith-libretro supports the following input devices:
+
+Neo Geo Joystick
+Multiplayer Extension Board (NEO-FTC1B, 4 Player)
+V-Liner
+
+Compatibility
+-------------
+Geolith is compatible with 100% of the commercially released Neo Geo AES and
+MVS libraries. Most games work in both modes, but some require MVS mode.
+
+All bootlegs and hacks from the MAME set are compatible, the majority of which
+require being run in MVS mode. Other bootlegs and hacks not in the MAME set may
+be compatible if correctly converted to the .NEO format.
+
+Some MVS releases will exhibit glitches when run on an AES BIOS. Home Console
+releases are preferred when running in AES mode.
+
+Some early prototypes are not currently possible to emulate, pending new dumps
+or new information:
+  Stakes Winner (early development board) - Missing data from SRAM chip
+
+Dedicated JAMMA PCB and Neo Geo CD systems are not currently supported.
+PAL mode is not currently supported.
+
+The special inputs for Irritating Maze are not yet supported. It is possible to
+play Irritating Maze using the Universe BIOS with a cheat enabled for joystick
+controls.
+
+Accuracy/Caveats
+----------------
+Geolith's CPUs are emulated at instruction level granularity and are very
+tightly synced to each other as well as the LSPC (video) and YM2610 (sound).
+Video related events are timed with a "best effort" approach based on available
+documentation, with future original hardware research on the agenda. The longer
+term goal is to have completely cycle accurate video rendering, but for now,
+things are emulated accurately enough that all games are fully playable with
+only very minor differences from real hardware, and no known major bugs.
+
+Contributing
+------------
+Any contributions should respect the coding style and the direction and goals
+of this emulator. All code should be placed under a permissive license (BSD,
+MIT, etc). Changes made for portability or speed should be as generic as
+possible, and any preprocessor directives for platform-specific code should be
+avoided at all costs in the interest of keeping the emulator core clean,
+maintainable, and free of regressions.
+
+Copyright
+---------
+Geolith (BSD-3-Clause)
+  Copyright (c) 2022-2024 Rupert Carmichael
+  See LICENSE
+
+Jolly Good Z80 (MIT)
+  Copyright (c) 2019 Nicolas Allemand
+  Copyright (c) 2020-2022 Rupert Carmichael
+  Copyright (c) 2022 rofl0r
+  See src/z80/LICENSE
+
+miniz (MIT)
+  Copyright 2013-2014 RAD Game Tools and Valve Software
+  Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
+  See deps/miniz/miniz.c (https://github.com/richgel999/miniz)
+
+Musashi (MIT)
+  Copyright (c) 1998-2019 Karl Stenerud
+  See src/m68k/readme.txt (https://github.com/kstenerud/Musashi)
+
+Speex Resampler (BSD-3-Clause)
+  Copyright (c) 2003, 2007, 2008 Xiph.org Foundation
+  See source files in deps/speex/ (https://github.com/xiph/speexdsp)
+
+YMFM-C (BSD-3-Clause)
+  Copyright (c) 2021 Aaron Giles
+  Copyright (c) 2022 Rupert Carmichael
+  See source files in src/ymfm
+
+Extra Credits
+-------------
+This emulator could not have been written without the hard work and research
+done by the FinalBurn Neo project, MAME, GnGeo, and the NeoGeo Development Wiki.

@@ -1,0 +1,7 @@
+*.o
+*.so
+*.dll
+*.dylib
+geolith_libretro.*
+objs/
+tools

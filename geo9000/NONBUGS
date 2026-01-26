@@ -1,0 +1,61 @@
+Confirmed Non-bugs
+------------------
+Bugs listed here have been confirmed to exist on real hardware.
+
+System ROM (MVS)
+----------------
+ - Top right corner of FIX layer is slow to update leading to a tearing effect
+   on the bootup screen
+
+Ganryu
+------
+ - Clicks and pops when performing some actions and in some background music
+
+King of Fighters 2003 (Bootlegs)
+--------------------------------
+ - Incorrect zooming
+
+Master of Syougi (Master of Shougi)
+-----------------------------------
+ - Reflection raster effect in title screen starts one line too late, leading
+   to the top line of text data not moving as part of the reflection
+
+Metal Slug 4
+------------
+ - Parental advisory screen has incorrect FIX layer banking leading to wrong
+   graphics
+
+Nightmare in the Dark
+---------------------
+ - Jumping sound effects are glitchy
+
+Ninja Commando
+--------------
+ - Corrupted title image in attract mode
+ - Glitches in the graphics on the left and right panels in the text scene when
+   starting the game -- this depends on BIOS region/revision
+
+Samurai Shodown 4
+-----------------
+ - A block on the right side of the top blue horizontal border area disappears
+   during the intro scene due to the sprite limit being reached
+ - Top right corner of FIX layer is not updated quickly enough to turn the
+   entire screen white during "flash" events in the intro scene
+ - Some screen transitions show the top right corner slow to update
+
+Samurai Shodown 5
+-----------------
+ - Some screen transitions show the top right corner slow to update
+
+Shinobi (Homebrew port for Neo Geo)
+-----------------------------------
+ - Clicks and pops in audio during certain sequences
+
+Shock Troopers: 2nd Squad
+-------------------------
+ - Graphical corruption near top of screen during intro sequence and during
+   gameplay
+
+Super Sidekicks 2
+-----------------
+ - Field exhibits some instability due to timer interrupt imperfections

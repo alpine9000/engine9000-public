@@ -1,0 +1,49 @@
+INCFLAGS := -I$(CORE_DIR)/deps -I$(CORE_DIR)/deps/libretro-common/include \
+	-I$(CORE_DIR)/deps/miniz -I$(CORE_DIR)/src -I$(CORE_DIR)/libretro
+
+## External SDL windows removed; no SDL dependencies needed
+
+ifeq ($(platform),unix)
+LIBS += -lm
+endif
+
+SOURCES_C := \
+	$(CORE_DIR)/libretro/libretro.c \
+	$(CORE_DIR)/deps/libretro-common/compat/compat_posix_string.c \
+	$(CORE_DIR)/deps/libretro-common/compat/compat_strl.c \
+	$(CORE_DIR)/deps/libretro-common/compat/fopen_utf8.c \
+	$(CORE_DIR)/deps/libretro-common/encodings/encoding_utf.c \
+	$(CORE_DIR)/deps/libretro-common/file/file_path.c \
+	$(CORE_DIR)/deps/libretro-common/streams/file_stream.c \
+	$(CORE_DIR)/deps/libretro-common/streams/file_stream_transforms.c \
+	$(CORE_DIR)/deps/libretro-common/string/stdstring.c \
+	$(CORE_DIR)/deps/libretro-common/time/rtime.c \
+	$(CORE_DIR)/deps/libretro-common/vfs/vfs_implementation.c \
+	$(CORE_DIR)/deps/miniz/miniz.c \
+	$(CORE_DIR)/deps/speex/resample.c \
+	$(CORE_DIR)/src/geo.c \
+	$(CORE_DIR)/src/geo_lspc.c \
+	$(CORE_DIR)/src/geo_m68k.c \
+	$(CORE_DIR)/src/geo_memcard.c \
+	$(CORE_DIR)/src/geo_mixer.c \
+	$(CORE_DIR)/src/geo_neo.c \
+	$(CORE_DIR)/src/geo_rtc.c \
+	$(CORE_DIR)/src/geo_serial.c \
+	$(CORE_DIR)/src/geo_ymfm.c \
+	$(CORE_DIR)/src/geo_z80.c \
+	$(CORE_DIR)/src/geo_profiler.c \
+	$(CORE_DIR)/src/geo_profiler_elf.c \
+	$(CORE_DIR)/src/geo_notify.c \
+	$(CORE_DIR)/src/geo_debug_text.c \
+	$(CORE_DIR)/src/geo_debugger.c \
+	$(CORE_DIR)/src/geo_protect.c \
+	$(CORE_DIR)/src/geo_hooks.c \
+	$(CORE_DIR)/src/geo_checkpoint.c \
+	$(CORE_DIR)/src/geo_cycles.c \
+	$(CORE_DIR)/src/m68k/m68kcpu.c \
+	$(CORE_DIR)/src/m68k/m68kdasm.c \
+	$(CORE_DIR)/src/m68k/m68kops.c \
+	$(CORE_DIR)/src/ymfm/ymfm_adpcm.c \
+	$(CORE_DIR)/src/ymfm/ymfm_opn.c \
+	$(CORE_DIR)/src/ymfm/ymfm_ssg.c \
+	$(CORE_DIR)/src/z80/z80.c
