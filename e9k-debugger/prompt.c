@@ -182,7 +182,7 @@ prompt_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
     if (st && st->textbox && st->textbox->preferredHeight) {
         return st->textbox->preferredHeight(st->textbox, ctx, availW);
     }
-    TTF_Font *useFont = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *useFont = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     int lh = useFont ? TTF_FontHeight(useFont) : 16;
     if (lh <= 0) {
         lh = 16;
@@ -201,7 +201,7 @@ prompt_layoutComp(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bound
     const char *promptStr = self->disabled ? "" : "> ";
     int pad = 10;
     int prefixW = 0;
-    TTF_Font *useFont = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *useFont = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     if (useFont && promptStr[0]) {
         TTF_SizeText(useFont, promptStr, &prefixW, NULL);
     }
@@ -218,7 +218,7 @@ static void
 prompt_render(e9ui_component_t *self, e9ui_context_t *ctx)
 {
   prompt_state_t *st = (prompt_state_t*)self->state;
-  TTF_Font *useFont = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+  TTF_Font *useFont = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
   int lh = font_line_height_local(useFont);
   SDL_Color colc = {200,200,200,255};
   SDL_Color pcol = {160,200,255,255};

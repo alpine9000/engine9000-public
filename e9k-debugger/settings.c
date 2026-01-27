@@ -137,21 +137,21 @@ settings_copyConfig(e9k_path_config_t *dest, const e9k_path_config_t *src)
 static void
 settings_closeModal(void)
 {
-    if (!debugger.ui.settingsModal) {
+    if (!e9ui->settingsModal) {
         return;
     }
-    e9ui_setHidden(debugger.ui.settingsModal, 1);
-    if (!debugger.ui.pendingRemove) {
-        debugger.ui.pendingRemove = debugger.ui.settingsModal;
+    e9ui_setHidden(e9ui->settingsModal, 1);
+    if (!e9ui->pendingRemove) {
+        e9ui->pendingRemove = e9ui->settingsModal;
     }
-    debugger.ui.settingsModal = NULL;
-    debugger.ui.settingsSaveButton = NULL;
+    e9ui->settingsModal = NULL;
+    e9ui->settingsSaveButton = NULL;
 }
 
 void
 settings_cancelModal(void)
 {
-    if (!debugger.ui.settingsModal) {
+    if (!e9ui->settingsModal) {
         return;
     }
     settings_copyConfig(&debugger.settingsEdit, &debugger.config);
@@ -161,15 +161,15 @@ settings_cancelModal(void)
 void
 settings_updateButton(int settingsOk)
 {
-    if (!debugger.ui.settingsButton) {
+    if (!e9ui->settingsButton) {
         return;
     }
     if (!settingsOk) {
-        e9ui_button_setTheme(debugger.ui.settingsButton, e9ui_theme_button_preset_red());
-        e9ui_button_setGlowPulse(debugger.ui.settingsButton, 1);
+        e9ui_button_setTheme(e9ui->settingsButton, e9ui_theme_button_preset_red());
+        e9ui_button_setGlowPulse(e9ui->settingsButton, 1);
     } else {
-        e9ui_button_clearTheme(debugger.ui.settingsButton);
-        e9ui_button_setGlowPulse(debugger.ui.settingsButton, 0);
+        e9ui_button_clearTheme(e9ui->settingsButton);
+        e9ui_button_setGlowPulse(e9ui->settingsButton, 0);
     }
 }
 
@@ -245,23 +245,23 @@ settings_needsRestart(void)
 static void
 settings_updateSaveLabel(void)
 {
-    if (!debugger.ui.settingsSaveButton) {
+    if (!e9ui->settingsSaveButton) {
         return;
     }
     const char *label = settings_needsRestart() ? "Save and Restart" : "Save";
-    e9ui_button_setLabel(debugger.ui.settingsSaveButton, label);
+    e9ui_button_setLabel(e9ui->settingsSaveButton, label);
 }
 
 void
 settings_applyToolbarMode(void)
 {
-    if (!debugger.ui.toolbar || !debugger.ui.settingsButton) {
+    if (!e9ui->toolbar || !e9ui->settingsButton) {
         return;
     }
     if (!settings_configMissingPaths()) {
         return;
     }
-    int childCount = list_count(debugger.ui.toolbar->children);
+    int childCount = list_count(e9ui->toolbar->children);
     if (childCount <= 0) {
         return;
     }
@@ -269,24 +269,24 @@ settings_applyToolbarMode(void)
     if (!kids) {
         return;
     }
-    int childTotal = e9ui_child_enumerateREMOVETHIS(debugger.ui.toolbar, &debugger.ui.ctx, kids, childCount);
+    int childTotal = e9ui_child_enumerateREMOVETHIS(e9ui->toolbar, &e9ui->ctx, kids, childCount);
     for (int childIndex = 0; childIndex < childTotal; ++childIndex) {
-        if (kids[childIndex] && kids[childIndex] != debugger.ui.settingsButton) {
-            e9ui_childRemove(debugger.ui.toolbar, kids[childIndex], &debugger.ui.ctx);
+        if (kids[childIndex] && kids[childIndex] != e9ui->settingsButton) {
+            e9ui_childRemove(e9ui->toolbar, kids[childIndex], &e9ui->ctx);
         }
     }
     alloc_free(kids);
-    debugger.ui.profileButton = NULL;
-    debugger.ui.analyseButton = NULL;
-    debugger.ui.speedButton = NULL;
-    debugger.ui.restartButton = NULL;
-    debugger.ui.resetButton = NULL;
+    e9ui->profileButton = NULL;
+    e9ui->analyseButton = NULL;
+    e9ui->speedButton = NULL;
+    e9ui->restartButton = NULL;
+    e9ui->resetButton = NULL;
 }
 
 static int
 settings_checkboxGetMargin(const e9ui_context_t *ctx)
 {
-    int base = debugger.theme.checkbox.margin;
+    int base = e9ui->theme.checkbox.margin;
     if (base <= 0) {
         base = E9UI_THEME_CHECKBOX_MARGIN;
     }
@@ -297,7 +297,7 @@ settings_checkboxGetMargin(const e9ui_context_t *ctx)
 static int
 settings_checkboxGetTextGap(const e9ui_context_t *ctx)
 {
-    int base = debugger.theme.checkbox.textGap;
+    int base = e9ui->theme.checkbox.textGap;
     if (base <= 0) {
         base = E9UI_THEME_CHECKBOX_TEXT_GAP;
     }
@@ -308,7 +308,7 @@ settings_checkboxGetTextGap(const e9ui_context_t *ctx)
 static int
 settings_checkboxMeasureWidth(const char *label, e9ui_context_t *ctx)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int textW = 0;
     int textH = 0;
     if (font && label && *label) {
@@ -501,13 +501,13 @@ settings_funChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, v
     (void)ctx;
     (void)user;
     if (selected) {
-        if (debugger.transitionMode == e9k_transition_none) {
-            debugger.transitionMode = e9k_transition_random;
+        if (e9ui->transition.mode == e9k_transition_none) {
+            e9ui->transition.mode = e9k_transition_random;
         }
     } else {
-        debugger.transitionMode = e9k_transition_none;
+        e9ui->transition.mode = e9k_transition_none;
     }
-    debugger.transitionFullscreenModeSet = 0;
+    e9ui->transition.fullscreenModeSet = 0;
     config_saveConfig();
 }
 
@@ -585,7 +585,7 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
     if (!ctx) {
         return;
     }
-    if (debugger.ui.settingsModal) {
+    if (e9ui->settingsModal) {
         return;
     }
     int margin = e9ui_scale_px(ctx, 32);
@@ -595,8 +595,8 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
     if (modalHeight < 1) modalHeight = 1;
     e9ui_rect_t rect = { margin, margin, modalWidth, modalHeight };
     settings_copyConfig(&debugger.settingsEdit, &debugger.config);
-    debugger.ui.settingsModal = e9ui_modal_show(ctx, "Settings", rect, settings_uiClosed, NULL);
-    if (debugger.ui.settingsModal) {
+    e9ui->settingsModal = e9ui_modal_show(ctx, "Settings", rect, settings_uiClosed, NULL);
+    if (e9ui->settingsModal) {
         const char *rom_exts[] = { "*.neo" };
         const char *elf_exts[] = { "*.elf" };
         e9ui_component_t *fs_rom = e9ui_fileSelect_make("ROM", 120, 600, "...", rom_exts, 1, E9UI_FILESELECT_FILE);
@@ -614,7 +614,7 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
                                                       debugger.settingsEdit.crtEnabled,
                                                       settings_crtChanged,
                                                       &debugger.settingsEdit.crtEnabled);
-        int funSelected = (debugger.transitionMode != e9k_transition_none);
+        int funSelected = (e9ui->transition.mode != e9k_transition_none);
         e9ui_component_t *cb_fun = e9ui_checkbox_make("FUN",
                                                       funSelected,
                                                       settings_funChanged,
@@ -744,7 +744,7 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
         e9ui_component_t *center = e9ui_center_make(stack);
         e9ui_component_t *btn_save = e9ui_button_make("Save", settings_uiSave, NULL);
         e9ui_component_t *btn_cancel = e9ui_button_make("Cancel", settings_uiCancel, NULL);
-        debugger.ui.settingsSaveButton = btn_save;
+        e9ui->settingsSaveButton = btn_save;
         settings_updateSaveLabel();
         e9ui_component_t *footer = e9ui_flow_make();
         e9ui_flow_setPadding(footer, 0);
@@ -783,6 +783,6 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
         e9ui_component_t *overlay = e9ui_overlay_make(center, footer);
         e9ui_overlay_setAnchor(overlay, e9ui_anchor_bottom_right);
         e9ui_overlay_setMargin(overlay, 12);
-        e9ui_modal_setBodyChild(debugger.ui.settingsModal, overlay, ctx);
+        e9ui_modal_setBodyChild(e9ui->settingsModal, overlay, ctx);
     }
 }

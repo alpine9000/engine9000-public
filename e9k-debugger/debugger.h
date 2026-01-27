@@ -30,37 +30,11 @@ typedef struct e9k_debug_options {
     int redirectStderr; 
     int redirectGdbStdout; 
     int enableTrace; 
-    int debugLayout; 
     int completionListRows;
 } e9k_debug_options_t;
 
-typedef struct e9k_hotkey_entry {
-    int id;
-    int key;   // SDL_Keycode
-    int mask;  // SDL_Keymod mask
-    int value; // SDL_Keymod value
-    void (*cb)(e9ui_context_t *ctx, void *user);
-    void *user;
-    int  active;
-} e9k_hotkey_entry_t;
 
-typedef struct e9k_hotkey_registry {
-    e9k_hotkey_entry_t *entries;
-    int count;
-    int cap;
-    int next_id;
-} e9k_hotkey_registry_t;
 
-typedef struct e9k_layout_config {
-    float splitSrcConsole;
-    float splitUpper;
-    float splitRight;
-    float splitLr;
-    int   winX;
-    int   winY;
-    int   winW;
-    int   winH;
-} e9k_layout_config_t;
 
 typedef struct e9k_path_config {
     char corePath[PATH_MAX];
@@ -77,16 +51,7 @@ typedef struct e9k_path_config {
     int  crtEnabled;
 } e9k_path_config_t;
 
-typedef enum e9k_transition_mode {
-    e9k_transition_none = 0,
-    e9k_transition_slide,
-    e9k_transition_explode,
-    e9k_transition_doom,
-    e9k_transition_flip,
-    e9k_transition_rbar,
-    e9k_transition_random,
-    e9k_transition_cycle
-} e9k_transition_mode_t;
+
 
 typedef enum {
   DEBUGGER_RUNMODE_CAPTURE,
@@ -102,30 +67,6 @@ typedef struct e9k_debugger {
     e9k_path_config_t cliConfig;
     e9k_path_config_t settingsEdit;
     struct {
-        int mouseX;
-        int mouseY;
-        e9ui_component_t *root;
-        e9ui_component_child_t* rootComponent;
-        e9ui_context_t    ctx;
-        e9ui_component_t *toolbar; 
-        e9ui_component_t *profileButton; 
-        e9ui_component_t *analyseButton;
-        e9ui_component_t *speedButton; 
-        e9ui_component_t *restartButton;
-        e9ui_component_t *resetButton;
-        e9ui_component_t *audioButton; 
-        e9ui_component_t *settingsButton;
-        e9ui_component_t *settingsModal; 
-        e9ui_component_t *settingsSaveButton;
-        e9ui_component_t *helpModal; 
-        e9ui_component_t *prompt; 
-        e9ui_component_t *pendingRemove; 
-        e9ui_component_t *sourceBox; 
-        e9ui_component_t *fullscreen;
-        char sourceTitle[PATH_MAX];
-        e9k_hotkey_registry_t hotkeys;
-    } ui;
-    struct {
         int connected;
         int sock;
         int port;
@@ -138,7 +79,6 @@ typedef struct e9k_debugger {
     int speedMultiplier;
     int frameStepMode;
     int frameStepPending;
-    int inTransition;
     int suppressBpActive;
     uint32_t suppressBpAddr;
     uint64_t frameCounter;
@@ -160,24 +100,10 @@ typedef struct e9k_debugger {
     int cliWindowOverride;
     int cliWindowW;
     int cliWindowH;
-    int glCompositeEnabled;
-    int glCompositeCapture;
     int settingsOk;
     int elfValid;
     int restartRequested;
-    int transitionFullscreenModeSet;
-    e9k_transition_mode_t transitionMode;
-    e9k_transition_mode_t transitionFullscreenMode;
-    int transitionCycleIndex;
     e9k_debug_options_t opts;
-    struct {
-        e9k_theme_button_t button;
-        e9k_theme_button_t miniButton;
-        e9k_theme_text_t   text;
-        e9k_theme_titlebar_t titlebar;
-        e9k_theme_checkbox_t checkbox;
-        e9k_theme_disabled_t disabled;
-    } theme;
     struct {
         char corePath[PATH_MAX];
         char romPath[PATH_MAX];
@@ -188,9 +114,9 @@ typedef struct e9k_debugger {
     int loopEnabled;
     uint64_t loopFrom;
     uint64_t loopTo;
-    e9k_layout_config_t layout;
 } e9k_debugger_t;
 
+extern e9ui_global_t _e9ui;
 extern e9k_debugger_t debugger;
 
 char *

@@ -117,10 +117,10 @@ runtime_runLoop(void)
     static char dbg_line[1024];
     static size_t dbg_line_len = 0;
     while (1) {
-        if (debugger.inTransition < 0) {
-            debugger.inTransition += 5;
-            if (debugger.inTransition > 0) {
-                debugger.inTransition = 0;
+        if (e9ui->transition.inTransition < 0) {
+            e9ui->transition.inTransition += 5;
+            if (e9ui->transition.inTransition > 0) {
+                e9ui->transition.inTransition = 0;
             }
         }
         if (signal_getExitCode() || e9ui_processEvents()) {
@@ -129,9 +129,9 @@ runtime_runLoop(void)
         if (debugger.restartRequested) {
             break;
         }
-        if (debugger.ui.pendingRemove && debugger.ui.root) {
-            e9ui_childRemove(debugger.ui.root, debugger.ui.pendingRemove, &debugger.ui.ctx);
-            debugger.ui.pendingRemove = NULL;
+        if (e9ui->pendingRemove && e9ui->root) {
+            e9ui_childRemove(e9ui->root, e9ui->pendingRemove, &e9ui->ctx);
+            e9ui->pendingRemove = NULL;
         }
         if (debugger.libretro.enabled) {
             int paused = 0;

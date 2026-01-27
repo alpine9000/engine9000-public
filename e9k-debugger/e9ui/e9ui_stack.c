@@ -6,10 +6,7 @@
  * See COPYING for license details
  */
 
-
 #include "e9ui.h"
-#include "debugger.h"
-
 
 typedef struct e9ui_stack_item {
     int isFlex;  // 0 = fixed, 1 = flex
@@ -93,7 +90,7 @@ e9ui_stack_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bound
 static void
 e9ui_stack_render(e9ui_component_t *self, e9ui_context_t *ctx)
 {
-  if (ctx && ctx->renderer && debugger.inTransition <= 0) {
+  if (ctx && ctx->renderer && e9ui->transition.inTransition <= 0) {
     SDL_Rect bg = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
     SDL_SetRenderDrawColor(ctx->renderer, 0, 0, 0, 255);
     SDL_RenderFillRect(ctx->renderer, &bg);

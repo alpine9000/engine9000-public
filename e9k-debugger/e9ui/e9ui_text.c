@@ -6,17 +6,7 @@
  * See COPYING for license details
  */
 
-
-#include <SDL_ttf.h>
-#include <string.h>
-#include <limits.h>
-
 #include "e9ui.h"
-#include "debugger.h"
-#include "file.h"
-#include "alloc.h"
-#include "debug.h"
-
 
 typedef struct e9ui_text_state {
     char *text;
@@ -31,7 +21,7 @@ typedef struct e9ui_text_state {
 static int
 text_getBaseSize(void)
 {
-    int base = debugger.theme.text.fontSize;
+    int base = e9ui->theme.text.fontSize;
     if (base <= 0) {
         base = E9UI_THEME_TEXT_FONT_SIZE;
     }
@@ -57,7 +47,7 @@ text_getFont(e9ui_text_state_t *st, e9ui_context_t *ctx)
         TTF_CloseFont(st->font);
         st->font = NULL;
     }
-    const char *asset = debugger.theme.text.fontAsset ? debugger.theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
+    const char *asset = e9ui->theme.text.fontAsset ? e9ui->theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
     char path[PATH_MAX];
     if (!file_getAssetPath(asset, path, sizeof(path))) {
         return NULL;

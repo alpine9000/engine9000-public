@@ -7,7 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
 
 typedef struct e9ui_scroll_state {
     e9ui_component_t *child;
@@ -20,7 +19,7 @@ typedef struct e9ui_scroll_state {
 static int
 scroll_measureLineHeight(e9ui_context_t *ctx)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int lineHeight = font ? TTF_FontHeight(font) : 0;
     if (lineHeight <= 0) {
         lineHeight = 16;

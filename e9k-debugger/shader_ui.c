@@ -133,16 +133,16 @@ static e9k_shader_ui_t shader_ui_state = {0};
 static void
 shader_ui_refocusMain(void)
 {
-    SDL_Window *main_win = debugger.ui.ctx.window;
+    SDL_Window *main_win = e9ui->ctx.window;
     if (!main_win) {
         return;
     }
     SDL_ShowWindow(main_win);
     SDL_RaiseWindow(main_win);
     SDL_SetWindowInputFocus(main_win);
-    e9ui_component_t *geo = e9ui_findById(debugger.ui.root, "geo_view");
+    e9ui_component_t *geo = e9ui_findById(e9ui->root, "geo_view");
     if (geo) {
-        e9ui_setFocus(&debugger.ui.ctx, geo);
+        e9ui_setFocus(&e9ui->ctx, geo);
     }
 }
 
@@ -312,7 +312,7 @@ shader_ui_sliderRowPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, 
     if (barH <= 0) {
         barH = e9ui_scale_px(ctx, SHADER_UI_BAR_H);
     }
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     int textH = font ? TTF_FontHeight(font) : barH;
     if (textH < barH) {
         textH = barH;
@@ -364,7 +364,7 @@ shader_ui_sliderRowRender(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     shader_ui_slider_row_state_t *st = (shader_ui_slider_row_state_t*)self->state;
     if (st->label && *st->label) {
-        TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+        TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
         if (font) {
             SDL_Color color = (SDL_Color){220, 220, 220, 255};
             int tw = 0;
@@ -1169,7 +1169,7 @@ shader_ui_init(void)
     ui->windowId = SDL_GetWindowID(win);
     ui->ctx.window = win;
     ui->ctx.renderer = ren;
-    ui->ctx.font = debugger.ui.ctx.font;
+    ui->ctx.font = e9ui->ctx.font;
     ui->ctx.dpiScale = shader_ui_computeDpiScale(&ui->ctx);
     shader_ui_snapshot(ui);
     ui->closeRequested = 0;
@@ -1326,7 +1326,7 @@ shader_ui_render(void)
         shader_ui_shutdown();
         return;
     }
-    ui->ctx.font = debugger.ui.ctx.font;
+    ui->ctx.font = e9ui->ctx.font;
     ui->ctx.window = ui->window;
     ui->ctx.renderer = ui->renderer;
     shader_ui_syncState(ui);

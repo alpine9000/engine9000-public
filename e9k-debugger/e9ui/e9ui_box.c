@@ -7,8 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
-
 
 typedef struct e9ui_box_state {
     e9ui_component_t *child;
@@ -204,7 +202,7 @@ e9ui_box_getFullscreenButtonRect(e9ui_box_state_t *st, e9ui_context_t *ctx, SDL_
         return 0;
     }
     e9ui_box_ensureFullscreenIcon(st, ctx);
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int textH = font ? TTF_FontHeight(font) : 16;
     if (textH <= 0) {
         textH = 16;
@@ -238,7 +236,7 @@ e9ui_box_titlebarHeight(e9ui_box_state_t *st, e9ui_context_t *ctx)
         return 0;
     }
     e9ui_box_ensureTitleIcon(st, ctx);
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int textH = font ? TTF_FontHeight(font) : 16;
     if (textH <= 0) {
         textH = 16;
@@ -259,13 +257,13 @@ e9ui_box_drawTitlebar(e9ui_box_state_t *st, e9ui_context_t *ctx, SDL_Rect rect)
     if (!st || !ctx) {
         return;
     }
-    const e9k_theme_titlebar_t *theme = &debugger.theme.titlebar;
+    const e9k_theme_titlebar_t *theme = &e9ui->theme.titlebar;
     int padX = e9ui_scale_px(ctx, 8);
     int x = rect.x + padX;
     int iconSpacing = e9ui_scale_px(ctx, 6);
     e9ui_box_ensureTitleIcon(st, ctx);
     e9ui_box_ensureFullscreenIcon(st, ctx);
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int textH = font ? TTF_FontHeight(font) : 16;
     if (textH <= 0) {
         textH = 16;
@@ -384,7 +382,7 @@ e9ui_box_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bounds)
 static void
 e9ui_box_render(e9ui_component_t *self, e9ui_context_t *ctx)
 {
-    if (ctx && ctx->renderer && debugger.inTransition <= 0) {
+    if (ctx && ctx->renderer && e9ui->transition.inTransition <= 0) {
         SDL_Rect bg = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
         SDL_SetRenderDrawColor(ctx->renderer, 0, 0, 0, 255);
         SDL_RenderFillRect(ctx->renderer, &bg);
@@ -397,7 +395,7 @@ e9ui_box_render(e9ui_component_t *self, e9ui_context_t *ctx)
         }
     }
     if (titleH > 0) {
-        SDL_Color bg = debugger.theme.titlebar.background;
+        SDL_Color bg = e9ui->theme.titlebar.background;
         SDL_Rect titleRect = { self->bounds.x, self->bounds.y, self->bounds.w, titleH };
         SDL_SetRenderDrawColor(ctx->renderer, bg.r, bg.g, bg.b, bg.a);
         SDL_RenderFillRect(ctx->renderer, &titleRect);
@@ -408,7 +406,7 @@ e9ui_box_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     // Render optional borders on top of child
     int thickness = e9ui_scale_px(ctx, st->borderThick);
-    if (st->borderMask && thickness > 0 && debugger.inTransition <= 0) {
+    if (st->borderMask && thickness > 0 && e9ui->transition.inTransition <= 0) {
         SDL_SetRenderDrawColor(ctx->renderer, st->borderColor.r, st->borderColor.g, st->borderColor.b, st->borderColor.a);
         SDL_Rect b = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
         int t = thickness;

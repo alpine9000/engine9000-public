@@ -16,11 +16,13 @@
 
 #include "memory_track_ui.h"
 #include "alloc.h"
+#include "config.h"
 #include "debug.h"
 #include "debugger.h"
 #include "e9ui.h"
 #include "e9ui_button.h"
 #include "e9ui_hstack.h"
+#include "e9ui_link.h"
 #include "e9ui_scroll.h"
 #include "e9ui_spacer.h"
 #include "e9ui_stack.h"
@@ -89,6 +91,11 @@ struct memory_track_ui {
     char **filterTexts;
     size_t filterTextsCap;
     size_t filterTextsCount;
+    char **filterParseTexts;
+    size_t filterParseCap;
+    uint32_t *filterParseValues;
+    int *filterParseActive;
+    int *filterParseOk;
     e9ui_component_t **addressLinks;
     size_t addressLinksCap;
     size_t addressLinksCount;
@@ -97,8 +104,27 @@ struct memory_track_ui {
     uint32_t *addresses;
     size_t addressCount;
     size_t addressCap;
+    uint32_t *baseAddresses;
+    size_t baseAddressCount;
+    size_t baseAddressCap;
+    uint8_t *addressSeen;
+    size_t addressSeenCap;
+    uint8_t *scratchBase;
+    uint8_t *scratchCur;
+    uint8_t *scratchRef;
+    size_t scratchSize;
+    uint64_t *scratchFrameNos;
+    int *scratchFrameActive;
+    size_t scratchFrameCap;
     size_t *frameIndices;
     size_t frameIndicesCap;
+    uint64_t *cachedFrameNos;
+    int *cachedFrameActive;
+    size_t cachedFrameCap;
+    int cachedColumnCount;
+    int cachedAccessSize;
+    int cacheValid;
+    uint64_t cachedBuildFrameNo;
     int columnCount;
     int columnWidth;
     int addressWidth;
@@ -123,7 +149,9 @@ struct memory_track_ui {
 static memory_track_ui_t memory_track_ui_state = {0};
 
 static void
-memory_track_ui_clearAddressLinks(memory_track_ui_t *ui);
+memory_track_ui_destroyAddressLinks(memory_track_ui_t *ui);
+static void
+memory_track_ui_resetAddressLinks(memory_track_ui_t *ui);
 
 static void
 memory_track_ui_clearFrameMarkersInternal(memory_track_ui_t *ui);
@@ -134,16 +162,16 @@ memory_track_ui_clearFrameMarkers(e9ui_context_t *ctx, void *user);
 static void
 memory_track_ui_refocusMain(void)
 {
-    SDL_Window *mainWin = debugger.ui.ctx.window;
+    SDL_Window *mainWin = e9ui->ctx.window;
     if (!mainWin) {
         return;
     }
     SDL_ShowWindow(mainWin);
     SDL_RaiseWindow(mainWin);
     SDL_SetWindowInputFocus(mainWin);
-    e9ui_component_t *geo = e9ui_findById(debugger.ui.root, "geo_view");
+    e9ui_component_t *geo = e9ui_findById(e9ui->root, "geo_view");
     if (geo) {
-        e9ui_setFocus(&debugger.ui.ctx, geo);
+        e9ui_setFocus(&e9ui->ctx, geo);
     }
 }
 
@@ -224,13 +252,123 @@ memory_track_ui_readValueBE(const uint8_t *data, int size)
            ((uint32_t)data[2] << 8) | (uint32_t)data[3];
 }
 
+static int
+memory_track_ui_buildVisibleAddresses(memory_track_ui_t *ui, int columnCount, const int *frameActive)
+{
+    if (!ui) {
+        return 0;
+    }
+    ui->addressCount = 0;
+    if (ui->baseAddressCount == 0) {
+        return 1;
+    }
+    if (ui->addressCap < ui->baseAddressCount) {
+        uint32_t *next = (uint32_t*)alloc_realloc(ui->addresses,
+                                                  ui->baseAddressCount * sizeof(uint32_t));
+        if (!next) {
+            return 0;
+        }
+        ui->addresses = next;
+        ui->addressCap = ui->baseAddressCount;
+    }
+    for (size_t i = 0; i < ui->baseAddressCount; ++i) {
+        ui->addresses[i] = ui->baseAddresses[i];
+    }
+    ui->addressCount = ui->baseAddressCount;
+
+    if (ui->requireAllColumns && ui->addressCount > 0) {
+        size_t activeColumns = 0;
+        for (int frameIndex = 1; frameIndex < columnCount; ++frameIndex) {
+            if (frameActive && frameActive[frameIndex]) {
+                activeColumns++;
+            }
+        }
+        if (activeColumns == 0) {
+            ui->addressCount = 0;
+        } else {
+            size_t *indices = (size_t*)alloc_calloc((size_t)columnCount, sizeof(size_t));
+            if (!indices) {
+                return 0;
+            }
+            size_t writeIndex = 0;
+            for (size_t addrIndex = 0; addrIndex < ui->addressCount; ++addrIndex) {
+                uint32_t address = ui->addresses[addrIndex];
+                int allMatch = 1;
+                for (int frameIndex = 1; frameIndex < columnCount; ++frameIndex) {
+                    if (!frameActive || !frameActive[frameIndex]) {
+                        continue;
+                    }
+                    memory_track_frame_data_t *frame = &ui->frames[frameIndex];
+                    size_t idx = indices[frameIndex];
+                    while (idx < frame->entryCount && frame->entries[idx].address < address) {
+                        idx++;
+                    }
+                    indices[frameIndex] = idx;
+                    if (idx >= frame->entryCount || frame->entries[idx].address != address) {
+                        allMatch = 0;
+                        break;
+                    }
+                }
+                if (allMatch) {
+                    ui->addresses[writeIndex++] = address;
+                }
+            }
+            ui->addressCount = writeIndex;
+            alloc_free(indices);
+        }
+    }
+
+    int anyFilter = 0;
+    for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
+        if (ui->filterParseActive && ui->filterParseActive[frameIndex]) {
+            anyFilter = 1;
+            break;
+        }
+    }
+    if (anyFilter && ui->addressCount > 0) {
+        size_t *indices = (size_t*)alloc_calloc((size_t)columnCount, sizeof(size_t));
+        if (!indices) {
+            return 0;
+        }
+        size_t writeIndex = 0;
+        for (size_t addrIndex = 0; addrIndex < ui->addressCount; ++addrIndex) {
+            uint32_t address = ui->addresses[addrIndex];
+            int matches = 1;
+            for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
+                if (!ui->filterParseActive || !ui->filterParseActive[frameIndex]) {
+                    continue;
+                }
+                memory_track_frame_data_t *frame = &ui->frames[frameIndex];
+                size_t idx = indices[frameIndex];
+                while (idx < frame->entryCount && frame->entries[idx].address < address) {
+                    idx++;
+                }
+                indices[frameIndex] = idx;
+                if (idx >= frame->entryCount || frame->entries[idx].address != address) {
+                    matches = 0;
+                    break;
+                }
+                if (frame->entries[idx].value != ui->filterParseValues[frameIndex]) {
+                    matches = 0;
+                    break;
+                }
+            }
+            if (matches) {
+                ui->addresses[writeIndex++] = address;
+            }
+        }
+        ui->addressCount = writeIndex;
+        alloc_free(indices);
+    }
+    return 1;
+}
+
 static void
 memory_track_ui_clearData(memory_track_ui_t *ui)
 {
     if (!ui) {
         return;
     }
-    memory_track_ui_clearAddressLinks(ui);
     if (ui->frames) {
         for (size_t frameIndex = 0; frameIndex < ui->frameCount; ++frameIndex) {
             alloc_free(ui->frames[frameIndex].entries);
@@ -238,15 +376,20 @@ memory_track_ui_clearData(memory_track_ui_t *ui)
         alloc_free(ui->frames);
     }
     alloc_free(ui->addresses);
+    alloc_free(ui->baseAddresses);
     alloc_free(ui->frameIndices);
     ui->frames = NULL;
     ui->frameCount = 0;
     ui->addresses = NULL;
     ui->addressCount = 0;
     ui->addressCap = 0;
+    ui->baseAddresses = NULL;
+    ui->baseAddressCount = 0;
+    ui->baseAddressCap = 0;
     ui->frameIndices = NULL;
     ui->frameIndicesCap = 0;
     ui->hasActiveFrames = 0;
+    ui->cacheValid = 0;
 }
 
 static int
@@ -434,7 +577,7 @@ memory_track_ui_clearFrameMarkers(e9ui_context_t *ctx, void *user)
 }
 
 static void
-memory_track_ui_clearAddressLinks(memory_track_ui_t *ui)
+memory_track_ui_destroyAddressLinks(memory_track_ui_t *ui)
 {
     if (!ui || !ui->addressLinks) {
         if (ui) {
@@ -442,11 +585,25 @@ memory_track_ui_clearAddressLinks(memory_track_ui_t *ui)
         }
         return;
     }
-    for (size_t i = 0; i < ui->addressLinksCount; ++i) {
+    size_t count = ui->addressLinksCount;
+    if (count > ui->addressLinksCap) {
+        count = ui->addressLinksCap;
+        ui->addressLinksCount = count;
+    }
+    for (size_t i = 0; i < count; ++i) {
         if (ui->addressLinks[i]) {
             e9ui_childDestroy(ui->addressLinks[i], &ui->ctx);
             ui->addressLinks[i] = NULL;
         }
+    }
+    ui->addressLinksCount = 0;
+}
+
+static void
+memory_track_ui_resetAddressLinks(memory_track_ui_t *ui)
+{
+    if (!ui) {
+        return;
     }
     ui->addressLinksCount = 0;
 }
@@ -801,51 +958,13 @@ memory_track_ui_access32(e9ui_context_t *ctx, void *user)
 }
 
 static int
-memory_track_ui_compareU32(const void *a, const void *b)
-{
-    uint32_t va = *(const uint32_t*)a;
-    uint32_t vb = *(const uint32_t*)b;
-    if (va < vb) {
-        return -1;
-    }
-    if (va > vb) {
-        return 1;
-    }
-    return 0;
-}
-
-static int
-memory_track_ui_appendAddresses(memory_track_ui_t *ui, const memory_track_entry_t *entries, size_t entryCount)
-{
-    if (!ui || !entries || entryCount == 0) {
-        return 1;
-    }
-    size_t needed = ui->addressCount + entryCount;
-    if (needed > ui->addressCap) {
-        size_t newCap = ui->addressCap ? ui->addressCap : 256;
-        while (newCap < needed) {
-            newCap *= 2;
-        }
-        uint32_t *next = (uint32_t*)alloc_realloc(ui->addresses, newCap * sizeof(uint32_t));
-        if (!next) {
-            return 0;
-        }
-        ui->addresses = next;
-        ui->addressCap = newCap;
-    }
-    for (size_t entryIndex = 0; entryIndex < entryCount; ++entryIndex) {
-        ui->addresses[ui->addressCount++] = entries[entryIndex].address;
-    }
-    return 1;
-}
-
-static int
 memory_track_ui_buildAddressLinks(memory_track_ui_t *ui)
 {
     if (!ui) {
         return 0;
     }
-    memory_track_ui_clearAddressLinks(ui);
+    size_t prevCount = ui->addressLinksCount;
+    memory_track_ui_resetAddressLinks(ui);
     if (ui->addressCount == 0) {
         return 1;
     }
@@ -862,12 +981,24 @@ memory_track_ui_buildAddressLinks(memory_track_ui_t *ui)
         ui->addressLinks = next;
         ui->addressLinksCap = newCap;
     }
+    if (prevCount > ui->addressLinksCap) {
+        prevCount = ui->addressLinksCap;
+    }
     for (size_t i = 0; i < ui->addressCount; ++i) {
         char text[16];
         uint32_t address = ui->addresses[i];
         snprintf(text, sizeof(text), "0x%06X", address & 0x00FFFFFFu);
-        e9ui_component_t *link = e9ui_link_make(text, memory_track_ui_addressLinkClicked,
-                                                (void*)(uintptr_t)address);
+        e9ui_component_t *link = NULL;
+        if (i < prevCount) {
+            link = ui->addressLinks[i];
+        }
+        if (!link) {
+            link = e9ui_link_make(text, memory_track_ui_addressLinkClicked,
+                                  (void*)(uintptr_t)address);
+        } else {
+            e9ui_link_setText(link, text);
+            e9ui_link_setUser(link, (void*)(uintptr_t)address);
+        }
         ui->addressLinks[i] = link;
         if (!link) {
             ui->addressLinksCount = i;
@@ -884,38 +1015,61 @@ memory_track_ui_collectData(memory_track_ui_t *ui, int columnCount)
     if (!ui || columnCount <= 0) {
         return 0;
     }
-    memory_track_ui_clearData(ui);
-    ui->frames = (memory_track_frame_data_t*)alloc_calloc((size_t)columnCount, sizeof(*ui->frames));
-    if (!ui->frames) {
-        memory_track_ui_setError(ui, "Out of memory");
-        return 0;
-    }
 
     uint64_t restoreFrame = state_buffer_getCurrentFrameNo();
-    uint8_t *refBytes = NULL;
-    uint8_t *baseBytes = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
-    uint8_t *curBytes = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
-    uint64_t *frameNos = (uint64_t*)alloc_calloc((size_t)columnCount, sizeof(uint64_t));
-    int *frameActive = (int*)alloc_calloc((size_t)columnCount, sizeof(int));
-    if (!baseBytes || !curBytes || !frameNos || !frameActive) {
+    uint64_t currentFrameNo = restoreFrame;
+    if (ui->scratchSize != MEMORY_TRACK_UI_REGION_SIZE) {
+        ui->scratchBase = NULL;
+        ui->scratchCur = NULL;
+        ui->scratchRef = NULL;
+        ui->scratchSize = 0;
+    }
+    if (!ui->scratchBase) {
+        ui->scratchBase = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
+    }
+    if (!ui->scratchCur) {
+        ui->scratchCur = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
+    }
+    if (!ui->scratchRef) {
+        ui->scratchRef = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
+    }
+    ui->scratchSize = MEMORY_TRACK_UI_REGION_SIZE;
+    if (ui->scratchFrameCap < (size_t)columnCount) {
+        size_t newCap = ui->scratchFrameCap ? ui->scratchFrameCap : 4;
+        while (newCap < (size_t)columnCount) {
+            newCap *= 2;
+        }
+        uint64_t *nextNos = (uint64_t*)alloc_realloc(ui->scratchFrameNos, newCap * sizeof(uint64_t));
+        int *nextActive = (int*)alloc_realloc(ui->scratchFrameActive, newCap * sizeof(int));
+        if (!nextNos || !nextActive) {
+            alloc_free(nextNos);
+            alloc_free(nextActive);
+        } else {
+            ui->scratchFrameNos = nextNos;
+            ui->scratchFrameActive = nextActive;
+            ui->scratchFrameCap = newCap;
+        }
+    }
+
+    uint8_t *refBytes = ui->scratchRef;
+    uint8_t *baseBytes = ui->scratchBase;
+    uint8_t *curBytes = ui->scratchCur;
+    uint64_t *frameNos = ui->scratchFrameNos;
+    int *frameActive = ui->scratchFrameActive;
+    if (!baseBytes || !curBytes || !refBytes || !frameNos || !frameActive) {
         memory_track_ui_setError(ui, "Out of memory");
-        alloc_free(frameNos);
-        alloc_free(frameActive);
-        alloc_free(refBytes);
-        alloc_free(baseBytes);
-        alloc_free(curBytes);
         memory_track_ui_clearData(ui);
         return 0;
     }
+    memset(frameNos, 0, (size_t)columnCount * sizeof(uint64_t));
+    memset(frameActive, 0, (size_t)columnCount * sizeof(int));
+
     int success = 0;
+    int usedCache = 0;
     int hasActive = 0;
     int accessSize = ui->accessSize > 0 ? ui->accessSize : 1;
-    uint64_t prevActiveFrameNo = 0;
-    int hasPrevActive = 0;
+
     for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
-        ui->frames[frameIndex].frameNo = 0;
-        ui->frames[frameIndex].entries = NULL;
-        ui->frames[frameIndex].entryCount = 0;
         if (!ui->frameInputs || frameIndex >= (int)ui->frameInputsCount) {
             continue;
         }
@@ -934,15 +1088,193 @@ memory_track_ui_collectData(memory_track_ui_t *ui, int columnCount)
         }
         frameActive[frameIndex] = 1;
         frameNos[frameIndex] = frameNo;
+        if (frameIndex > 0) {
+            hasActive = 1;
+        }
+    }
+
+    if (ui->filterParseCap < (size_t)columnCount) {
+        size_t newCap = ui->filterParseCap ? ui->filterParseCap : 4;
+        while (newCap < (size_t)columnCount) {
+            newCap *= 2;
+        }
+        char **nextTexts = (char**)alloc_calloc(newCap, sizeof(char*));
+        uint32_t *nextValues = (uint32_t*)alloc_calloc(newCap, sizeof(uint32_t));
+        int *nextActive = (int*)alloc_calloc(newCap, sizeof(int));
+        int *nextOk = (int*)alloc_calloc(newCap, sizeof(int));
+        if (!nextTexts || !nextValues || !nextActive || !nextOk) {
+            alloc_free(nextTexts);
+            alloc_free(nextValues);
+            alloc_free(nextActive);
+            alloc_free(nextOk);
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
+        }
+        for (size_t i = 0; i < ui->filterParseCap; ++i) {
+            nextTexts[i] = ui->filterParseTexts ? ui->filterParseTexts[i] : NULL;
+            nextValues[i] = ui->filterParseValues ? ui->filterParseValues[i] : 0;
+            nextActive[i] = ui->filterParseActive ? ui->filterParseActive[i] : 0;
+            nextOk[i] = ui->filterParseOk ? ui->filterParseOk[i] : 1;
+        }
+        for (size_t i = ui->filterParseCap; i < newCap; ++i) {
+            nextOk[i] = 1;
+        }
+        alloc_free(ui->filterParseTexts);
+        alloc_free(ui->filterParseValues);
+        alloc_free(ui->filterParseActive);
+        alloc_free(ui->filterParseOk);
+        ui->filterParseTexts = nextTexts;
+        ui->filterParseValues = nextValues;
+        ui->filterParseActive = nextActive;
+        ui->filterParseOk = nextOk;
+        ui->filterParseCap = newCap;
+    }
+
+    for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
+        const char *text = NULL;
+        if (ui->filterInputs && frameIndex < (int)ui->filterInputsCount && ui->filterInputs[frameIndex]) {
+            text = e9ui_textbox_getText(ui->filterInputs[frameIndex]);
+        } else if (ui->filterTexts && frameIndex < (int)ui->filterTextsCount) {
+            text = ui->filterTexts[frameIndex];
+        }
+        if (!text) {
+            text = "";
+        }
+        int changed = 1;
+        if (ui->filterParseTexts && ui->filterParseTexts[frameIndex]) {
+            if (strcmp(ui->filterParseTexts[frameIndex], text) == 0) {
+                changed = 0;
+            }
+        } else if (text[0] == '\0') {
+            changed = 0;
+        }
+        if (!changed && text[0] == '\0') {
+            ui->filterParseOk[frameIndex] = 1;
+            ui->filterParseActive[frameIndex] = 0;
+            ui->filterParseValues[frameIndex] = 0;
+            continue;
+        }
+        if (changed) {
+            if (ui->filterParseTexts && ui->filterParseTexts[frameIndex]) {
+                alloc_free(ui->filterParseTexts[frameIndex]);
+                ui->filterParseTexts[frameIndex] = NULL;
+            }
+            if (text[0] != '\0') {
+                ui->filterParseTexts[frameIndex] = alloc_strdup(text);
+            }
+            ui->filterParseActive[frameIndex] = 0;
+            ui->filterParseValues[frameIndex] = 0;
+            ui->filterParseOk[frameIndex] = 1;
+            const char *p = text;
+            while (*p && isspace((unsigned char)*p)) {
+                p++;
+            }
+            if (p[0] != '\0') {
+                if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+                    p += 2;
+                }
+                char *end = NULL;
+                unsigned long long val = strtoull(p, &end, 16);
+                if (!end || end == p) {
+                    ui->filterParseOk[frameIndex] = 0;
+                } else {
+                    while (*end && isspace((unsigned char)*end)) {
+                        end++;
+                    }
+                    if (*end) {
+                        ui->filterParseOk[frameIndex] = 0;
+                    }
+                }
+                if (!ui->filterParseOk[frameIndex]) {
+                    memory_track_ui_setError(ui, "Invalid filter: \"%s\"", p);
+                    goto cleanup;
+                }
+                ui->filterParseValues[frameIndex] = (uint32_t)val;
+                ui->filterParseActive[frameIndex] = 1;
+            } else {
+                ui->filterParseOk[frameIndex] = 1;
+                ui->filterParseActive[frameIndex] = 0;
+            }
+        }
+        if (ui->filterParseOk && !ui->filterParseOk[frameIndex]) {
+            memory_track_ui_setError(ui, "Invalid filter");
+            goto cleanup;
+        }
+    }
+
+    int cacheUsable = 0;
+    if (ui->cacheValid && ui->frames && ui->baseAddresses &&
+        ui->cachedAccessSize == accessSize && ui->cachedColumnCount == columnCount) {
+        cacheUsable = 1;
+        if (currentFrameNo <= ui->cachedBuildFrameNo) {
+            cacheUsable = 0;
+        }
+        for (int i = 0; i < columnCount; ++i) {
+            if (!ui->cachedFrameActive || !ui->cachedFrameNos) {
+                cacheUsable = 0;
+                break;
+            }
+            if (ui->cachedFrameActive[i] != frameActive[i] ||
+                ui->cachedFrameNos[i] != frameNos[i]) {
+                cacheUsable = 0;
+                break;
+            }
+        }
+    }
+
+    if (cacheUsable) {
+        usedCache = 1;
+        ui->frameCount = (size_t)columnCount;
+        if (!memory_track_ui_buildVisibleAddresses(ui, columnCount, frameActive)) {
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
+        }
+        if (!memory_track_ui_buildAddressLinks(ui)) {
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
+        }
+        ui->hasActiveFrames = hasActive;
+        memory_track_ui_setError(ui, NULL);
+        success = 1;
+        goto cleanup;
+    }
+
+    memory_track_ui_destroyAddressLinks(ui);
+    memory_track_ui_clearData(ui);
+    ui->frames = (memory_track_frame_data_t*)alloc_calloc((size_t)columnCount, sizeof(*ui->frames));
+    if (!ui->frames) {
+        memory_track_ui_setError(ui, "Out of memory");
+        return 0;
+    }
+
+    size_t addressSlots = MEMORY_TRACK_UI_REGION_SIZE / (size_t)accessSize;
+    if (addressSlots > ui->addressSeenCap) {
+        uint8_t *next = (uint8_t*)alloc_realloc(ui->addressSeen, addressSlots);
+        if (!next) {
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
+        }
+        ui->addressSeen = next;
+        ui->addressSeenCap = addressSlots;
+    }
+    if (addressSlots > 0) {
+        memset(ui->addressSeen, 0, addressSlots);
+    }
+    size_t uniqueAddressCount = 0;
+    uint64_t prevActiveFrameNo = 0;
+    int hasPrevActive = 0;
+    for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
+        ui->frames[frameIndex].frameNo = 0;
+        ui->frames[frameIndex].entries = NULL;
+        ui->frames[frameIndex].entryCount = 0;
+        if (!frameActive[frameIndex]) {
+            continue;
+        }
+        uint64_t frameNo = frameNos[frameIndex];
         ui->frames[frameIndex].frameNo = frameNo;
     }
 
     if (frameActive[0]) {
-        refBytes = (uint8_t*)alloc_alloc(MEMORY_TRACK_UI_REGION_SIZE);
-        if (!refBytes) {
-            memory_track_ui_setError(ui, "Out of memory");
-            goto cleanup;
-        }
         if (!memory_track_ui_readFrameBytes(frameNos[0], MEMORY_TRACK_UI_REGION_BASE, refBytes,
                                             MEMORY_TRACK_UI_REGION_SIZE)) {
             memory_track_ui_setError(ui, "Failed to read frame %llu",
@@ -969,122 +1301,92 @@ memory_track_ui_collectData(memory_track_ui_t *ui, int columnCount)
             }
             baseFrameNo = frameNo - 1;
         }
-        if (!memory_track_ui_readFrameBytes(baseFrameNo, MEMORY_TRACK_UI_REGION_BASE, baseBytes,
-                                            MEMORY_TRACK_UI_REGION_SIZE)) {
-            memory_track_ui_setError(ui, "Failed to read frame %llu",
-                                     (unsigned long long)baseFrameNo);
-            goto cleanup;
+        if (hasPrevActive && baseFrameNo == prevActiveFrameNo) {
+            uint8_t *tmp = baseBytes;
+            baseBytes = curBytes;
+            curBytes = tmp;
+        } else {
+            if (!memory_track_ui_readFrameBytes(baseFrameNo, MEMORY_TRACK_UI_REGION_BASE, baseBytes,
+                                                MEMORY_TRACK_UI_REGION_SIZE)) {
+                memory_track_ui_setError(ui, "Failed to read frame %llu",
+                                         (unsigned long long)baseFrameNo);
+                goto cleanup;
+            }
         }
         if (!memory_track_ui_readFrameBytes(frameNo, MEMORY_TRACK_UI_REGION_BASE, curBytes,
                                             MEMORY_TRACK_UI_REGION_SIZE)) {
             memory_track_ui_setError(ui, "Failed to read frame %llu", (unsigned long long)frameNo);
             goto cleanup;
         }
-        size_t diffCount = 0;
-        for (size_t offset = 0; offset + (size_t)accessSize <= MEMORY_TRACK_UI_REGION_SIZE; offset += (size_t)accessSize) {
-            uint32_t baseValue = memory_track_ui_readValueBE(baseBytes + offset, accessSize);
-            uint32_t curValue = memory_track_ui_readValueBE(curBytes + offset, accessSize);
-            if (baseValue != curValue) {
-                diffCount++;
-            }
-        }
         memory_track_entry_t *entries = NULL;
-        if (diffCount > 0) {
-            entries = (memory_track_entry_t*)alloc_alloc(diffCount * sizeof(*entries));
+        size_t maxEntries = MEMORY_TRACK_UI_REGION_SIZE / (size_t)accessSize;
+        size_t entryCount = 0;
+        if (maxEntries > 0) {
+            entries = (memory_track_entry_t*)alloc_alloc(maxEntries * sizeof(*entries));
             if (!entries) {
                 memory_track_ui_setError(ui, "Out of memory");
                 goto cleanup;
             }
-            size_t entryIndex = 0;
+        }
+        if (entries) {
             for (size_t offset = 0; offset + (size_t)accessSize <= MEMORY_TRACK_UI_REGION_SIZE; offset += (size_t)accessSize) {
                 uint32_t baseValue = memory_track_ui_readValueBE(baseBytes + offset, accessSize);
                 uint32_t curValue = memory_track_ui_readValueBE(curBytes + offset, accessSize);
                 if (baseValue != curValue) {
-                    entries[entryIndex].address = MEMORY_TRACK_UI_REGION_BASE + (uint32_t)offset;
-                    entries[entryIndex].value = curValue;
-                    entryIndex++;
+                    entries[entryCount].address = MEMORY_TRACK_UI_REGION_BASE + (uint32_t)offset;
+                    entries[entryCount].value = curValue;
+                    entryCount++;
+                    size_t slot = offset / (size_t)accessSize;
+                    if (slot < addressSlots && !ui->addressSeen[slot]) {
+                        ui->addressSeen[slot] = 1;
+                        uniqueAddressCount++;
+                    }
                 }
+            }
+        }
+        if (entryCount == 0) {
+            alloc_free(entries);
+            entries = NULL;
+        } else if (entryCount < maxEntries) {
+            memory_track_entry_t *shrunk =
+                (memory_track_entry_t*)alloc_realloc(entries, entryCount * sizeof(*entries));
+            if (shrunk) {
+                entries = shrunk;
             }
         }
         ui->frames[frameIndex].frameNo = frameNo;
         ui->frames[frameIndex].entries = entries;
-        ui->frames[frameIndex].entryCount = diffCount;
-        if (!memory_track_ui_appendAddresses(ui, entries, diffCount)) {
-            memory_track_ui_setError(ui, "Out of memory");
-            goto cleanup;
-        }
+        ui->frames[frameIndex].entryCount = entryCount;
         hasActive = 1;
         prevActiveFrameNo = frameNo;
         hasPrevActive = 1;
     }
 
-    if (ui->addressCount > 1) {
-        qsort(ui->addresses, ui->addressCount, sizeof(uint32_t), memory_track_ui_compareU32);
-        size_t writeIndex = 0;
-        for (size_t readIndex = 0; readIndex < ui->addressCount; ++readIndex) {
-            if (writeIndex == 0 || ui->addresses[readIndex] != ui->addresses[writeIndex - 1]) {
-                ui->addresses[writeIndex++] = ui->addresses[readIndex];
-            }
+    if (uniqueAddressCount > 0) {
+        ui->baseAddresses = (uint32_t*)alloc_alloc(uniqueAddressCount * sizeof(uint32_t));
+        if (!ui->baseAddresses) {
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
         }
-        ui->addressCount = writeIndex;
-    }
-    if (ui->requireAllColumns && ui->addressCount > 0) {
-        size_t activeColumns = 0;
-        for (int frameIndex = 1; frameIndex < columnCount; ++frameIndex) {
-            if (frameActive[frameIndex]) {
-                activeColumns++;
+        ui->baseAddressCap = uniqueAddressCount;
+        for (size_t slot = 0; slot < addressSlots; ++slot) {
+            if (!ui->addressSeen[slot]) {
+                continue;
             }
-        }
-        if (activeColumns == 0) {
-            ui->addressCount = 0;
-        } else {
-            size_t *indices = (size_t*)alloc_calloc((size_t)columnCount, sizeof(size_t));
-            uint32_t *filtered = (uint32_t*)alloc_alloc(ui->addressCount * sizeof(uint32_t));
-            if (!indices || !filtered) {
-                alloc_free(indices);
-                alloc_free(filtered);
-                memory_track_ui_setError(ui, "Out of memory");
-                goto cleanup;
-            }
-            size_t filteredCount = 0;
-            for (size_t addrIndex = 0; addrIndex < ui->addressCount; ++addrIndex) {
-                uint32_t address = ui->addresses[addrIndex];
-                int allMatch = 1;
-                for (int frameIndex = 1; frameIndex < columnCount; ++frameIndex) {
-                    if (!frameActive[frameIndex]) {
-                        continue;
-                    }
-                    memory_track_frame_data_t *frame = &ui->frames[frameIndex];
-                    size_t idx = indices[frameIndex];
-                    while (idx < frame->entryCount && frame->entries[idx].address < address) {
-                        idx++;
-                    }
-                    indices[frameIndex] = idx;
-                    if (idx >= frame->entryCount || frame->entries[idx].address != address) {
-                        allMatch = 0;
-                        break;
-                    }
-                }
-                if (allMatch) {
-                    filtered[filteredCount++] = address;
-                }
-            }
-            memcpy(ui->addresses, filtered, filteredCount * sizeof(uint32_t));
-            ui->addressCount = filteredCount;
-            alloc_free(indices);
-            alloc_free(filtered);
+            uint32_t address = MEMORY_TRACK_UI_REGION_BASE + (uint32_t)(slot * (size_t)accessSize);
+            ui->baseAddresses[ui->baseAddressCount++] = address;
         }
     }
 
-    if (frameActive[0] && ui->addressCount > 0) {
-        size_t entryCount = ui->addressCount;
+    if (frameActive[0] && ui->baseAddressCount > 0) {
+        size_t entryCount = ui->baseAddressCount;
         memory_track_entry_t *entries = (memory_track_entry_t*)alloc_alloc(entryCount * sizeof(*entries));
         if (!entries) {
             memory_track_ui_setError(ui, "Out of memory");
             goto cleanup;
         }
         for (size_t entryIndex = 0; entryIndex < entryCount; ++entryIndex) {
-            uint32_t address = ui->addresses[entryIndex];
+            uint32_t address = ui->baseAddresses[entryIndex];
             uint32_t offset = address - MEMORY_TRACK_UI_REGION_BASE;
             entries[entryIndex].address = address;
             entries[entryIndex].value = memory_track_ui_readValueBE(refBytes + offset, accessSize);
@@ -1093,101 +1395,9 @@ memory_track_ui_collectData(memory_track_ui_t *ui, int columnCount)
         ui->frames[0].entryCount = entryCount;
     }
 
-    if (ui->addressCount > 0) {
-        uint32_t *filterValues = (uint32_t*)alloc_calloc((size_t)columnCount, sizeof(uint32_t));
-        int *filterActive = (int*)alloc_calloc((size_t)columnCount, sizeof(int));
-        if (!filterValues || !filterActive) {
-            alloc_free(filterValues);
-            alloc_free(filterActive);
-            memory_track_ui_setError(ui, "Out of memory");
-            goto cleanup;
-        }
-        int anyFilter = 0;
-        for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
-            const char *text = NULL;
-            if (ui->filterInputs && frameIndex < (int)ui->filterInputsCount && ui->filterInputs[frameIndex]) {
-                text = e9ui_textbox_getText(ui->filterInputs[frameIndex]);
-            } else if (ui->filterTexts && frameIndex < (int)ui->filterTextsCount) {
-                text = ui->filterTexts[frameIndex];
-            }
-            if (!text || !text[0]) {
-                continue;
-            }
-            while (*text && isspace((unsigned char)*text)) {
-                text++;
-            }
-            if (text[0] == '\0') {
-                continue;
-            }
-            if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
-                text += 2;
-            }
-            char *end = NULL;
-            unsigned long long val = strtoull(text, &end, 16);
-            if (!end || end == text) {
-                memory_track_ui_setError(ui, "Invalid filter: \"%s\"", text);
-                alloc_free(filterValues);
-                alloc_free(filterActive);
-                goto cleanup;
-            }
-            while (*end && isspace((unsigned char)*end)) {
-                end++;
-            }
-            if (*end) {
-                memory_track_ui_setError(ui, "Invalid filter: \"%s\"", text);
-                alloc_free(filterValues);
-                alloc_free(filterActive);
-                goto cleanup;
-            }
-            filterValues[frameIndex] = (uint32_t)val;
-            filterActive[frameIndex] = 1;
-            anyFilter = 1;
-        }
-        if (anyFilter) {
-            size_t *indices = (size_t*)alloc_calloc((size_t)columnCount, sizeof(size_t));
-            uint32_t *filtered = (uint32_t*)alloc_alloc(ui->addressCount * sizeof(uint32_t));
-            if (!indices || !filtered) {
-                alloc_free(indices);
-                alloc_free(filtered);
-                alloc_free(filterValues);
-                alloc_free(filterActive);
-                memory_track_ui_setError(ui, "Out of memory");
-                goto cleanup;
-            }
-            size_t filteredCount = 0;
-            for (size_t addrIndex = 0; addrIndex < ui->addressCount; ++addrIndex) {
-                uint32_t address = ui->addresses[addrIndex];
-                int matches = 1;
-                for (int frameIndex = 0; frameIndex < columnCount; ++frameIndex) {
-                    if (!filterActive[frameIndex]) {
-                        continue;
-                    }
-                    memory_track_frame_data_t *frame = &ui->frames[frameIndex];
-                    size_t idx = indices[frameIndex];
-                    while (idx < frame->entryCount && frame->entries[idx].address < address) {
-                        idx++;
-                    }
-                    indices[frameIndex] = idx;
-                    if (idx >= frame->entryCount || frame->entries[idx].address != address) {
-                        matches = 0;
-                        break;
-                    }
-                    if (frame->entries[idx].value != filterValues[frameIndex]) {
-                        matches = 0;
-                        break;
-                    }
-                }
-                if (matches) {
-                    filtered[filteredCount++] = address;
-                }
-            }
-            memcpy(ui->addresses, filtered, filteredCount * sizeof(uint32_t));
-            ui->addressCount = filteredCount;
-            alloc_free(indices);
-            alloc_free(filtered);
-        }
-        alloc_free(filterValues);
-        alloc_free(filterActive);
+    if (!memory_track_ui_buildVisibleAddresses(ui, columnCount, frameActive)) {
+        memory_track_ui_setError(ui, "Out of memory");
+        goto cleanup;
     }
     if (!memory_track_ui_buildAddressLinks(ui)) {
         memory_track_ui_setError(ui, "Out of memory");
@@ -1196,19 +1406,39 @@ memory_track_ui_collectData(memory_track_ui_t *ui, int columnCount)
 
     ui->frameCount = (size_t)columnCount;
     ui->hasActiveFrames = hasActive;
+    if (ui->cachedFrameCap < (size_t)columnCount) {
+        size_t newCap = ui->cachedFrameCap ? ui->cachedFrameCap : 4;
+        while (newCap < (size_t)columnCount) {
+            newCap *= 2;
+        }
+        uint64_t *nextNos = (uint64_t*)alloc_realloc(ui->cachedFrameNos, newCap * sizeof(uint64_t));
+        int *nextActive = (int*)alloc_realloc(ui->cachedFrameActive, newCap * sizeof(int));
+        if (!nextNos || !nextActive) {
+            alloc_free(nextNos);
+            alloc_free(nextActive);
+            memory_track_ui_setError(ui, "Out of memory");
+            goto cleanup;
+        }
+        ui->cachedFrameNos = nextNos;
+        ui->cachedFrameActive = nextActive;
+        ui->cachedFrameCap = newCap;
+    }
+    for (int i = 0; i < columnCount; ++i) {
+        ui->cachedFrameNos[i] = frameNos[i];
+        ui->cachedFrameActive[i] = frameActive[i];
+    }
+    ui->cachedAccessSize = accessSize;
+    ui->cachedColumnCount = columnCount;
+    ui->cacheValid = 1;
+    ui->cachedBuildFrameNo = currentFrameNo;
     memory_track_ui_setError(ui, NULL);
     success = 1;
 
 cleanup:
-    alloc_free(frameNos);
-    alloc_free(frameActive);
-    alloc_free(refBytes);
-    alloc_free(baseBytes);
-    alloc_free(curBytes);
     (void)state_buffer_restoreFrameNo(restoreFrame);
     debugger.frameCounter = restoreFrame;
     state_buffer_setCurrentFrameNo(restoreFrame);
-    if (!success) {
+    if (!success && !usedCache) {
         memory_track_ui_clearData(ui);
     }
     return success;
@@ -1217,7 +1447,7 @@ cleanup:
 static int
 memory_track_ui_measureTextWidth(e9ui_context_t *ctx, const char *text)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     if (!font || !text) {
         return 0;
     }
@@ -1331,6 +1561,9 @@ memory_track_ui_tableLayout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_re
     int startX = bounds.x + pad;
     int startY = bounds.y + pad;
     size_t linkCount = ui->addressLinksCount;
+    if (linkCount > ui->addressLinksCap) {
+        linkCount = ui->addressLinksCap;
+    }
     for (size_t rowIndex = 0; rowIndex < linkCount; ++rowIndex) {
         e9ui_component_t *link = ui->addressLinks[rowIndex];
         if (link && link->layout) {
@@ -1356,7 +1589,7 @@ memory_track_ui_tableRender(e9ui_component_t *self, e9ui_context_t *ctx)
     SDL_SetRenderDrawColor(ctx->renderer, 18, 18, 18, 255);
     SDL_RenderFillRect(ctx->renderer, &rect);
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) {
         return;
     }
@@ -1413,7 +1646,8 @@ memory_track_ui_tableRender(e9ui_component_t *self, e9ui_context_t *ctx)
 
     for (size_t rowIndex = 0; rowIndex < ui->addressCount; ++rowIndex) {
         uint32_t address = ui->addresses[rowIndex];
-        if (ui->addressLinks && rowIndex < ui->addressLinksCount) {
+        if (ui->addressLinks && rowIndex < ui->addressLinksCount &&
+            rowIndex < ui->addressLinksCap) {
             e9ui_component_t *link = ui->addressLinks[rowIndex];
             if (link && link->render) {
                 link->render(link, ctx);
@@ -1471,7 +1705,11 @@ memory_track_ui_tableHandleEvent(e9ui_component_t *self, e9ui_context_t *ctx, co
     if (!ui || !ui->addressLinks || ui->addressLinksCount == 0) {
         return 0;
     }
-    for (size_t i = 0; i < ui->addressLinksCount; ++i) {
+    size_t linkCount = ui->addressLinksCount;
+    if (linkCount > ui->addressLinksCap) {
+        linkCount = ui->addressLinksCap;
+    }
+    for (size_t i = 0; i < linkCount; ++i) {
         e9ui_component_t *link = ui->addressLinks[i];
         if (link && e9ui_event_process(link, ctx, ev)) {
             return 1;
@@ -1812,9 +2050,11 @@ memory_track_ui_init(void)
     if (ui->open) {
         return 1;
     }
+    int wantW = (e9ui->layout.memTrackWinW > 0 ? e9ui->layout.memTrackWinW : 900);
+    int wantH = (e9ui->layout.memTrackWinH > 0 ? e9ui->layout.memTrackWinH : 600);
     SDL_Window *win = SDL_CreateWindow(MEMORY_TRACK_UI_TITLE,
                                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       900, 600,
+                                       wantW, wantH,
                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) {
         debug_error("memory track ui: SDL_CreateWindow failed: %s", SDL_GetError());
@@ -1832,8 +2072,11 @@ memory_track_ui_init(void)
     ui->windowId = SDL_GetWindowID(win);
     ui->ctx.window = win;
     ui->ctx.renderer = ren;
-    ui->ctx.font = debugger.ui.ctx.font;
+    ui->ctx.font = e9ui->ctx.font;
     ui->ctx.dpiScale = memory_track_ui_computeDpiScale(&ui->ctx);
+    if (e9ui->layout.memTrackWinX >= 0 && e9ui->layout.memTrackWinY >= 0) {
+        SDL_SetWindowPosition(win, e9ui->layout.memTrackWinX, e9ui->layout.memTrackWinY);
+    }
     ui->closeRequested = 0;
     ui->needsRefresh = 1;
     ui->accessSize = 2;
@@ -1872,6 +2115,19 @@ memory_track_ui_shutdown(void)
         e9ui_childDestroy(ui->root, &ui->ctx);
         ui->root = NULL;
     }
+    if (ui->window) {
+        int winX = 0;
+        int winY = 0;
+        int winW = 0;
+        int winH = 0;
+        SDL_GetWindowPosition(ui->window, &winX, &winY);
+        SDL_GetWindowSize(ui->window, &winW, &winH);
+        e9ui->layout.memTrackWinX = winX;
+        e9ui->layout.memTrackWinY = winY;
+        e9ui->layout.memTrackWinW = winW;
+        e9ui->layout.memTrackWinH = winH;
+        config_saveConfig();
+    }
     e9ui_text_cache_clearRenderer(ui->renderer);
     if (ui->renderer) {
         SDL_DestroyRenderer(ui->renderer);
@@ -1894,6 +2150,43 @@ memory_track_ui_shutdown(void)
     ui->addressLinks = NULL;
     ui->addressLinksCap = 0;
     ui->addressLinksCount = 0;
+    alloc_free(ui->addressSeen);
+    ui->addressSeen = NULL;
+    ui->addressSeenCap = 0;
+    if (ui->filterParseTexts) {
+        for (size_t i = 0; i < ui->filterParseCap; ++i) {
+            if (ui->filterParseTexts[i]) {
+                alloc_free(ui->filterParseTexts[i]);
+            }
+        }
+    }
+    alloc_free(ui->filterParseTexts);
+    ui->filterParseTexts = NULL;
+    ui->filterParseCap = 0;
+    alloc_free(ui->filterParseValues);
+    ui->filterParseValues = NULL;
+    alloc_free(ui->filterParseActive);
+    ui->filterParseActive = NULL;
+    alloc_free(ui->filterParseOk);
+    ui->filterParseOk = NULL;
+    alloc_free(ui->scratchBase);
+    ui->scratchBase = NULL;
+    alloc_free(ui->scratchCur);
+    ui->scratchCur = NULL;
+    alloc_free(ui->scratchRef);
+    ui->scratchRef = NULL;
+    ui->scratchSize = 0;
+    alloc_free(ui->scratchFrameNos);
+    ui->scratchFrameNos = NULL;
+    alloc_free(ui->scratchFrameActive);
+    ui->scratchFrameActive = NULL;
+    ui->scratchFrameCap = 0;
+    alloc_free(ui->cachedFrameNos);
+    ui->cachedFrameNos = NULL;
+    alloc_free(ui->cachedFrameActive);
+    ui->cachedFrameActive = NULL;
+    ui->cachedFrameCap = 0;
+    ui->cachedBuildFrameNo = 0;
     ui->open = 0;
     ui->closeRequested = 0;
     ui->windowId = 0;
@@ -1971,6 +2264,13 @@ memory_track_ui_handleEvent(SDL_Event *ev)
             ev->window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
             ui->ctx.dpiScale = memory_track_ui_computeDpiScale(&ui->ctx);
             ui->needsRefresh = 1;
+            e9ui->layout.memTrackWinW = ev->window.data1;
+            e9ui->layout.memTrackWinH = ev->window.data2;
+            config_saveConfig();
+        } else if (ev->window.event == SDL_WINDOWEVENT_MOVED) {
+            e9ui->layout.memTrackWinX = ev->window.data1;
+            e9ui->layout.memTrackWinY = ev->window.data2;
+            config_saveConfig();
         }
     } else if (ev->type == SDL_KEYDOWN) {
         if (ev->key.keysym.sym == SDLK_ESCAPE) {
@@ -2016,7 +2316,7 @@ memory_track_ui_render(void)
         e9ui_childRemove(ui->root, ui->pendingRemove, &ui->ctx);
         ui->pendingRemove = NULL;
     }
-    ui->ctx.font = debugger.ui.ctx.font;
+    ui->ctx.font = e9ui->ctx.font;
     ui->ctx.window = ui->window;
     ui->ctx.renderer = ui->renderer;
 
@@ -2041,7 +2341,7 @@ memory_track_ui_render(void)
         (void)memory_track_ui_collectData(ui, ui->columnCount);
         ui->needsRefresh = 0;
     }
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ui->ctx.font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ui->ctx.font;
     memory_track_ui_updateContentHeight(ui, font);
 
     e9ui_component_t *root = ui->fullscreen ? ui->fullscreen : ui->root;

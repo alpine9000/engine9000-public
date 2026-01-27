@@ -73,7 +73,7 @@ profile_checkpoints_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx,
     profile_checkpoints_state_t *st = (profile_checkpoints_state_t*)self->state;
     profile_checkpoints_refresh(st);
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     int lineHeight = font ? TTF_FontHeight(font) : 16;
     if (lineHeight <= 0) {
         lineHeight = 16;
@@ -108,7 +108,7 @@ profile_checkpoints_render(e9ui_component_t *self, e9ui_context_t *ctx)
     SDL_SetRenderDrawColor(ctx->renderer, 16, 16, 20, 255);
     SDL_RenderFillRect(ctx->renderer, &bg);
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) {
         return;
     }

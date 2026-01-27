@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT © 2026 Enable Software Pty Ltd - All Rights Reserved
+ * Copyright © 2026 Enable Software Pty Ltd - All Rights Reserved
  *
  * https://github.com/alpine9000/engine9000-public
  *
@@ -88,7 +88,7 @@ config_persistConfig(FILE *f)
     if (!crt_isEnabled()) {
         fprintf(f, "comp.config.crt_enabled=0\n");
     }
-    fprintf(f, "comp.config.transition=%s\n", transition_modeName(debugger.transitionMode));
+    fprintf(f, "comp.config.transition=%s\n", transition_modeName(e9ui->transition.mode));
     crt_persistConfig(f);
     sprite_debug_persistConfig(f);
 }
@@ -96,7 +96,10 @@ config_persistConfig(FILE *f)
 void
 config_saveConfig(void)
 {
-    e9ui_saveLayout();
+  if (debugger.smokeTestMode != 0) {
+    return;
+  }
+  e9ui_saveLayout(debugger_configPath());
 }
 
 void
@@ -148,7 +151,7 @@ config_loadConfig(void)
             } else if (strcmp(prop, "transition") == 0) {
                 e9k_transition_mode_t mode = e9k_transition_none;
                 if (transition_parseMode(value, &mode)) {
-                    debugger.transitionMode = mode;
+                    e9ui->transition.mode = mode;
                 }
             }
             continue;

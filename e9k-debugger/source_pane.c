@@ -45,6 +45,14 @@ typedef struct source_pane_state {
     int               curSrcLine;
     char*             toggleBtnMeta;
     char*             lockBtnMeta;  
+    int               gutterPending;
+    int               gutterLine;
+    uint32_t          gutterAddr;
+    int               gutterDownX;
+    int               gutterDownY;
+    source_pane_mode_t gutterMode;
+    int               bucketSource;
+    int               bucketAddr;
 } source_pane_state_t;
 
 typedef struct source_pane_line_metrics {
@@ -260,8 +268,8 @@ source_pane_computeLineMetrics(e9ui_component_t *self, TTF_Font *font, int padPx
 static TTF_Font *
 source_pane_resolveFont(const e9ui_context_t *ctx)
 {
-    if (debugger.theme.text.source) {
-        return debugger.theme.text.source;
+    if (e9ui->theme.text.source) {
+        return e9ui->theme.text.source;
     }
     if (ctx) {
         return ctx->font;
@@ -292,6 +300,7 @@ source_pane_adjustScroll(source_pane_state_t *st, source_pane_mode_t mode, int d
         }
         st->scrollLine = dest;
         st->scrollLineValid = 1;
+        st->gutterPending = 0;
         return;
     }
     int dest = st->scrollIndex + delta;
@@ -300,6 +309,7 @@ source_pane_adjustScroll(source_pane_state_t *st, source_pane_mode_t mode, int d
     }
     st->scrollIndex = dest;
     st->scrollIndexValid = 1;
+    st->gutterPending = 0;
 }
 
 static void
@@ -311,10 +321,12 @@ source_pane_scrollToStart(source_pane_state_t *st, source_pane_mode_t mode)
     if (mode == source_pane_mode_c) {
         st->scrollLine = 1;
         st->scrollLineValid = 1;
+        st->gutterPending = 0;
         return;
     }
     st->scrollIndex = 0;
     st->scrollIndexValid = 1;
+    st->gutterPending = 0;
 }
 
 static void
@@ -342,6 +354,7 @@ source_pane_scrollToEnd(source_pane_state_t *st, source_pane_mode_t mode, int ma
             st->scrollLine = dest;
         }
         st->scrollLineValid = 1;
+        st->gutterPending = 0;
         return;
     }
     int total = dasm_getTotal();
@@ -351,6 +364,7 @@ source_pane_scrollToEnd(source_pane_state_t *st, source_pane_mode_t mode, int ma
     }
     st->scrollIndex = dest;
     st->scrollIndexValid = 1;
+    st->gutterPending = 0;
 }
 
 static void
@@ -362,6 +376,7 @@ source_pane_followCurrent(source_pane_state_t *st)
     st->scrollLineValid = 0;
     st->scrollIndexValid = 0;
     st->overrideActive = 0;
+    st->gutterPending = 0;
 }
 
 static void
@@ -568,6 +583,10 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
     SDL_Color lno_bp_on = (SDL_Color){120,200,120,255};
     SDL_Color lno_bp_off = (SDL_Color){200,140,60,255};
     int textX = area.x + padPx + gutterW + gutterPad;
+    int hitW = area.x + area.w - textX - padPx;
+    if (hitW < 0) {
+        hitW = 0;
+    }
     int y = area.y + padPx;
     for (int i = 0; i < count; ++i) {
         uint64_t a = addrs[i];
@@ -583,23 +602,17 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
         int nh = 0;
         TTF_SizeText(useFont, abuf, &nw, &nh);
         int lnx = area.x + padPx + (gutterW - nw);
-        int aw = 0, ah = 0;
         SDL_Color use_col = lno;
         machine_breakpoint_t *bp = machine_findBreakpointByAddr(&debugger.machine, (uint32_t)a);
         if (bp) {
             use_col = bp->enabled ? lno_bp_on : lno_bp_off;
         }
-        SDL_Texture *nt = e9ui_text_cache_getText(ctx->renderer, useFont, abuf, use_col, &aw, &ah);
-        if (nt) {
-            SDL_Rect nr = { lnx, y, aw, ah };
-            SDL_RenderCopy(ctx->renderer, nt, NULL, &nr);
-        }
-        int tw = 0, th = 0;
-        SDL_Texture *t = e9ui_text_cache_getText(ctx->renderer, useFont, ins, txt, &tw, &th);
-        if (t) {
-            SDL_Rect r = { textX, y, tw, th };
-            SDL_RenderCopy(ctx->renderer, t, NULL, &r);
-        }
+        void *addrBucket = st ? (void*)&st->bucketAddr : (void*)self;
+        void *sourceBucket = st ? (void*)&st->bucketSource : (void*)self;
+        e9ui_text_select_drawText(ctx, self, useFont, abuf, use_col, lnx, y,
+                                  metrics.lineHeight, 0, addrBucket, 1, 1);
+        e9ui_text_select_drawText(ctx, self, useFont, ins, txt, textX, y,
+                                  metrics.lineHeight, hitW, sourceBucket, 0, 1);
         y += metrics.lineHeight;
         if (y > area.y + area.h - padPx) {
             break;
@@ -610,7 +623,7 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
 static void
 source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
 {
-    TTF_Font *useFont = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *useFont = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     SDL_Rect area = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
     source_pane_state_t *st = (source_pane_state_t*)self->state;
     if (st) {
@@ -728,6 +741,10 @@ source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
     SDL_Color lno_bp_on = (SDL_Color){120,200,120,255};
     SDL_Color lno_bp_off = (SDL_Color){200,140,60,255};
     int textX = area.x + padPx + gutterW + gutterPad;
+    int hitW = area.x + area.w - textX - padPx;
+    if (hitW < 0) {
+        hitW = 0;
+    }
     const machine_breakpoint_t *bps = NULL;
     int bp_count = 0;
     if (machine_getBreakpoints(&debugger.machine, &bps, &bp_count)) {
@@ -771,12 +788,9 @@ source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
                 SDL_RenderCopy(ctx->renderer, nt, NULL, &nr);
             }
         }
-        int tw = 0, th = 0;
-        SDL_Texture *t = e9ui_text_cache_getText(ctx->renderer, useFont, ln, txt, &tw, &th);
-        if (t) {
-            SDL_Rect r = { textX, y, tw, th };
-            SDL_RenderCopy(ctx->renderer, t, NULL, &r);
-        }
+        void *sourceBucket = st ? (void*)&st->bucketSource : (void*)self;
+        e9ui_text_select_drawText(ctx, self, useFont, ln, txt, textX, y,
+                                  lineHeight, hitW, sourceBucket, 0, 1);
         y += lineHeight;
         if (y > area.y + area.h - padPx) {
             break;
@@ -806,9 +820,96 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
     }
     source_pane_state_t *st = (source_pane_state_t*)self->state;
     source_pane_mode_t mode = st ? st->viewMode : source_pane_mode_c;
+    if (ev->type == SDL_MOUSEMOTION) {
+        if (!st || !st->gutterPending) {
+            return 0;
+        }
+        int slop = ctx ? e9ui_scale_px(ctx, 4) : 4;
+        int dx = ev->motion.x - st->gutterDownX;
+        int dy = ev->motion.y - st->gutterDownY;
+        if (dx * dx + dy * dy >= slop * slop) {
+            st->gutterPending = 0;
+        }
+        return 0;
+    }
+    if (ev->type == SDL_MOUSEBUTTONUP && ev->button.button == SDL_BUTTON_LEFT) {
+        if (!st || !st->gutterPending) {
+            return 0;
+        }
+        st->gutterPending = 0;
+        int slop = ctx ? e9ui_scale_px(ctx, 4) : 4;
+        int dx = ev->button.x - st->gutterDownX;
+        int dy = ev->button.y - st->gutterDownY;
+        if (dx * dx + dy * dy >= slop * slop) {
+            return 0;
+        }
+        if (st->gutterMode == source_pane_mode_c) {
+            const char *path = st->curSrcPath;
+            int lineNo = st->gutterLine;
+            if (!path || !path[0] || lineNo <= 0) {
+                return 0;
+            }
+            const machine_breakpoint_t *bps = NULL;
+            int bp_count = 0;
+            if (machine_getBreakpoints(&debugger.machine, &bps, &bp_count)) {
+                for (int i = 0; i < bp_count; ++i) {
+                    machine_breakpoint_t *bp = (machine_breakpoint_t*)&bps[i];
+                    if (bp->line <= 0 || !bp->file[0]) {
+                        breakpoints_resolveLocation(bp);
+                    }
+                }
+            } else {
+                bps = NULL;
+                bp_count = 0;
+            }
+            machine_breakpoint_t *existing = source_pane_findBreakpointForLine(path, lineNo, bps, bp_count);
+            if (existing) {
+                uint32_t addr = (uint32_t)existing->addr;
+                if (machine_removeBreakpointByAddr(&debugger.machine, addr)) {
+                    libretro_host_debugRemoveBreakpoint(addr);
+                    breakpoints_markDirty();
+                }
+                return 1;
+            }
+            uint32_t addr = 0;
+            if (!source_pane_resolveFileLine(debugger.config.elfPath, path, lineNo, &addr)) {
+                return 0;
+            }
+            machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
+            if (bp) {
+                strncpy(bp->file, path, sizeof(bp->file) - 1);
+                bp->file[sizeof(bp->file) - 1] = '\0';
+                bp->line = lineNo;
+                libretro_host_debugAddBreakpoint(addr);
+                breakpoints_markDirty();
+                return 1;
+            }
+            return 0;
+        }
+        if (st->gutterMode == source_pane_mode_a) {
+            uint32_t addr = st->gutterAddr;
+            machine_breakpoint_t *existing = machine_findBreakpointByAddr(&debugger.machine, addr);
+            if (existing) {
+                if (machine_removeBreakpointByAddr(&debugger.machine, addr)) {
+                    libretro_host_debugRemoveBreakpoint(addr);
+                    breakpoints_markDirty();
+                }
+                return 1;
+            }
+            machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
+            if (bp) {
+                breakpoints_resolveLocation(bp);
+                libretro_host_debugAddBreakpoint(addr);
+                breakpoints_markDirty();
+                return 1;
+            }
+            return 0;
+        }
+        return 0;
+    }
     if (ev->type == SDL_MOUSEWHEEL) {
-        int mx = debugger.ui.mouseX;
-        int my = debugger.ui.mouseY;
+        int mx = e9ui->mouseX;
+        int my = e9ui->mouseY;
         if (source_pane_pointInBounds(self, mx, my)) {
             int wheelY = ev->wheel.y;
             if (ev->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
@@ -905,42 +1006,12 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
                 return 0;
             }
             int lineNo = first + row;
-            const machine_breakpoint_t *bps = NULL;
-            int bp_count = 0;
-            if (machine_getBreakpoints(&debugger.machine, &bps, &bp_count)) {
-                for (int i = 0; i < bp_count; ++i) {
-                    machine_breakpoint_t *bp = (machine_breakpoint_t*)&bps[i];
-                    if (bp->line <= 0 || !bp->file[0]) {
-                        breakpoints_resolveLocation(bp);
-                    }
-                }
-            } else {
-                bps = NULL;
-                bp_count = 0;
-            }
-            machine_breakpoint_t *existing = source_pane_findBreakpointForLine(path, lineNo, bps, bp_count);
-            if (existing) {
-                uint32_t addr = (uint32_t)existing->addr;
-                if (machine_removeBreakpointByAddr(&debugger.machine, addr)) {
-                    libretro_host_debugRemoveBreakpoint(addr);
-                    breakpoints_markDirty();
-                }
-                return 1;
-            }
-            uint32_t addr = 0;
-            if (!source_pane_resolveFileLine(debugger.config.elfPath, path, lineNo, &addr)) {
-                return 0;
-            }
-            machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
-            if (bp) {
-                strncpy(bp->file, path, sizeof(bp->file) - 1);
-                bp->file[sizeof(bp->file) - 1] = '\0';
-                bp->line = lineNo;
-                libretro_host_debugAddBreakpoint(addr);
-                breakpoints_markDirty();
-                return 1;
-            }
-            return 0;
+            st->gutterPending = 1;
+            st->gutterMode = source_pane_mode_c;
+            st->gutterLine = lineNo;
+            st->gutterDownX = mx;
+            st->gutterDownY = my;
+            return 1;
         }
         if (mode == source_pane_mode_a) {
             source_pane_line_metrics_t metrics = source_pane_computeLineMetrics(self, useFont, padPx);
@@ -1015,23 +1086,12 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
             if (row < 0 || row >= count) {
                 return 0;
             }
-            uint32_t addr = (uint32_t)(addrs[row] & 0x00ffffffu);
-            machine_breakpoint_t *existing = machine_findBreakpointByAddr(&debugger.machine, addr);
-            if (existing) {
-                if (machine_removeBreakpointByAddr(&debugger.machine, addr)) {
-                    libretro_host_debugRemoveBreakpoint(addr);
-                    breakpoints_markDirty();
-                }
-                return 1;
-            }
-            machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
-            if (bp) {
-                breakpoints_resolveLocation(bp);
-                libretro_host_debugAddBreakpoint(addr);
-                breakpoints_markDirty();
-                return 1;
-            }
-            return 0;
+            st->gutterPending = 1;
+            st->gutterMode = source_pane_mode_a;
+            st->gutterAddr = (uint32_t)(addrs[row] & 0x00ffffffu);
+            st->gutterDownX = mx;
+            st->gutterDownY = my;
+            return 1;
         }
     }
     if (ev->type == SDL_KEYDOWN && ctx && e9ui_getFocus(ctx) == self) {
@@ -1134,6 +1194,7 @@ void source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
         mode = source_pane_mode_c;
     }
     st->viewMode = mode;
+    st->gutterPending = 0;
 }
 
 source_pane_mode_t source_pane_getMode(e9ui_component_t *comp)
@@ -1172,6 +1233,7 @@ void source_pane_markNeedsRefresh(e9ui_component_t *comp)
     st->scrollIndexValid = 0;
     st->scrollLine = 1;
     st->scrollIndex = 0;
+    st->gutterPending = 0;
 }
 
 void
@@ -1216,6 +1278,7 @@ source_pane_centerOnAddress(e9ui_component_t *comp, e9ui_context_t *ctx, uint32_
         st->scrollIndex = start;
         st->scrollIndexValid = 1;
     }
+    st->gutterPending = 0;
 }
 
 int

@@ -189,7 +189,7 @@ breakpoints_entryPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, in
 
     breakpoints_entry_state_t *st = (breakpoints_entry_state_t*)self->state;
 
-    TTF_Font *font = debugger.theme.text.source;
+    TTF_Font *font = e9ui->theme.text.source;
     if (!font && ctx) font = ctx->font;
 
     int lh = font ? TTF_FontHeight(font) : 16;
@@ -242,7 +242,7 @@ breakpoints_entryRender(e9ui_component_t *self, e9ui_context_t *ctx)
 
     breakpoints_entry_state_t *st = (breakpoints_entry_state_t*)self->state;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) return;
 
     if (st->checkbox && st->checkbox->render) {
@@ -355,7 +355,7 @@ breakpoints_emptyPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, in
 {
     (void)self; (void)availW;
 
-    TTF_Font *font = debugger.theme.text.source;
+    TTF_Font *font = e9ui->theme.text.source;
     if (!font && ctx) font = ctx->font;
 
     int lh = font ? TTF_FontHeight(font) : 16;
@@ -377,7 +377,7 @@ breakpoints_emptyRender(e9ui_component_t *self, e9ui_context_t *ctx)
 {
     if (!self || !ctx || !ctx->renderer) return;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) return;
 
     const SDL_Color meta = {180, 180, 210, 255};
@@ -739,7 +739,7 @@ breakpoints_makeComponent(void)
     e9ui_button_setMini(btn_add, 1);
     e9ui_button_setIconAsset(btn_add, "assets/icons/break.png");
     e9ui_setTooltip(btn_add, "Add Current - b");
-    e9ui_button_registerHotkey(btn_add, &debugger.ui.ctx, SDLK_b, 0, 0);
+    e9ui_button_registerHotkey(btn_add, &e9ui->ctx, SDLK_b, 0, 0);
 
     e9ui_flow_add(toolbar, btn_add);
 

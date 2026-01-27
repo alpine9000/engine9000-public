@@ -6,7 +6,7 @@
  * See COPYING for license details
  */
 
-#include "debugger.h"
+#include "e9ui.h"
 
 typedef struct e9ui_checkbox_state {
     char      *label;
@@ -32,7 +32,7 @@ e9ui_checkbox_toggle(e9ui_component_t *self, e9ui_context_t *ctx)
 int
 e9ui_checkbox_getMargin(const e9ui_context_t *ctx)
 {
-    int base = debugger.theme.checkbox.margin;
+    int base = e9ui->theme.checkbox.margin;
     if (base <= 0) {
         base = E9UI_THEME_CHECKBOX_MARGIN;
     }
@@ -43,7 +43,7 @@ e9ui_checkbox_getMargin(const e9ui_context_t *ctx)
 int
 e9ui_checkbox_getTextGap(const e9ui_context_t *ctx)
 {
-    int base = debugger.theme.checkbox.textGap;
+    int base = e9ui->theme.checkbox.textGap;
     if (base <= 0) {
         base = E9UI_THEME_CHECKBOX_TEXT_GAP;
     }
@@ -56,7 +56,7 @@ e9ui_checkbox_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int a
 {
     (void)self;
     (void)availW;
-    TTF_Font *font = debugger.theme.text.source;
+    TTF_Font *font = e9ui->theme.text.source;
     if (!font && ctx) {
         font = ctx->font;
     }
@@ -111,7 +111,7 @@ e9ui_checkbox_render(e9ui_component_t *self, e9ui_context_t *ctx)
         SDL_RenderFillRect(ctx->renderer, &inner);
     }
     if (st->label && st->label[0]) {
-        TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+        TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
         if (font) {
             SDL_Color col = {220, 220, 220, 255};
             int tw = 0, th = 0;

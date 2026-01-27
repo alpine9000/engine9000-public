@@ -62,8 +62,8 @@ status_bar_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     e9ui_rect_t rect = self->bounds;
     SDL_Rect r = { rect.x, rect.y, rect.w, rect.h };
-    SDL_Color bg = debugger.theme.titlebar.background;
-    SDL_Color fg = debugger.theme.titlebar.text;
+    SDL_Color bg = e9ui->theme.titlebar.background;
+    SDL_Color fg = e9ui->theme.titlebar.text;
     SDL_SetRenderDrawColor(ctx->renderer, bg.r, bg.g, bg.b, bg.a);
     SDL_RenderFillRect(ctx->renderer, &r);
 

@@ -6,10 +6,7 @@
  * See COPYING for license details
  */
 
-#include <string.h>
-
-#include "e9ui_text_cache.h"
-#include "alloc.h"
+#include "e9ui.h"
 
 typedef struct e9ui_text_cache_entry {
     char *text;

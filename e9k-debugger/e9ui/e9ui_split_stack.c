@@ -7,7 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
 
 typedef struct e9ui_split_stack_panel {
     float ratio;
@@ -296,7 +295,7 @@ e9ui_split_stack_render(e9ui_component_t *self, e9ui_context_t *ctx)
             panel->render(panel, ctx);
         }
     }
-    if (debugger.inTransition > 0) {
+    if (e9ui->transition.inTransition > 0) {
         return;
     }
     int gapCount = panelCount > 0 ? panelCount - 1 : 0;
@@ -307,8 +306,8 @@ e9ui_split_stack_render(e9ui_component_t *self, e9ui_context_t *ctx)
         int active = (st->hoverIndex == i) || (st->draggingIndex == i);
         Uint8 fillC = active ? 60 : 40;
         Uint8 lineC = active ? 140 : 90;
-        if (debugger.inTransition < 0) {
-            float scale = 1.0f + (float)(-debugger.inTransition) / 100.0f;
+        if (e9ui->transition.inTransition < 0) {
+            float scale = 1.0f + (float)(-e9ui->transition.inTransition) / 100.0f;
             int fill = (int)((float)fillC * scale);
             int line = (int)((float)lineC * scale);
             fillC = (Uint8)(fill > 255 ? 255 : fill);

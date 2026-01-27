@@ -6,11 +6,9 @@
  * See COPYING for license details
  */
 
+#include "e9ui.h"
 #include <sys/stat.h>
 #include <unistd.h>
-
-#include "e9ui.h"
-#include "debugger.h"
 #include "tinyfiledialogs.h"
 
 #ifdef _WIN32
@@ -212,7 +210,7 @@ e9ui_fileselect_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
     int gap = e9ui_scale_px(ctx, 8);
     int labelW = st->labelWidth_px > 0 ? e9ui_scale_px(ctx, st->labelWidth_px) : 0;
     if (labelW == 0 && st->label && *st->label) {
-        TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+        TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
         if (font) {
             int textW = 0;
             TTF_SizeText(font, st->label, &textW, NULL);
@@ -263,7 +261,7 @@ e9ui_fileselect_render(e9ui_component_t *self, e9ui_context_t *ctx)
         }
     }
     if (st->label && *st->label) {
-        TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+        TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
         if (font) {
             SDL_Color color = (SDL_Color){220, 220, 220, 255};
             int tw = 0;

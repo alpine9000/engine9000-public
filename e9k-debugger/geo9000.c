@@ -972,7 +972,7 @@ geo9000_viewRender(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     SDL_Rect dst = geo9000_fitRect(self->bounds, tex_w, tex_h);
     if (gl_composite_isActive()) {
-        if (debugger.glCompositeCapture) {
+        if (e9ui->glCompositeCapture) {
             if (gl_composite_captureToRenderer(ctx->renderer, data, tex_w, tex_h, pitch, &dst)) {
                 /* Base drawn. */
             }

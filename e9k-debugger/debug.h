@@ -28,9 +28,6 @@ debug_error(const char *fmt, ...);
 #define E9K_DEBUG_GDB_STDOUT_DEFAULT 0
 #endif
 
-void
-debug_gdb(const char *fmt, ...);
-
 #ifndef E9K_DEBUG_TRACE_ENABLE_DEFAULT
 #define E9K_DEBUG_TRACE_ENABLE_DEFAULT 0
 #endif

@@ -6,8 +6,6 @@
  * See COPYING for license details
  */
 
-#include "e9ui_vspacer.h"
-#include "e9ui_scale.h"
 #include "e9ui.h"
 
 typedef struct e9ui_vspacer_state {

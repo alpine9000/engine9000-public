@@ -7,11 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
-#include "file.h"
-
-#include <SDL_image.h>
-#include <stdint.h>
 
 typedef struct e9ui_button_state {
   char               *label;
@@ -74,19 +69,19 @@ e9ui_button_applyGlow(const SDL_Color *src, float phase)
 static SDL_Color
 e9ui_button_disabledBorderColor(const SDL_Color *src)
 {
-    return e9ui_button_scaleColor(*src, debugger.theme.disabled.borderScale);
+    return e9ui_button_scaleColor(*src, e9ui->theme.disabled.borderScale);
 }
 
 static SDL_Color
 e9ui_button_disabledFillColor(const SDL_Color *src)
 {
-    return e9ui_button_scaleColor(*src, debugger.theme.disabled.fillScale);
+    return e9ui_button_scaleColor(*src, e9ui->theme.disabled.fillScale);
 }
 
 static SDL_Color
 e9ui_button_disabledTextColor(const SDL_Color *src)
 {
-    return e9ui_button_scaleColor(*src, debugger.theme.disabled.textScale);
+    return e9ui_button_scaleColor(*src, e9ui->theme.disabled.textScale);
 }
 
 static Uint32
@@ -285,9 +280,9 @@ e9ui_button_getTheme(const e9ui_button_state_t *st)
         return &st->customTheme;
     }
     if (st && st->useMini) {
-        return &debugger.theme.miniButton;
+        return &e9ui->theme.miniButton;
     }
-    return &debugger.theme.button;
+    return &e9ui->theme.button;
 }
 
 static int
@@ -838,7 +833,7 @@ e9ui_button_setIconAsset(e9ui_component_t *btn, const char *rel_asset_png)
         debug_error("ICON load failed: %s (SDL_image: %s)", path, IMG_GetError());
         return;
     }
-    st->icon = SDL_CreateTextureFromSurface(debugger.ui.ctx.renderer, s);
+    st->icon = SDL_CreateTextureFromSurface(e9ui->ctx.renderer, s);
     st->iconW = s->w;
     st->iconH = s->h;
     SDL_FreeSurface(s);

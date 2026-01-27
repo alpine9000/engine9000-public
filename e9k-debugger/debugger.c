@@ -37,7 +37,9 @@
 #include "romset.h"
 #include "ui.h"
 
+e9ui_global_t _e9ui;
 e9k_debugger_t debugger;
+e9ui_global_t *e9ui = &_e9ui;
 
 static int debugger_analyseInitFailed = 0;
 
@@ -251,11 +253,15 @@ debugger_ctor(void)
   debugger.cliWindowOverride = 0;
   debugger.cliWindowW = 0;
   debugger.cliWindowH = 0;
-  debugger.glCompositeEnabled = 1;
-  debugger.transitionMode = e9k_transition_random;
-  debugger.transitionFullscreenMode = e9k_transition_none;
-  debugger.transitionFullscreenModeSet = 0;
-  debugger.transitionCycleIndex = 0;
+  e9ui->glCompositeEnabled = 1;
+  e9ui->transition.mode = e9k_transition_random;
+  e9ui->transition.fullscreenMode = e9k_transition_none;
+  e9ui->transition.fullscreenModeSet = 0;
+  e9ui->transition.cycleIndex = 0;
+  e9ui->layout.memTrackWinX = -1;
+  e9ui->layout.memTrackWinY = -1;
+  e9ui->layout.memTrackWinW = 0;
+  e9ui->layout.memTrackWinH = 0;
   machine_init(&debugger.machine);
   size_t buf_bytes = 64 * 1024 * 1024;
   const char *env_buf = getenv("E9K_STATE_BUFFER_BYTES");
@@ -326,7 +332,7 @@ debugger_main(int argc, char **argv)
     return 1;
   }
 
-  if (!e9ui_ctor()) {
+  if (!e9ui_ctor(debugger_configPath(), debugger.cliWindowOverride, debugger.cliWindowW, debugger.cliWindowW)) {
     input_record_shutdown();
     smoke_test_shutdown();
     {
@@ -352,7 +358,7 @@ debugger_main(int argc, char **argv)
   settings_updateButton(debugger.settingsOk);
 
   if (debugger.libretro.enabled) {
-    if (!libretro_host_init(debugger.ui.ctx.renderer)) {
+    if (!libretro_host_init(e9ui->ctx.renderer)) {
       debug_error("libretro: failed to init host renderer");
       debugger.libretro.enabled = 0;
     }

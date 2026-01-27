@@ -98,7 +98,7 @@ e9k_transition_mode_t
 transition_pickCycle(void)
 {
     e9k_transition_mode_t mode = e9k_transition_slide;
-    int idx = debugger.transitionCycleIndex % 5;
+    int idx = e9ui->transition.cycleIndex % 5;
     if (idx == 1) {
         mode = e9k_transition_explode;
     } else if (idx == 2) {
@@ -108,53 +108,53 @@ transition_pickCycle(void)
     } else if (idx == 4) {
         mode = e9k_transition_rbar;
     }
-    debugger.transitionCycleIndex = (idx + 1) % 5;
+    e9ui->transition.cycleIndex = (idx + 1) % 5;
     return mode;
 }
 
 void
 transition_runIntro(void)
 {
-    e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-    if (!root || !debugger.ui.ctx.renderer) {
+    e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+    if (!root || !e9ui->ctx.renderer) {
         return;
     }
-    if (debugger.ui.fullscreen) {
+    if (e9ui->fullscreen) {
         return;
     }
-    if (debugger.transitionMode == e9k_transition_none) {
+    if (e9ui->transition.mode == e9k_transition_none) {
         return;
     }
 
     int w = 0;
     int h = 0;
-    SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+    SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
     if (root->layout) {
         e9ui_rect_t full = (e9ui_rect_t){0, 0, w, h};
-        root->layout(root, &debugger.ui.ctx, full);
+        root->layout(root, &e9ui->ctx, full);
     }
 
-    e9k_transition_mode_t mode = debugger.transitionMode;
+    e9k_transition_mode_t mode = e9ui->transition.mode;
     if (mode == e9k_transition_random || mode == e9k_transition_cycle) {
         mode = (mode == e9k_transition_cycle) ? transition_pickCycle() : transition_pickRandom();
     }
     switch (mode) {
     case e9k_transition_slide:
-        debugger.inTransition = 1;
+        e9ui->transition.inTransition = 1;
         transition_slide_run(NULL, root, w, h);
         break;
     case e9k_transition_explode:
-        debugger.inTransition = 1;
+        e9ui->transition.inTransition = 1;
         transition_explode_run(NULL, root, w, h);
         break;
     case e9k_transition_doom:
-        debugger.inTransition = 1;
+        e9ui->transition.inTransition = 1;
         transition_doom_run(root, w, h);
         break;
     case e9k_transition_flip:
         break;
     case e9k_transition_rbar:
-        debugger.inTransition = 1;
+        e9ui->transition.inTransition = 1;
         transition_rbar_run(NULL, root, w, h);
         break;
     case e9k_transition_none:
@@ -166,22 +166,22 @@ transition_runIntro(void)
 e9k_transition_mode_t
 transition_pickFullscreenMode(int entering)
 {
-    e9k_transition_mode_t mode = debugger.transitionMode;
+    e9k_transition_mode_t mode = e9ui->transition.mode;
     if (mode != e9k_transition_random && mode != e9k_transition_cycle) {
-        debugger.transitionFullscreenModeSet = 0;
+        e9ui->transition.fullscreenModeSet = 0;
         return mode;
     }
     if (entering) {
         mode = (mode == e9k_transition_cycle) ? transition_pickCycle() : transition_pickRandom();
-        debugger.transitionFullscreenMode = mode;
-        debugger.transitionFullscreenModeSet = 1;
+        e9ui->transition.fullscreenMode = mode;
+        e9ui->transition.fullscreenModeSet = 1;
     } else {
-        if (debugger.transitionFullscreenModeSet) {
-            mode = debugger.transitionFullscreenMode;
+        if (e9ui->transition.fullscreenModeSet) {
+            mode = e9ui->transition.fullscreenMode;
         } else {
             mode = (mode == e9k_transition_cycle) ? transition_pickCycle() : transition_pickRandom();
         }
-        debugger.transitionFullscreenModeSet = 0;
+        e9ui->transition.fullscreenModeSet = 0;
     }
     return mode;
 }

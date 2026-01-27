@@ -155,7 +155,7 @@ e9ui_renderTransientMessage(e9ui_context_t *ctx, int w, int h)
       e9ui_fullscreenHintFont = NULL;
     }
     e9ui_fullscreenHintSize = size;
-    const char *asset = debugger.theme.text.fontAsset ? debugger.theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
+    const char *asset = e9ui->theme.text.fontAsset ? e9ui->theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
     char path[PATH_MAX];
     if (file_getAssetPath(asset, path, sizeof(path))) {
       e9ui_fullscreenHintFont = TTF_OpenFont(path, size);
@@ -193,7 +193,7 @@ e9ui_renderTransientMessage(e9ui_context_t *ctx, int w, int h)
 static void
 e9ui_renderFpsOverlay(e9ui_context_t *ctx, int w, int h)
 {
-  if (!ctx || !ctx->renderer || !e9ui_fpsEnabled || !debugger.ui.fullscreen) {
+  if (!ctx || !ctx->renderer || !e9ui_fpsEnabled || !e9ui->fullscreen) {
     return;
   }
   uint32_t now = SDL_GetTicks();
@@ -218,7 +218,7 @@ e9ui_renderFpsOverlay(e9ui_context_t *ctx, int w, int h)
       e9ui_fpsFont = NULL;
     }
     e9ui_fpsFontSize = size;
-    const char *asset = debugger.theme.text.fontAsset ? debugger.theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
+    const char *asset = e9ui->theme.text.fontAsset ? e9ui->theme.text.fontAsset : E9UI_THEME_TEXT_FONT_ASSET;
     char path[PATH_MAX];
     if (file_getAssetPath(asset, path, sizeof(path))) {
       e9ui_fpsFont = TTF_OpenFont(path, size);
@@ -376,7 +376,7 @@ e9ui_registerHotkey(e9ui_context_t *ctx, SDL_Keycode key, SDL_Keymod modMask, SD
     if (!cb) {
         return -1;
     }
-    e9k_hotkey_registry_t *hk = &debugger.ui.hotkeys;
+    e9k_hotkey_registry_t *hk = &e9ui->hotkeys;
     if (hk->count == hk->cap) {
         int nc = hk->cap ? hk->cap * 2 : 16;
         hk->entries = (e9k_hotkey_entry_t*)alloc_realloc(hk->entries, (size_t)nc * sizeof(e9k_hotkey_entry_t));
@@ -392,7 +392,7 @@ static void
 e9ui_unregisterHotkey(e9ui_context_t *ctx, int id)
 {
     (void)ctx;
-    e9k_hotkey_registry_t *hk = &debugger.ui.hotkeys;
+    e9k_hotkey_registry_t *hk = &e9ui->hotkeys;
     for (int i=0;i<hk->count;i++) {
         if (hk->entries[i].id == id) {
             hk->entries[i] = hk->entries[hk->count-1];
@@ -420,11 +420,11 @@ e9ui_dispatchHotkey(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
     }
   }
   if (key == SDLK_TAB && ctx) {
-    if (prompt_isFocused(ctx, debugger.ui.prompt)) {
+    if (prompt_isFocused(ctx, e9ui->prompt)) {
       return 0;
     }
   }
-  e9k_hotkey_registry_t *hk = &debugger.ui.hotkeys;
+  e9k_hotkey_registry_t *hk = &e9ui->hotkeys;
   for (int i=0;i<hk->count;i++) {
     e9k_hotkey_entry_t *e = &hk->entries[i];
     if (!e->active) {
@@ -691,30 +691,31 @@ e9ui_saveLayoutRecursive(e9ui_component_t *comp, e9ui_context_t *ctx, FILE *f)
 
 
 void
-e9ui_saveLayout(void)
+e9ui_saveLayout(const char* configPath)
 {
-    if (debugger.smokeTestMode != 0) {
+    if (!configPath) {
         return;
     }
-    const char *p = debugger_configPath();
-    if (!p) {
-        return;
-    }
-    FILE *f = fopen(p, "w");
+    FILE *f = fopen(configPath, "w");
     if (!f) {
         return;
     }
     // Save component state by traversing the tree (even if root itself has no persistSave)
-    if (debugger.ui.root) {
-        e9ui_saveLayoutRecursive(debugger.ui.root, &debugger.ui.ctx, f);
+    if (e9ui->root) {
+        e9ui_saveLayoutRecursive(e9ui->root, &e9ui->ctx, f);
     }
     // Save window geometry (last known)
-    int wx = debugger.layout.winX, wy = debugger.layout.winY, ww = debugger.layout.winW, wh = debugger.layout.winH;
-    if (debugger.ui.ctx.window) {
-        SDL_GetWindowPosition(debugger.ui.ctx.window, &wx, &wy);
-        SDL_GetWindowSize(debugger.ui.ctx.window, &ww, &wh);
+    int wx = e9ui->layout.winX, wy = e9ui->layout.winY, ww = e9ui->layout.winW, wh = e9ui->layout.winH;
+    if (e9ui->ctx.window) {
+        SDL_GetWindowPosition(e9ui->ctx.window, &wx, &wy);
+        SDL_GetWindowSize(e9ui->ctx.window, &ww, &wh);
     }
     fprintf(f, "win_x=%d\nwin_y=%d\nwin_w=%d\nwin_h=%d\n", wx, wy, ww, wh);
+    if (e9ui->layout.memTrackWinW > 0 && e9ui->layout.memTrackWinH > 0) {
+        fprintf(f, "memtrack_win_x=%d\nmemtrack_win_y=%d\nmemtrack_win_w=%d\nmemtrack_win_h=%d\n",
+                e9ui->layout.memTrackWinX, e9ui->layout.memTrackWinY,
+                e9ui->layout.memTrackWinW, e9ui->layout.memTrackWinH);
+    }
     config_persistConfig(f);
     fclose(f);
 }
@@ -754,20 +755,12 @@ e9ui_findById(e9ui_component_t *root, const char *id)
 }
 
 void
-e9ui_loadLayoutComponents(void)
+e9ui_loadLayoutComponents(const char* configPath)
 {
-    if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
-        e9ui_component_t *geoBox = e9ui_findById(debugger.ui.root, "libretro_box");
-        if (geoBox) {
-            debugger.ui.fullscreen = geoBox;
-        }
+    if (!configPath) {
         return;
     }
-    const char *p = debugger_configPath();
-    if (!p) {
-        return;
-    }
-    FILE *f = fopen(p, "r");
+    FILE *f = fopen(configPath, "r");
     if (!f) {
         return;
     }
@@ -790,9 +783,9 @@ e9ui_loadLayoutComponents(void)
         memcpy(id, rest, idl);
         id[idl] = '\0';
         const char *prop = dot + 1;
-        e9ui_component_t *c = e9ui_findById(debugger.ui.root, id);
+        e9ui_component_t *c = e9ui_findById(e9ui->root, id);
         if (c && c->persistLoad) {
-            c->persistLoad(c, &debugger.ui.ctx, prop, val);
+            c->persistLoad(c, &e9ui->ctx, prop, val);
         }
     }
     fclose(f);
@@ -810,13 +803,13 @@ e9ui_onSplitChanged(e9ui_context_t *ctx, e9ui_component_t *split, float ratio)
 static float
 e9ui_computeDpiScale(void)
 {
-    if (!debugger.ui.ctx.window || !debugger.ui.ctx.renderer) {
+    if (!e9ui->ctx.window || !e9ui->ctx.renderer) {
         return 1.0f;
     }
     int winW = 0, winH = 0;
     int renW = 0, renH = 0;
-    SDL_GetWindowSize(debugger.ui.ctx.window, &winW, &winH);
-    SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &renW, &renH);
+    SDL_GetWindowSize(e9ui->ctx.window, &winW, &winH);
+    SDL_GetRendererOutputSize(e9ui->ctx.renderer, &renW, &renH);
     if (winW <= 0 || winH <= 0) {
         return 1.0f;
     }
@@ -832,7 +825,7 @@ e9ui_scaledFontSize(int baseSize)
     if (baseSize <= 0) {
         return 1;
     }
-    float scale = debugger.ui.ctx.dpiScale;
+    float scale = e9ui->ctx.dpiScale;
     if (scale <= 1.0f) {
         return baseSize;
     }
@@ -914,17 +907,17 @@ e9ui_updateFontScale(void)
     if (newScale <= 0.0f) {
         newScale = 1.0f;
     }
-    float prevScale = debugger.ui.ctx.dpiScale;
+    float prevScale = e9ui->ctx.dpiScale;
     if (fabsf(newScale - prevScale) < 0.01f) {
-        debugger.ui.ctx.dpiScale = newScale;
+        e9ui->ctx.dpiScale = newScale;
         return;
     }
-    debugger.ui.ctx.dpiScale = newScale;
-    if (debugger.ui.ctx.font) {
-        TTF_CloseFont(debugger.ui.ctx.font);
-        debugger.ui.ctx.font = NULL;
+    e9ui->ctx.dpiScale = newScale;
+    if (e9ui->ctx.font) {
+        TTF_CloseFont(e9ui->ctx.font);
+        e9ui->ctx.font = NULL;
     }
-    debugger.ui.ctx.font = e9ui_loadFont();
+    e9ui->ctx.font = e9ui_loadFont();
     e9ui_theme_reloadFonts();
     e9ui_text_cache_clear();
 }
@@ -1027,7 +1020,7 @@ e9ui_drawTooltip(const e9ui_context_t *ctx, const char *text, int baseX, int bas
 static void
 e9ui_renderTooltipOverlay(void)
 {
-    e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
+    e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
     if (!root) {
         return;
     }
@@ -1039,8 +1032,8 @@ e9ui_renderTooltipOverlay(void)
         int active;
     } tooltip_state = {0};
 
-    e9ui_tooltip_result_t tooltip = e9ui_findTooltipRecursive(root, &debugger.ui.ctx,
-                                                              debugger.ui.ctx.mouseX, debugger.ui.ctx.mouseY, 0);
+    e9ui_tooltip_result_t tooltip = e9ui_findTooltipRecursive(root, &e9ui->ctx,
+                                                              e9ui->ctx.mouseX, e9ui->ctx.mouseY, 0);
     if (!tooltip.text) {
         tooltip_state.active = 0;
         tooltip_state.text = NULL;
@@ -1052,11 +1045,11 @@ e9ui_renderTooltipOverlay(void)
         tooltip_state.active = 1;
         tooltip_state.comp = tooltip.comp;
         tooltip_state.text = tooltip.text;
-        tooltip_state.x = debugger.ui.ctx.mouseX;
-        tooltip_state.y = debugger.ui.ctx.mouseY;
+        tooltip_state.x = e9ui->ctx.mouseX;
+        tooltip_state.y = e9ui->ctx.mouseY;
     }
 
-    e9ui_drawTooltip(&debugger.ui.ctx, tooltip_state.text, tooltip_state.x, tooltip_state.y);
+    e9ui_drawTooltip(&e9ui->ctx, tooltip_state.text, tooltip_state.x, tooltip_state.y);
 }
 
 static e9ui_component_t *
@@ -1086,7 +1079,7 @@ e9ui_findFocusable(e9ui_component_t *comp, e9ui_context_t *ctx)
 void
 e9ui_setFullscreenComponent(e9ui_component_t *comp)
 {
-    e9ui_component_t *prev = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
+    e9ui_component_t *prev = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
     if (comp) {
     } else {
         if (e9ui_transientMessage == e9ui_fullscreenMessage) {
@@ -1095,19 +1088,19 @@ e9ui_setFullscreenComponent(e9ui_component_t *comp)
         }
     }
     if (comp) {
-        e9ui_component_t *focus = e9ui_findFocusable(comp, &debugger.ui.ctx);
+        e9ui_component_t *focus = e9ui_findFocusable(comp, &e9ui->ctx);
         if (focus) {
-            e9ui_setFocus(&debugger.ui.ctx, focus);
+            e9ui_setFocus(&e9ui->ctx, focus);
         }
     }
     if (comp && prev) {
         int w = 0;
         int h = 0;
-        SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+        SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
         if (!e9ui_loadingLayout) {
             e9k_transition_mode_t mode = transition_pickFullscreenMode(1);
             if (mode != e9k_transition_none) {
-                debugger.inTransition = 1;
+                e9ui->transition.inTransition = 1;
                 if (mode == e9k_transition_slide) {
                     transition_slide_runTo(prev, comp, w, h);
                 } else if (mode == e9k_transition_explode) {
@@ -1122,7 +1115,7 @@ e9ui_setFullscreenComponent(e9ui_component_t *comp)
             }
         }
     }
-    debugger.ui.fullscreen = comp;
+    e9ui->fullscreen = comp;
     if (comp) {
         e9ui_fullscreenHintStart = SDL_GetTicks();
         e9ui_transientMessage = e9ui_fullscreenMessage;
@@ -1132,7 +1125,7 @@ e9ui_setFullscreenComponent(e9ui_component_t *comp)
 void
 e9ui_clearFullscreenComponent(void)
 {
-    e9ui_component_t *prev = debugger.ui.fullscreen;
+    e9ui_component_t *prev = e9ui->fullscreen;
     if (e9ui_transientMessage == e9ui_fullscreenMessage) {
         e9ui_fullscreenHintStart = 0;
         e9ui_transientMessage = NULL;
@@ -1140,24 +1133,24 @@ e9ui_clearFullscreenComponent(void)
     if (prev) {
         int w = 0;
         int h = 0;
-        SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+        SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
         e9k_transition_mode_t mode = transition_pickFullscreenMode(0);
         if (mode != e9k_transition_none) {
-            debugger.inTransition = 1;
+            e9ui->transition.inTransition = 1;
             if (mode == e9k_transition_slide) {
-                transition_slide_run(prev, debugger.ui.root, w, h);
+                transition_slide_run(prev, e9ui->root, w, h);
             } else if (mode == e9k_transition_explode) {
-                transition_explode_run(prev, debugger.ui.root, w, h);
+                transition_explode_run(prev, e9ui->root, w, h);
             } else if (mode == e9k_transition_doom) {
-                transition_doom_runTo(prev, debugger.ui.root, w, h);
+                transition_doom_runTo(prev, e9ui->root, w, h);
             } else if (mode == e9k_transition_flip) {
-                transition_flip_run(prev, debugger.ui.root, w, h);
+                transition_flip_run(prev, e9ui->root, w, h);
             } else if (mode == e9k_transition_rbar) {
-                transition_rbar_run(prev, debugger.ui.root, w, h);
+                transition_rbar_run(prev, e9ui->root, w, h);
             }
         }
     }
-    debugger.ui.fullscreen = NULL;
+    e9ui->fullscreen = NULL;
 }
 
 void
@@ -1170,180 +1163,194 @@ e9ui_showTransientMessage(const char *message)
     e9ui_fullscreenHintStart = SDL_GetTicks();
 }
 
+void
+e9ui_drawSelectableText(e9ui_context_t *ctx,
+                        e9ui_component_t *owner,
+                        TTF_Font *font,
+                        const char *text,
+                        SDL_Color color,
+                        int x,
+                        int y,
+                        int lineHeight,
+                        int hitW,
+                        void *bucket,
+                        int dragOnly,
+                        int selectable)
+{
+    e9ui_text_select_drawText(ctx, owner, font, text, color, x, y, lineHeight,
+                              hitW, bucket, dragOnly, selectable);
+}
+
 e9ui_component_t *
 e9ui_getFullscreenComponent(void)
 {
-    return debugger.ui.fullscreen;
+    return e9ui->fullscreen;
 }
 
 int
 e9ui_isFullscreenComponent(const e9ui_component_t *comp)
 {
-    return comp && debugger.ui.fullscreen == comp;
+    return comp && e9ui->fullscreen == comp;
 }
 
 void
 e9ui_renderFrame(void)
 {
-  if (debugger.inTransition > 0) {
+  if (e9ui->transition.inTransition > 0) {
     return;
   }
-  e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-  e9ui_updateState(root, &debugger.ui.ctx);
+  e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+  e9ui_updateState(root, &e9ui->ctx);
  
   e9ui_updateFontScale();
-  SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 16, 16, 16, 255);
-  SDL_RenderClear(debugger.ui.ctx.renderer);
+  SDL_SetRenderDrawColor(e9ui->ctx.renderer, 16, 16, 16, 255);
+  SDL_RenderClear(e9ui->ctx.renderer);
   
-  int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+  int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
   
-  debugger.ui.ctx.winW = w;
-  debugger.ui.ctx.winH = h;
-  debugger.ui.ctx.mouseX = debugger.ui.mouseX;
-  debugger.ui.ctx.mouseY = debugger.ui.mouseY;
+  e9ui->ctx.winW = w;
+  e9ui->ctx.winH = h;
+  e9ui->ctx.mouseX = e9ui->mouseX;
+  e9ui->ctx.mouseY = e9ui->mouseY;
   
   if (root && root->layout) {
     e9ui_rect_t full = (e9ui_rect_t){0,0,w,h};
-    root->layout(root, &debugger.ui.ctx, full);
+    root->layout(root, &e9ui->ctx, full);
   }
 
-  e9ui_updateAutoHide(root, &debugger.ui.ctx);
+  e9ui_updateAutoHide(root, &e9ui->ctx);
+  e9ui_text_select_beginFrame(&e9ui->ctx);
 
   if (root && root->render) {
-    root->render(root, &debugger.ui.ctx);
+    root->render(root, &e9ui->ctx);
   }
+  e9ui_text_select_endFrame(&e9ui->ctx);
 
-  e9ui_renderTransientMessage(&debugger.ui.ctx, w, h);
-  e9ui_renderFpsOverlay(&debugger.ui.ctx, w, h);
+  e9ui_renderTransientMessage(&e9ui->ctx, w, h);
+  e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
-  if (debugger.ui.ctx.font == NULL) {
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 220, 190, 190, 255);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
+  if (e9ui->ctx.font == NULL) {
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 220, 190, 190, 255);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
   }
 
   e9ui_renderTooltipOverlay();
 
-  SDL_RenderPresent(debugger.ui.ctx.renderer);
-
-  if (debugger.opts.debugLayout) {
-    e9ui_debugDrawBounds(root, &debugger.ui.ctx, 0);
-    SDL_RenderPresent(debugger.ui.ctx.renderer);
-  }
+  SDL_RenderPresent(e9ui->ctx.renderer);
 }
 
 void
 e9ui_renderFrameNoLayout(void)
 {
-  e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-  e9ui_updateState(root, &debugger.ui.ctx);
+  e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+  e9ui_updateState(root, &e9ui->ctx);
 
-  SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 16, 16, 16, 255);
-  SDL_RenderClear(debugger.ui.ctx.renderer);
+  SDL_SetRenderDrawColor(e9ui->ctx.renderer, 16, 16, 16, 255);
+  SDL_RenderClear(e9ui->ctx.renderer);
 
-  int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+  int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
 
-  debugger.ui.ctx.winW = w;
-  debugger.ui.ctx.winH = h;
-  debugger.ui.ctx.mouseX = debugger.ui.mouseX;
-  debugger.ui.ctx.mouseY = debugger.ui.mouseY;
+  e9ui->ctx.winW = w;
+  e9ui->ctx.winH = h;
+  e9ui->ctx.mouseX = e9ui->mouseX;
+  e9ui->ctx.mouseY = e9ui->mouseY;
 
-  e9ui_updateAutoHide(root, &debugger.ui.ctx);
+  e9ui_updateAutoHide(root, &e9ui->ctx);
+  e9ui_text_select_beginFrame(&e9ui->ctx);
 
   if (root && root->render) {
-    root->render(root, &debugger.ui.ctx);
+    root->render(root, &e9ui->ctx);
   }
+  e9ui_text_select_endFrame(&e9ui->ctx);
 
-  e9ui_renderTransientMessage(&debugger.ui.ctx, w, h);
-  e9ui_renderFpsOverlay(&debugger.ui.ctx, w, h);
+  e9ui_renderTransientMessage(&e9ui->ctx, w, h);
+  e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
-  if (debugger.ui.ctx.font == NULL) {
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 220, 190, 190, 255);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
+  if (e9ui->ctx.font == NULL) {
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 220, 190, 190, 255);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
   }
 
   e9ui_renderTooltipOverlay();
 
-  SDL_RenderPresent(debugger.ui.ctx.renderer);
+  SDL_RenderPresent(e9ui->ctx.renderer);
 
-  if (debugger.opts.debugLayout) {
-    e9ui_debugDrawBounds(root, &debugger.ui.ctx, 0);
-    SDL_RenderPresent(debugger.ui.ctx.renderer);
-  }
 }
 
 void
 e9ui_renderFrameNoLayoutNoPresent(void)
 {
-  e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-  e9ui_updateState(root, &debugger.ui.ctx);
+  e9ui->glCompositeCapture = 1;
+  
+  e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+  e9ui_updateState(root, &e9ui->ctx);
 
-  SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 16, 16, 16, 255);
-  SDL_RenderClear(debugger.ui.ctx.renderer);
+  SDL_SetRenderDrawColor(e9ui->ctx.renderer, 16, 16, 16, 255);
+  SDL_RenderClear(e9ui->ctx.renderer);
 
-  int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+  int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
 
-  debugger.ui.ctx.winW = w;
-  debugger.ui.ctx.winH = h;
-  debugger.ui.ctx.mouseX = debugger.ui.mouseX;
-  debugger.ui.ctx.mouseY = debugger.ui.mouseY;
+  e9ui->ctx.winW = w;
+  e9ui->ctx.winH = h;
+  e9ui->ctx.mouseX = e9ui->mouseX;
+  e9ui->ctx.mouseY = e9ui->mouseY;
 
-  e9ui_updateAutoHide(root, &debugger.ui.ctx);
+  e9ui_updateAutoHide(root, &e9ui->ctx);
+  e9ui_text_select_beginFrame(&e9ui->ctx);
 
   if (root && root->render) {
-    root->render(root, &debugger.ui.ctx);
+    root->render(root, &e9ui->ctx);
   }
+  e9ui_text_select_endFrame(&e9ui->ctx);
 
-  e9ui_renderTransientMessage(&debugger.ui.ctx, w, h);
-  e9ui_renderFpsOverlay(&debugger.ui.ctx, w, h);
+  e9ui_renderTransientMessage(&e9ui->ctx, w, h);
+  e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
-  if (debugger.ui.ctx.font == NULL) {
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 220, 190, 190, 255);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
+  if (e9ui->ctx.font == NULL) {
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 220, 190, 190, 255);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
   }
 
   e9ui_renderTooltipOverlay();
 
-  if (debugger.opts.debugLayout) {
-    e9ui_debugDrawBounds(root, &debugger.ui.ctx, 0);
-  }
+  e9ui->glCompositeCapture = 0;
+  
 }
 
 void
 e9ui_renderFrameNoLayoutNoPresentNoClear(void)
 {
-  e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-  e9ui_updateState(root, &debugger.ui.ctx);
+  e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+  e9ui_updateState(root, &e9ui->ctx);
 
-  int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+  int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
 
-  debugger.ui.ctx.winW = w;
-  debugger.ui.ctx.winH = h;
-  debugger.ui.ctx.mouseX = debugger.ui.mouseX;
-  debugger.ui.ctx.mouseY = debugger.ui.mouseY;
+  e9ui->ctx.winW = w;
+  e9ui->ctx.winH = h;
+  e9ui->ctx.mouseX = e9ui->mouseX;
+  e9ui->ctx.mouseY = e9ui->mouseY;
 
-  e9ui_updateAutoHide(root, &debugger.ui.ctx);
+  e9ui_updateAutoHide(root, &e9ui->ctx);
+  e9ui_text_select_beginFrame(&e9ui->ctx);
 
   if (root && root->render) {
-    root->render(root, &debugger.ui.ctx);
+    root->render(root, &e9ui->ctx);
   }
+  e9ui_text_select_endFrame(&e9ui->ctx);
 
-  e9ui_renderTransientMessage(&debugger.ui.ctx, w, h);
-  e9ui_renderFpsOverlay(&debugger.ui.ctx, w, h);
+  e9ui_renderTransientMessage(&e9ui->ctx, w, h);
+  e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
-  if (debugger.ui.ctx.font == NULL) {
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 220, 190, 190, 255);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
-    debug_font_drawText(debugger.ui.ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
+  if (e9ui->ctx.font == NULL) {
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 220, 190, 190, 255);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 12, "MISSING FONT - EXPECTED", 2);
+    debug_font_drawText(e9ui->ctx.renderer, 12, 28, "assets/RobotoMono-Regular.ttf", 2);
   }
 
   e9ui_renderTooltipOverlay();
-
-  if (debugger.opts.debugLayout) {
-    e9ui_debugDrawBounds(root, &debugger.ui.ctx, 0);
-  }
 }
 
 void
@@ -1358,52 +1365,60 @@ e9ui_renderFrameNoLayoutNoPresentFade(int fadeAlpha)
   e9ui_renderFrameNoLayoutNoPresent();
   if (fadeAlpha < 255) {
     SDL_BlendMode prevBlend = SDL_BLENDMODE_NONE;
-    SDL_GetRenderDrawBlendMode(debugger.ui.ctx.renderer, &prevBlend);
-    SDL_SetRenderDrawBlendMode(debugger.ui.ctx.renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 0, 0, 0, (Uint8)(255 - fadeAlpha));
-    int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+    SDL_GetRenderDrawBlendMode(e9ui->ctx.renderer, &prevBlend);
+    SDL_SetRenderDrawBlendMode(e9ui->ctx.renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 0, 0, 0, (Uint8)(255 - fadeAlpha));
+    int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
     SDL_Rect r = { 0, 0, w, h };
-    SDL_RenderFillRect(debugger.ui.ctx.renderer, &r);
-    SDL_SetRenderDrawBlendMode(debugger.ui.ctx.renderer, prevBlend);
+    SDL_RenderFillRect(e9ui->ctx.renderer, &r);
+    SDL_SetRenderDrawBlendMode(e9ui->ctx.renderer, prevBlend);
   }
 }
 
 static void
-e9ui_loadWindowConfig(void)
+e9ui_loadWindowConfig(const char* configPath)
 {
-  const char *p = debugger_configPath();
-  if (!p) {
+  if (!configPath) {
     return;
   }
-  FILE *f = fopen(p, "r");
+  FILE *f = fopen(configPath, "r");
   if (!f) {
     return;
   }
   char key[128]; char val[128];
   while (fscanf(f, "%127[^=]=%127s\n", key, val) == 2) {
     if (strcmp(key, "win_x") == 0 || strcmp(key, "winX") == 0) {
-      debugger.layout.winX = (int)strtol(val, NULL, 10);
+      e9ui->layout.winX = (int)strtol(val, NULL, 10);
     } else if (strcmp(key, "win_y") == 0 || strcmp(key, "winY") == 0) {
-      debugger.layout.winY = (int)strtol(val, NULL, 10);
+      e9ui->layout.winY = (int)strtol(val, NULL, 10);
     } else if (strcmp(key, "win_w") == 0 || strcmp(key, "winW") == 0) {
-      debugger.layout.winW = (int)strtol(val, NULL, 10);
+      e9ui->layout.winW = (int)strtol(val, NULL, 10);
     } else if (strcmp(key, "win_h") == 0 || strcmp(key, "winH") == 0) {
-      debugger.layout.winH = (int)strtol(val, NULL, 10);
+      e9ui->layout.winH = (int)strtol(val, NULL, 10);
+    } else if (strcmp(key, "memtrack_win_x") == 0) {
+      e9ui->layout.memTrackWinX = (int)strtol(val, NULL, 10);
+    } else if (strcmp(key, "memtrack_win_y") == 0) {
+      e9ui->layout.memTrackWinY = (int)strtol(val, NULL, 10);
+    } else if (strcmp(key, "memtrack_win_w") == 0) {
+      e9ui->layout.memTrackWinW = (int)strtol(val, NULL, 10);
+    } else if (strcmp(key, "memtrack_win_h") == 0) {
+      e9ui->layout.memTrackWinH = (int)strtol(val, NULL, 10);
     }
   }
   fclose(f);
-  if (debugger.cliWindowOverride) {
-    debugger.layout.winW = debugger.cliWindowW;
-    debugger.layout.winH = debugger.cliWindowH;
-  }
 }
 
 int
-e9ui_ctor(void)
+e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cliWinH)
 {
   e9ui_theme_ctor();
-  e9ui_loadWindowConfig();
+  e9ui_loadWindowConfig(configPath);
 
+  if (cliOverrideWindowSize) {
+    e9ui->layout.winW = cliWinW;
+    e9ui->layout.winH = cliWinH;
+  }    
+  
     // Load persisted layout before creating window (for geometry)
     if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_EVENTS|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER) != 0) {
         debug_error("SDL_Init failed: %s", SDL_GetError());
@@ -1424,10 +1439,10 @@ e9ui_ctor(void)
             return 0;
         }
     }
-    int wantW = (debugger.layout.winW > 0 ? debugger.layout.winW : 1000);
-    int wantH = (debugger.layout.winH > 0 ? debugger.layout.winH : 700);
+    int wantW = (e9ui->layout.winW > 0 ? e9ui->layout.winW : 1000);
+    int wantH = (e9ui->layout.winH > 0 ? e9ui->layout.winH : 700);
     #if defined(__APPLE__) || defined(_WIN32)
-    if (debugger.glCompositeEnabled) {
+    if (e9ui->glCompositeEnabled) {
       SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
     }
     #endif
@@ -1444,16 +1459,16 @@ e9ui_ctor(void)
         SDL_DestroyWindow(win);
         return 0;
     }
-    debugger.ui.ctx.window = win;
-    debugger.ui.ctx.renderer = ren;
-    debugger.ui.ctx.dpiScale = e9ui_computeDpiScale();
+    e9ui->ctx.window = win;
+    e9ui->ctx.renderer = ren;
+    e9ui->ctx.dpiScale = e9ui_computeDpiScale();
     // Enable alpha blending for proper fade animations
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
     // Apply saved window position if present
-    if (debugger.layout.winX >= 0 && debugger.layout.winY >= 0) {
-        SDL_SetWindowPosition(win, debugger.layout.winX, debugger.layout.winY);
+    if (e9ui->layout.winX >= 0 && e9ui->layout.winY >= 0) {
+        SDL_SetWindowPosition(win, e9ui->layout.winX, e9ui->layout.winY);
     }
-    if (debugger.glCompositeEnabled) {
+    if (e9ui->glCompositeEnabled) {
       if (!gl_composite_init(win, ren)) {
         debug_error("gl-composite: disabled (init failed)");
       }
@@ -1463,15 +1478,12 @@ e9ui_ctor(void)
   TTF_Font *font = e9ui_loadFont();
   if (!font) {
   }
-  debugger.ui.ctx.font = font;
+  e9ui->ctx.font = font;
   // Initialize root event hooks
-  debugger.ui.ctx.registerHotkey = e9ui_registerHotkey;
-  debugger.ui.ctx.unregisterHotkey = e9ui_unregisterHotkey;
-  debugger.ui.ctx.dispatchHotkey = e9ui_dispatchHotkey;
-  debugger.ui.ctx.onSplitChanged = e9ui_onSplitChanged;
-  // Enable layout debug overlay if requested
-  const char *dl = getenv("E9K_DEBUG_LAYOUT");
-  if (dl && *dl) debugger.opts.debugLayout = 1;
+  e9ui->ctx.registerHotkey = e9ui_registerHotkey;
+  e9ui->ctx.unregisterHotkey = e9ui_unregisterHotkey;
+  e9ui->ctx.dispatchHotkey = e9ui_dispatchHotkey;
+  e9ui->ctx.onSplitChanged = e9ui_onSplitChanged;
   // Load themed fonts (button + text fonts)
   e9ui_theme_loadFonts();
 
@@ -1530,40 +1542,42 @@ e9ui_processEvents(void)
             memory_track_ui_handleEvent(&ev);
             continue;
         }
-        debugger.ui.ctx.focusClickHandled = 0;
-        debugger.ui.ctx.cursorOverride = 0;
+        e9ui->ctx.focusClickHandled = 0;
+        e9ui->ctx.cursorOverride = 0;
         if (ev.type == SDL_QUIT) return 1;
         else if (ev.type == SDL_MOUSEMOTION) {
             if (sprite_debug_is_window_id(ev.motion.windowID)) {
                 continue;
             }
-            int prevX = debugger.ui.ctx.mouseX;
-            int prevY = debugger.ui.ctx.mouseY;
-            debugger.ui.ctx.mousePrevX = prevX;
-            debugger.ui.ctx.mousePrevY = prevY;
-            int scaledX = e9ui_scale_coord(&debugger.ui.ctx, ev.motion.x);
-            int scaledY = e9ui_scale_coord(&debugger.ui.ctx, ev.motion.y);
+            int prevX = e9ui->ctx.mouseX;
+            int prevY = e9ui->ctx.mouseY;
+            e9ui->ctx.mousePrevX = prevX;
+            e9ui->ctx.mousePrevY = prevY;
+            int scaledX = e9ui_scale_coord(&e9ui->ctx, ev.motion.x);
+            int scaledY = e9ui_scale_coord(&e9ui->ctx, ev.motion.y);
             ev.motion.x = scaledX;
             ev.motion.y = scaledY;
             ev.motion.xrel = scaledX - prevX;
             ev.motion.yrel = scaledY - prevY;
-            debugger.ui.ctx.mouseX = scaledX;
-            debugger.ui.ctx.mouseY = scaledY;
-            debugger.ui.mouseX = scaledX;
-            debugger.ui.mouseY = scaledY;
+            e9ui->ctx.mouseX = scaledX;
+            e9ui->ctx.mouseY = scaledY;
+            e9ui->mouseX = scaledX;
+            e9ui->mouseY = scaledY;
+            e9ui_text_select_handleEvent(&e9ui->ctx, &ev);
         }
         else if (ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP) {
             if (sprite_debug_is_window_id(ev.button.windowID)) {
                 continue;
             }
-            int scaledX = e9ui_scale_coord(&debugger.ui.ctx, ev.button.x);
-            int scaledY = e9ui_scale_coord(&debugger.ui.ctx, ev.button.y);
+            int scaledX = e9ui_scale_coord(&e9ui->ctx, ev.button.x);
+            int scaledY = e9ui_scale_coord(&e9ui->ctx, ev.button.y);
             ev.button.x = scaledX;
             ev.button.y = scaledY;
-            debugger.ui.ctx.mouseX = scaledX;
-            debugger.ui.ctx.mouseY = scaledY;
-            debugger.ui.mouseX = scaledX;
-            debugger.ui.mouseY = scaledY;
+            e9ui->ctx.mouseX = scaledX;
+            e9ui->ctx.mouseY = scaledY;
+            e9ui->mouseX = scaledX;
+            e9ui->mouseY = scaledY;
+            e9ui_text_select_handleEvent(&e9ui->ctx, &ev);
         }
         else if (ev.type == SDL_MOUSEWHEEL) {
             if (sprite_debug_is_window_id(ev.wheel.windowID)) {
@@ -1575,19 +1589,19 @@ e9ui_processEvents(void)
             int mx = 0;
             int my = 0;
             SDL_GetMouseState(&mx, &my);
-            int scaledX = e9ui_scale_coord(&debugger.ui.ctx, mx);
-            int scaledY = e9ui_scale_coord(&debugger.ui.ctx, my);
-            debugger.ui.ctx.mouseX = scaledX;
-            debugger.ui.ctx.mouseY = scaledY;
-            debugger.ui.mouseX = scaledX;
-            debugger.ui.mouseY = scaledY;
+            int scaledX = e9ui_scale_coord(&e9ui->ctx, mx);
+            int scaledY = e9ui_scale_coord(&e9ui->ctx, my);
+            e9ui->ctx.mouseX = scaledX;
+            e9ui->ctx.mouseY = scaledY;
+            e9ui->mouseX = scaledX;
+            e9ui->mouseY = scaledY;
         }
         else if (ev.type == SDL_WINDOWEVENT) {
             sprite_debug_handleWindowEvent(&ev);
             if (ev.window.event == SDL_WINDOWEVENT_MOVED) {
-                debugger.layout.winX = ev.window.data1; debugger.layout.winY = ev.window.data2; config_saveConfig();
+                e9ui->layout.winX = ev.window.data1; e9ui->layout.winY = ev.window.data2; config_saveConfig();
             } else if (ev.window.event == SDL_WINDOWEVENT_RESIZED || ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                debugger.layout.winW = ev.window.data1; debugger.layout.winH = ev.window.data2; config_saveConfig();
+                e9ui->layout.winW = ev.window.data1; e9ui->layout.winH = ev.window.data2; config_saveConfig();
                 e9ui_updateFontScale();
             }
         }
@@ -1627,22 +1641,22 @@ e9ui_processEvents(void)
                     }
                     continue;
                 }
-                if (debugger.ui.helpModal) {
+                if (e9ui->helpModal) {
                     help_cancelModal();
                     continue;
                 }
-                if (debugger.ui.settingsModal) {
+                if (e9ui->settingsModal) {
                     debugger_cancelSettingsModal();
                     continue;
                 }
-                if (debugger.ui.fullscreen) {
+                if (e9ui->fullscreen) {
                     e9ui_clearFullscreenComponent();
                 } else {
-                    e9ui_component_t *geo_box = e9ui_findById(debugger.ui.root, "libretro_box");
+                    e9ui_component_t *geo_box = e9ui_findById(e9ui->root, "libretro_box");
                     if (geo_box) {
                         e9ui_setFullscreenComponent(geo_box);
                     } else {
-                        e9ui_component_t *geo_view = e9ui_findById(debugger.ui.root, "geo_view");
+                        e9ui_component_t *geo_view = e9ui_findById(e9ui->root, "geo_view");
                         if (geo_view) {
                             e9ui_setFullscreenComponent(geo_view);
                         }
@@ -1651,35 +1665,45 @@ e9ui_processEvents(void)
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_F1) {
-                e9ui_setFocus(&debugger.ui.ctx, NULL);
-                if (debugger.ui.helpModal) {
+                e9ui_setFocus(&e9ui->ctx, NULL);
+                if (e9ui->helpModal) {
                     help_cancelModal();
                 } else {
-                    help_showModal(&debugger.ui.ctx);
+                    help_showModal(&e9ui->ctx);
                 }
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_F2) {
-                e9ui_setFocus(&debugger.ui.ctx, NULL);
+                e9ui_setFocus(&e9ui->ctx, NULL);
                 ui_copyFramebufferToClipboard();
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_F3) {
-                e9ui_setFocus(&debugger.ui.ctx, NULL);
+                e9ui_setFocus(&e9ui->ctx, NULL);
                 crt_setEnabled(!crt_isEnabled());
                 debugger.config.crtEnabled = crt_isEnabled() ? 1 : 0;
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_F4) {
                 e9ui_fpsEnabled = !e9ui_fpsEnabled;
-                e9ui_setFocus(&debugger.ui.ctx, NULL);
+                e9ui_setFocus(&e9ui->ctx, NULL);
                 e9ui_showTransientMessage(e9ui_fpsEnabled ? "FPS ON" : "FPS OFF");
                 continue;
+            }
+            if (ev.key.keysym.sym == SDLK_c) {
+                SDL_Keymod mods = (SDL_Keymod)(ev.key.keysym.mod & (KMOD_CTRL|KMOD_GUI));
+                if (mods != 0 && e9ui_text_select_hasSelection()) {
+                    e9ui_component_t *focus = e9ui_getFocus(&e9ui->ctx);
+                    if (!focus || !focus->name || strcmp(focus->name, "e9ui_textbox") != 0) {
+                        e9ui_text_select_copyToClipboard();
+                        continue;
+                    }
+                }
             }
 
             if (ev.key.keysym.sym == SDLK_COMMA || ev.key.keysym.sym == SDLK_PERIOD || ev.key.keysym.sym == SDLK_SLASH) {
                 SDL_Keymod mods = (SDL_Keymod)(ev.key.keysym.mod & (KMOD_CTRL|KMOD_ALT|KMOD_GUI|KMOD_SHIFT));
-                int has_focus = (e9ui_getFocus(&debugger.ui.ctx) != NULL);
+                int has_focus = (e9ui_getFocus(&e9ui->ctx) != NULL);
                 if (mods == 0 && !has_focus) {
                     if (!input_record_isPlayback()) {
                         input_record_recordUiKey(debugger.frameCounter + 1, (unsigned)ev.key.keysym.sym, 1);
@@ -1690,33 +1714,39 @@ e9ui_processEvents(void)
             }
             // Focused component gets first crack at keydown
             int consumed = 0;
-            if (debugger.ui.ctx.dispatchHotkey) {
-                consumed = debugger.ui.ctx.dispatchHotkey(&debugger.ui.ctx, &ev.key);
+            if (e9ui->ctx.dispatchHotkey) {
+                consumed = e9ui->ctx.dispatchHotkey(&e9ui->ctx, &ev.key);
             }
-            if (!consumed && e9ui_getFocus(&debugger.ui.ctx) && e9ui_getFocus(&debugger.ui.ctx)->handleEvent) {
-                consumed = e9ui_getFocus(&debugger.ui.ctx)->handleEvent(e9ui_getFocus(&debugger.ui.ctx), &debugger.ui.ctx, &ev);
+            if (!consumed && e9ui_getFocus(&e9ui->ctx) && e9ui_getFocus(&e9ui->ctx)->handleEvent) {
+                consumed = e9ui_getFocus(&e9ui->ctx)->handleEvent(e9ui_getFocus(&e9ui->ctx), &e9ui->ctx, &ev);
             }
-            e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
+            e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
             if (!consumed && root && root->handleEvent) {
-                root->handleEvent(root, &debugger.ui.ctx, &ev);
+                root->handleEvent(root, &e9ui->ctx, &ev);
             }
             continue;
         } else if (ev.type == SDL_TEXTINPUT) {
             // Text input goes only to focused component
-            if (e9ui_getFocus(&debugger.ui.ctx) && e9ui_getFocus(&debugger.ui.ctx)->handleEvent) {
-                int consumed = e9ui_getFocus(&debugger.ui.ctx)->handleEvent(e9ui_getFocus(&debugger.ui.ctx), &debugger.ui.ctx, &ev);
+            if (e9ui_getFocus(&e9ui->ctx) && e9ui_getFocus(&e9ui->ctx)->handleEvent) {
+                int consumed = e9ui_getFocus(&e9ui->ctx)->handleEvent(e9ui_getFocus(&e9ui->ctx), &e9ui->ctx, &ev);
                 (void)consumed;
             }
             continue;
         }
         // For mouse and other events, bubble through tree for hit-testing and focus updates
-        e9ui_component_t *root = debugger.ui.fullscreen ? debugger.ui.fullscreen : debugger.ui.root;
-        if (root) {
-            e9ui_event_process(root, &debugger.ui.ctx, &ev);
+        e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
+        int suppressMotion = 0;
+        if (ev.type == SDL_MOUSEMOTION) {
+            if ((ev.motion.state & SDL_BUTTON_LMASK) != 0 && e9ui_text_select_hasSelection()) {
+                suppressMotion = 1;
+            }
         }
-        if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT && !debugger.ui.ctx.focusClickHandled) {
+        if (root && !suppressMotion) {
+            e9ui_event_process(root, &e9ui->ctx, &ev);
+        }
+        if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT && !e9ui->ctx.focusClickHandled) {
             if (!sprite_debug_is_window_id(ev.button.windowID)) {
-                e9ui_setFocus(&debugger.ui.ctx, NULL);
+                e9ui_setFocus(&e9ui->ctx, NULL);
             }
         }
     }
@@ -1740,28 +1770,29 @@ e9ui_shutdown(void)
   e9ui_split_resetCursors();
   e9ui_split_stack_resetCursors();
   e9ui_box_resetCursors();
-  if (debugger.ui.hotkeys.entries) {
-    alloc_free(debugger.ui.hotkeys.entries);
-    debugger.ui.hotkeys.entries = NULL;
-    debugger.ui.hotkeys.count = debugger.ui.hotkeys.cap =
-      debugger.ui.hotkeys.next_id = 0;
+  if (e9ui->hotkeys.entries) {
+    alloc_free(e9ui->hotkeys.entries);
+    e9ui->hotkeys.entries = NULL;
+    e9ui->hotkeys.count = e9ui->hotkeys.cap =
+      e9ui->hotkeys.next_id = 0;
   }
   
-  if (debugger.ui.ctx.font) {
-    TTF_CloseFont(debugger.ui.ctx.font);
-    debugger.ui.ctx.font = NULL;
+  if (e9ui->ctx.font) {
+    TTF_CloseFont(e9ui->ctx.font);
+    e9ui->ctx.font = NULL;
   }
   
   e9ui_theme_unloadFonts();
   e9ui_text_cache_clear();
+  e9ui_text_select_shutdown();
   
-  e9ui_childDestroy(debugger.ui.root, &debugger.ui.ctx);
-  debugger.ui.root = NULL;
+  e9ui_childDestroy(e9ui->root, &e9ui->ctx);
+  e9ui->root = NULL;
 
-  if (debugger.ui.ctx.renderer)
-    SDL_DestroyRenderer(debugger.ui.ctx.renderer);
-  if (debugger.ui.ctx.window)
-    SDL_DestroyWindow(debugger.ui.ctx.window);
+  if (e9ui->ctx.renderer)
+    SDL_DestroyRenderer(e9ui->ctx.renderer);
+  if (e9ui->ctx.window)
+    SDL_DestroyWindow(e9ui->ctx.window);
   
   IMG_Quit();
   TTF_Quit();

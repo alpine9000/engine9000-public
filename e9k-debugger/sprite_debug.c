@@ -145,7 +145,7 @@ sprite_debug_presentTexture(int base_w, int base_h)
 static void
 sprite_debug_refocusMain(void)
 {
-    SDL_Window *main_win = debugger.ui.ctx.window;
+    SDL_Window *main_win = e9ui->ctx.window;
     if (!main_win) {
         return;
     }
@@ -384,8 +384,8 @@ sprite_debug_toggle(void)
                 } else {
                     int main_w = 0;
                     int main_h = 0;
-                    if (debugger.ui.ctx.window) {
-                        SDL_GetWindowSize(debugger.ui.ctx.window, &main_w, &main_h);
+                    if (e9ui->ctx.window) {
+                        SDL_GetWindowSize(e9ui->ctx.window, &main_w, &main_h);
                     }
                     if (main_w > 0 && main_h > 0) {
                         int target_w = main_w / 2;

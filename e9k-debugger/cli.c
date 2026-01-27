@@ -250,7 +250,7 @@ cli_parseArgs(int argc, char **argv)
             continue;
         }
         if (strcmp(argv[i], "--no-gl-composite") == 0) {
-            debugger.glCompositeEnabled = 0;
+            e9ui->glCompositeEnabled = 0;
             continue;
         }
     }

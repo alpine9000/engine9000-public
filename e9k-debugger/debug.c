@@ -45,22 +45,6 @@ debug_error(const char *fmt, ...)
 }
 
 void
-debug_gdb(const char *fmt, ...)
-{
-    char buf[4096];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    linebuf_push(&debugger.console, buf);
-    if (debugger.opts.redirectGdbStdout) {
-        fputs(buf, stdout);
-        fputc('\n', stdout);
-        fflush(stdout);
-    }
-}
-
-void
 debug_trace(const char *fmt, ...)
 {
     if (!debugger.opts.enableTrace) return;

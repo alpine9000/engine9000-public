@@ -7,8 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
-
 
 typedef struct e9ui_link_state {
     char               *text;
@@ -36,7 +34,7 @@ e9ui_link_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int avail
 {
     (void)self;
     (void)availW;
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int lh = font ? TTF_FontHeight(font) : 16;
     if (lh <= 0) {
         lh = 16;
@@ -66,7 +64,7 @@ e9ui_link_render(e9ui_component_t *self, e9ui_context_t *ctx)
         return;
     }
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) {
         return;
     }
@@ -214,4 +212,14 @@ e9ui_link_setText(e9ui_component_t *link, const char *text)
     if (text && *text) {
         st->text = alloc_strdup(text);
     }
+}
+
+void
+e9ui_link_setUser(e9ui_component_t *link, void *user)
+{
+    if (!link || !link->state) {
+        return;
+    }
+    e9ui_link_state_t *st = (e9ui_link_state_t*)link->state;
+    st->user = user;
 }

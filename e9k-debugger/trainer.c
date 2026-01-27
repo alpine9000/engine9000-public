@@ -152,7 +152,7 @@ trainer_entryPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int av
 
     trainer_entry_state_t *st = (trainer_entry_state_t*)self->state;
 
-    TTF_Font *font = debugger.theme.text.source;
+    TTF_Font *font = e9ui->theme.text.source;
     if (!font && ctx) font = ctx->font;
 
     int lh = font ? TTF_FontHeight(font) : 16;
@@ -205,7 +205,7 @@ trainer_entryRender(e9ui_component_t *self, e9ui_context_t *ctx)
 
     trainer_entry_state_t *st = (trainer_entry_state_t*)self->state;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) return;
 
     if (st->checkbox && st->checkbox->render) {
@@ -304,7 +304,7 @@ trainer_emptyPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int av
 {
     (void)self; (void)availW;
 
-    TTF_Font *font = debugger.theme.text.source;
+    TTF_Font *font = e9ui->theme.text.source;
     if (!font && ctx) font = ctx->font;
 
     int lh = font ? TTF_FontHeight(font) : 16;
@@ -326,7 +326,7 @@ trainer_emptyRender(e9ui_component_t *self, e9ui_context_t *ctx)
 {
     if (!self || !ctx || !ctx->renderer) return;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) return;
 
     const SDL_Color meta = {180, 180, 210, 255};
@@ -611,7 +611,7 @@ trainer_memoryTrackerCB(e9ui_context_t *ctx, void *user)
 {
   (void)ctx;
   (void)user;
-  e9ui_setFocus(&debugger.ui.ctx, NULL);
+  e9ui_setFocus(&e9ui->ctx, NULL);
   if (memory_track_ui_isOpen()) {
     memory_track_ui_shutdown();
   } else {

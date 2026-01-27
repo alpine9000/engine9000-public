@@ -7,7 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
 
 typedef struct e9ui_split_state {
   e9ui_component_t *a;
@@ -258,14 +257,14 @@ e9ui_split_render(e9ui_component_t *self, e9ui_context_t *ctx)
   if (s->b && s->b->render) {
     s->b->render(s->b, ctx);
   }
-  if (debugger.inTransition > 0) {
+  if (e9ui->transition.inTransition > 0) {
     return;
   }
   // Draw grip
   Uint8 fillC = (s->hover || s->dragging) ? 60 : 40;
   Uint8 lineC = (s->hover || s->dragging) ? 140 : 90;
-  if (debugger.inTransition < 0) {
-    float scale = 1.0f + (float)(-debugger.inTransition) / 100.0f;
+  if (e9ui->transition.inTransition < 0) {
+    float scale = 1.0f + (float)(-e9ui->transition.inTransition) / 100.0f;
     int fill = (int)((float)fillC * scale);
     int line = (int)((float)lineC * scale);
     fillC = (Uint8)(fill > 255 ? 255 : fill);

@@ -6,11 +6,7 @@
  * See COPYING for license details
  */
 
-#include <SDL_image.h>
-
 #include "e9ui.h"
-#include "debugger.h"
-#include "file.h"
 
 typedef struct modal_state {
     e9ui_rect_t rect;
@@ -68,7 +64,7 @@ e9ui_modal_title_make(void)
 static int
 e9ui_modal_titlebarHeight(e9ui_context_t *ctx)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int textH = font ? TTF_FontHeight(font) : 16;
     if (textH <= 0) {
         textH = 16;
@@ -113,12 +109,12 @@ e9ui_modal_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int avai
 static void
 e9ui_modal_drawTitlebar(e9ui_modal_state_t *st, e9ui_context_t *ctx, SDL_Rect rect)
 {
-    const e9k_theme_titlebar_t *theme = &debugger.theme.titlebar;
+    const e9k_theme_titlebar_t *theme = &e9ui->theme.titlebar;
     SDL_SetRenderDrawColor(ctx->renderer, theme->background.r, theme->background.g, theme->background.b, theme->background.a);
     SDL_RenderFillRect(ctx->renderer, &rect);
 
     int padX = e9ui_scale_px(ctx, 8);
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     if (font && st->title[0]) {
         int tw = 0, th = 0;
         SDL_Texture *tex = e9ui_text_cache_getText(ctx->renderer, font, st->title, theme->text, &tw, &th);
@@ -196,8 +192,8 @@ e9ui_modal_handleEvent(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_e
                 st->onClose(self, st->onCloseUser);
             }
             e9ui_setHidden(self, 1);
-            if (!debugger.ui.pendingRemove) {
-                debugger.ui.pendingRemove = self;
+            if (!e9ui->pendingRemove) {
+                e9ui->pendingRemove = self;
             }
             return 1;
         }
@@ -247,17 +243,17 @@ e9ui_component_t *
 e9ui_modal_show(e9ui_context_t *ctx, const char *title, e9ui_rect_t rect,
            e9ui_modal_close_cb_t onClose, void *user)
 {
-    if (!ctx || !debugger.ui.root) {
+    if (!ctx || !e9ui->root) {
         return NULL;
     }
     e9ui_component_t *modal = e9ui_modal_make(title, rect, onClose, user);
     if (!modal) {
         return NULL;
     }
-    if (debugger.ui.root->name && strcmp(debugger.ui.root->name, "e9ui_stack") == 0) {
-        e9ui_stack_addFixed(debugger.ui.root, modal);
+    if (e9ui->root->name && strcmp(e9ui->root->name, "e9ui_stack") == 0) {
+        e9ui_stack_addFixed(e9ui->root, modal);
     } else {
-        e9ui_child_add(debugger.ui.root, modal, alloc_strdup("modal"));
+        e9ui_child_add(e9ui->root, modal, alloc_strdup("modal"));
     }
     return modal;
 }

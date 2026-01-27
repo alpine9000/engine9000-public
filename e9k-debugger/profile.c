@@ -31,7 +31,7 @@
 static void
 profile_analyseRefresh(void)
 {
-  e9ui_component_t *btn = debugger.ui.analyseButton;
+  e9ui_component_t *btn = e9ui->analyseButton;
   if (!btn) {
     return;
   }
@@ -84,7 +84,7 @@ profile_handleStreamLine(const char *line)
 void
 profile_buttonRefresh(void)
 {
-    e9ui_component_t *btn = debugger.ui.profileButton;
+    e9ui_component_t *btn = e9ui->profileButton;
     if (!btn) {
         return;
     }
@@ -152,7 +152,7 @@ profile_uiAnalyse(e9ui_context_t *ctx, void *user)
 void
 analyse_buttonRefresh(void)
 {
-    e9ui_component_t *btn = debugger.ui.analyseButton;
+    e9ui_component_t *btn = e9ui->analyseButton;
     if (!btn) {
         return;
     }

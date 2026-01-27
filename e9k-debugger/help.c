@@ -32,14 +32,14 @@ help_baseName(const char *path)
 static void
 help_closeModal(void)
 {
-    if (!debugger.ui.helpModal) {
+    if (!e9ui->helpModal) {
         return;
     }
-    e9ui_setHidden(debugger.ui.helpModal, 1);
-    if (!debugger.ui.pendingRemove) {
-        debugger.ui.pendingRemove = debugger.ui.helpModal;
+    e9ui_setHidden(e9ui->helpModal, 1);
+    if (!e9ui->pendingRemove) {
+        e9ui->pendingRemove = e9ui->helpModal;
     }
-    debugger.ui.helpModal = NULL;
+    e9ui->helpModal = NULL;
 }
 
 static void
@@ -61,7 +61,7 @@ help_uiClose(e9ui_context_t *ctx, void *user)
 static int
 help_measureKeyWidth(e9ui_context_t *ctx, const char **keys, size_t count)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int maxW = 0;
     if (!font) {
         return e9ui_scale_px(ctx, 80);
@@ -83,7 +83,7 @@ help_measureKeyWidth(e9ui_context_t *ctx, const char **keys, size_t count)
 static int
 help_measureTextWidth(e9ui_context_t *ctx, const char *text)
 {
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     if (!font || !text || !*text) {
         return 0;
     }
@@ -152,7 +152,7 @@ help_showModal(e9ui_context_t *ctx)
     if (!ctx) {
         return;
     }
-    if (debugger.ui.helpModal) {
+    if (e9ui->helpModal) {
         return;
     }
     int margin = e9ui_scale_px(ctx, 32);
@@ -165,12 +165,12 @@ help_showModal(e9ui_context_t *ctx)
         h = 1;
     }
     e9ui_rect_t rect = { margin, margin, w, h };
-    debugger.ui.helpModal = e9ui_modal_show(ctx, "HELP", rect, help_uiClosed, NULL);
-    if (!debugger.ui.helpModal) {
+    e9ui->helpModal = e9ui_modal_show(ctx, "HELP", rect, help_uiClosed, NULL);
+    if (!e9ui->helpModal) {
         return;
     }
 
-    int baseText = debugger.theme.text.fontSize > 0 ? debugger.theme.text.fontSize : E9UI_THEME_TEXT_FONT_SIZE;
+    int baseText = e9ui->theme.text.fontSize > 0 ? e9ui->theme.text.fontSize : E9UI_THEME_TEXT_FONT_SIZE;
     int headingSize = baseText + 2;
     SDL_Color headingColor = (SDL_Color){235, 235, 235, 255};
     SDL_Color bodyColor = (SDL_Color){210, 210, 210, 255};
@@ -319,5 +319,5 @@ help_showModal(e9ui_context_t *ctx)
         e9ui_overlay_setAnchor(overlay, e9ui_anchor_bottom_right);
         e9ui_overlay_setMargin(overlay, 12);
     }
-    e9ui_modal_setBodyChild(debugger.ui.helpModal, overlay ? overlay : center, ctx);
+    e9ui_modal_setBodyChild(e9ui->helpModal, overlay ? overlay : center, ctx);
 }

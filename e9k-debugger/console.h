@@ -9,15 +9,8 @@
 #pragma once
 
 #include "e9ui_component.h"
-#include "e9ui_context.h"
-
-typedef void (*e9ui_link_cb)(e9ui_context_t *ctx, void *user);
 
 e9ui_component_t *
-e9ui_link_make(const char *text, e9ui_link_cb cb, void *user);
-
-void
-e9ui_link_setText(e9ui_component_t *link, const char *text);
-
+console_makeComponent(void);
 
 

@@ -63,7 +63,7 @@ profile_hotspot_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int
     (void)self;
     (void)availW;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
     int lh = font ? TTF_FontHeight(font) : 16;
     if (lh <= 0) lh = 16;
 
@@ -79,7 +79,7 @@ profile_hotspot_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
     profile_hotspot_state_t *st = (profile_hotspot_state_t*)self->state;
     if (!st) return;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : (ctx ? ctx->font : NULL);
 
     int padX = e9ui_scale_px(ctx, PROFILE_LIST_PADDING_X);
     int padY = e9ui_scale_px(ctx, PROFILE_LIST_PADDING_Y);
@@ -126,7 +126,7 @@ profile_hotspot_render(e9ui_component_t *self, e9ui_context_t *ctx)
 
     profile_hotspot_state_t *st = (profile_hotspot_state_t*)self->state;
 
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font) return;
 
     SDL_Rect bg = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };

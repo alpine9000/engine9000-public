@@ -7,7 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
 
 typedef struct e9ui_badge_state {
     char *left;
@@ -22,7 +21,7 @@ typedef struct e9ui_badge_state {
 static void
 e9ui_badge_measure(e9ui_badge_state_t *st, e9ui_context_t *ctx)
 {
-    TTF_Font *font = debugger.theme.button.font ? debugger.theme.button.font : ctx->font;
+    TTF_Font *font = e9ui->theme.button.font ? e9ui->theme.button.font : ctx->font;
     int lh = font ? TTF_FontHeight(font) : 16;
     if (lh <= 0) {
         lh = 16;
@@ -118,7 +117,7 @@ e9ui_badge_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
 
     int padH = 12;
-    TTF_Font *font = debugger.theme.button.font ? debugger.theme.button.font : ctx->font;
+    TTF_Font *font = e9ui->theme.button.font ? e9ui->theme.button.font : ctx->font;
     int wL=0, wR=0, th=font ? TTF_FontHeight(font) : 16;
     if (th <= 0) {
         th = 16;
@@ -218,8 +217,8 @@ e9ui_badge_make(void)
     // Default: empty neutral
     st->left = alloc_strdup("");
     st->right = NULL;
-    st->leftBg = debugger.theme.button.background;
+    st->leftBg = e9ui->theme.button.background;
     st->rightBg = st->leftBg;
-    st->text = debugger.theme.button.text;
+    st->text = e9ui->theme.button.text;
     return c;
 }

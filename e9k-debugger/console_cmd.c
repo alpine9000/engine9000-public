@@ -1027,7 +1027,7 @@ console_cmd_continue(int argc, char **argv)
     (void)argv;
     if (libretro_host_debugResume()) {
         machine_setRunning(&debugger.machine, 1);
-        e9ui_setFocus(&debugger.ui.ctx, NULL);
+        e9ui_setFocus(&e9ui->ctx, NULL);
         return 1;
     }
     debug_error("continue: resume failed");
@@ -1153,7 +1153,7 @@ static int
 console_cmd_transition(int argc, char **argv)
 {
     if (argc < 2) {
-        debug_printf("transition: %s\n", transition_modeName(debugger.transitionMode));
+        debug_printf("transition: %s\n", transition_modeName(e9ui->transition.mode));
         debug_printf("Usage: transition <slide|explode|doom|flip|rbar|random|cycle|none>\n");
         return 1;
     }
@@ -1162,10 +1162,10 @@ console_cmd_transition(int argc, char **argv)
         debug_error("transition: unknown mode '%s'", argv[1]);
         return 0;
     }
-    debugger.transitionMode = mode;
-    debugger.transitionFullscreenModeSet = 0;
+    e9ui->transition.mode = mode;
+    e9ui->transition.fullscreenModeSet = 0;
     config_saveConfig();
-    debug_printf("transition: %s\n", transition_modeName(debugger.transitionMode));
+    debug_printf("transition: %s\n", transition_modeName(e9ui->transition.mode));
     return 1;
 }
 

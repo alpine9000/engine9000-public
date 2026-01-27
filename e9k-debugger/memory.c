@@ -172,7 +172,7 @@ memory_render(e9ui_component_t *self, e9ui_context_t *ctx)
     SDL_Rect r = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
     SDL_SetRenderDrawColor(ctx->renderer, 20, 22, 20, 255);
     SDL_RenderFillRect(ctx->renderer, &r);
-    TTF_Font *font = debugger.theme.text.source ? debugger.theme.text.source : ctx->font;
+    TTF_Font *font = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     if (!font || !st->data) {
         return;
     }

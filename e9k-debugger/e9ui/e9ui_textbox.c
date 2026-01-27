@@ -6,13 +6,7 @@
  * See COPYING for license details
  */
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "list.h"
-#include "e9ui_textbox.h"
-#include "debugger.h"
-#include "e9ui_text_cache.h"
+#include "e9ui.h"
 
 typedef struct textbox_state {
     char               *text;
@@ -369,7 +363,7 @@ textbox_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
 {
     (void)self;
     (void)availW;
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : (ctx ? ctx->font : NULL);
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : (ctx ? ctx->font : NULL);
     int lh = font ? TTF_FontHeight(font) : 16;
     if (lh <= 0) {
         lh = 16;
@@ -402,7 +396,7 @@ textbox_renderComp(e9ui_component_t *self, e9ui_context_t *ctx)
         SDL_SetRenderDrawColor(ctx->renderer, borderCol.r, borderCol.g, borderCol.b, borderCol.a);
         SDL_RenderDrawRect(ctx->renderer, &area);
     }
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     if (!font) {
         return;
     }
@@ -541,7 +535,7 @@ textbox_onMouseDown(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_mous
     if (ev->button != E9UI_MOUSE_BUTTON_LEFT) {
         return;
     }
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     Uint32 now = SDL_GetTicks();
     if (st->double_click_active) {
         if (now - st->last_click_ms <= 350) {
@@ -577,7 +571,7 @@ textbox_onMouseMove(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_mous
     if (!st || !st->editable || !st->selecting) {
         return;
     }
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     textbox_repositionCursor(st, self, font, ev->x);
     st->sel_end = st->cursor;
 }
@@ -610,7 +604,7 @@ textbox_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_
     if (!ctx || e9ui_getFocus(ctx) != self || !st->editable) {
         return 0;
     }
-    TTF_Font *font = debugger.theme.text.prompt ? debugger.theme.text.prompt : ctx->font;
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     int viewW = self->bounds.w - 8 * 2;
     if (ev->type == SDL_TEXTINPUT) {
         if (!font) {

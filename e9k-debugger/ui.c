@@ -38,6 +38,8 @@
 #include "status_bar.h"
 #include "state_buffer.h"
 #include "trainer.h"
+#include "console.h"
+#include "smoke_test.h"
 
 static e9ui_component_t *ui_source_panes[2];
 
@@ -69,7 +71,7 @@ ui_promptFocusHotkey(e9ui_context_t *ctx, void *user)
 void
 ui_updateSourceTitle(void)
 {
-    if (!debugger.ui.sourceBox) {
+    if (!e9ui->sourceBox) {
         return;
     }
     char path[PATH_MAX];
@@ -91,10 +93,10 @@ ui_updateSourceTitle(void)
     } else {
         snprintf(title, sizeof(title), "SOURCE");
     }
-    if (strcmp(title, debugger.ui.sourceTitle) != 0) {
-        strncpy(debugger.ui.sourceTitle, title, sizeof(debugger.ui.sourceTitle) - 1);
-        debugger.ui.sourceTitle[sizeof(debugger.ui.sourceTitle) - 1] = '\0';
-        e9ui_box_setTitlebar(debugger.ui.sourceBox, debugger.ui.sourceTitle, "assets/icons/source.png");
+    if (strcmp(title, e9ui->sourceTitle) != 0) {
+        strncpy(e9ui->sourceTitle, title, sizeof(e9ui->sourceTitle) - 1);
+        e9ui->sourceTitle[sizeof(e9ui->sourceTitle) - 1] = '\0';
+        e9ui_box_setTitlebar(e9ui->sourceBox, e9ui->sourceTitle, "assets/icons/source.png");
     }
 }
 
@@ -115,7 +117,7 @@ ui_centerSourceOnAddress(uint32_t addr)
 {
     for (size_t i = 0; i < sizeof(ui_source_panes)/sizeof(ui_source_panes[0]); ++i) {
         if (ui_source_panes[i]) {
-            source_pane_centerOnAddress(ui_source_panes[i], &debugger.ui.ctx, addr);
+            source_pane_centerOnAddress(ui_source_panes[i], &e9ui->ctx, addr);
         }
     }
 }
@@ -244,15 +246,15 @@ ui_speedToggle(e9ui_context_t *ctx, void *user)
 static void
 ui_speedButtonRefresh(void)
 {
-    if (!debugger.ui.speedButton) {
+    if (!e9ui->speedButton) {
         return;
     }
     const char* asset = debugger.speedMultiplier == 1 ? "assets/icons/speed_normal.png" : "assets/icons/speed_fast.png";
-    e9ui_button_setIconAsset(debugger.ui.speedButton, asset);
+    e9ui_button_setIconAsset(e9ui->speedButton, asset);
     if (debugger.speedMultiplier == 10) {
-        e9ui_button_setTheme(debugger.ui.speedButton, e9ui_theme_button_preset_red());
+        e9ui_button_setTheme(e9ui->speedButton, e9ui_theme_button_preset_red());
     } else {
-        e9ui_button_setTheme(debugger.ui.speedButton, e9ui_theme_button_preset_green());
+        e9ui_button_setTheme(e9ui->speedButton, e9ui_theme_button_preset_green());
     }
 }
 
@@ -283,12 +285,12 @@ ui_restart(e9ui_context_t *ctx, void *user)
 static void
 ui_audioRefreshButton(void)
 {
-    if (!debugger.ui.audioButton) {
+    if (!e9ui->audioButton) {
         return;
     }
     const char *icon = debugger.config.audioEnabled ? "assets/icons/audio.png"
                                                     : "assets/icons/mute.png";
-    e9ui_button_setIconAsset(debugger.ui.audioButton, icon);
+    e9ui_button_setIconAsset(e9ui->audioButton, icon);
 }
 
 static void
@@ -372,13 +374,13 @@ ui_build(void)
     e9ui_component_t *comp_source_right = source_pane_make();
     comp_source_right->persist_id = "src_right";
     // Wire up context callbacks
-    debugger.ui.ctx.sendLine = console_cmd_sendLine;
-    debugger.ui.ctx.sendInterrupt = console_cmd_sendInterrupt;
-    debugger.ui.ctx.applyCompletion = prompt_applyCompletion;
-    debugger.ui.ctx.showCompletions = prompt_showCompletions;
-    debugger.ui.ctx.hideCompletions = prompt_hideCompletions;
+    e9ui->ctx.sendLine = console_cmd_sendLine;
+    e9ui->ctx.sendInterrupt = console_cmd_sendInterrupt;
+    e9ui->ctx.applyCompletion = prompt_applyCompletion;
+    e9ui->ctx.showCompletions = prompt_showCompletions;
+    e9ui->ctx.hideCompletions = prompt_hideCompletions;
 
-    e9ui_component_t *comp_console = e9ui_console_makeComponent();
+    e9ui_component_t *comp_console = console_makeComponent();
     e9ui_component_t *comp_console_box = e9ui_box_make(comp_console);
     comp_console_box->persist_id = "gdb_box";
     e9ui_box_setTitlebar(comp_console_box, "CONSOLE", "assets/icons/debug.png");
@@ -389,9 +391,9 @@ ui_build(void)
     e9ui_component_t *comp_sources_box = e9ui_box_make(comp_sources_hs);
     comp_sources_box->persist_id = "source_box";
     e9ui_box_setTitlebar(comp_sources_box, "SOURCE", "assets/icons/source.png");
-    debugger.ui.sourceBox = comp_sources_box;
-    strncpy(debugger.ui.sourceTitle, "SOURCE", sizeof(debugger.ui.sourceTitle) - 1);
-    debugger.ui.sourceTitle[sizeof(debugger.ui.sourceTitle) - 1] = '\0';
+    e9ui->sourceBox = comp_sources_box;
+    strncpy(e9ui->sourceTitle, "SOURCE", sizeof(e9ui->sourceTitle) - 1);
+    e9ui->sourceTitle[sizeof(e9ui->sourceTitle) - 1] = '\0';
     e9ui_component_t *comp_libretro_view = geo9000_makeComponent();
     comp_libretro_view->persist_id = "geo_view";
     e9ui_component_t *comp_libretro_box = e9ui_box_make(comp_libretro_view);
@@ -404,9 +406,9 @@ ui_build(void)
     e9ui_split_setId(comp_split, "src_console");
     e9ui_component_t *comp_prompt = prompt_makeComponent();
     e9ui_setDisableVariable(comp_prompt, machine_getRunningState(debugger.machine), 1);
-    debugger.ui.prompt = comp_prompt;
-    if (debugger.ui.ctx.registerHotkey) {
-        debugger.ui.ctx.registerHotkey(&debugger.ui.ctx, SDLK_TAB, 0, 0, ui_promptFocusHotkey, comp_prompt);
+    e9ui->prompt = comp_prompt;
+    if (e9ui->ctx.registerHotkey) {
+        e9ui->ctx.registerHotkey(&e9ui->ctx, SDLK_TAB, 0, 0, ui_promptFocusHotkey, comp_prompt);
     }
 
     // Build top row: [ image 240x48 ] [ toolbar grows ]
@@ -426,7 +428,7 @@ ui_build(void)
                     memcpy(p + n, rel, rl + 1);
                     SDL_Surface *s = IMG_Load(p);
                     if (s) {
-                        logoTex = SDL_CreateTextureFromSurface(debugger.ui.ctx.renderer, s);
+                        logoTex = SDL_CreateTextureFromSurface(e9ui->ctx.renderer, s);
                         logoW = s->w;
                         logoH = s->h;
                         SDL_FreeSurface(s);
@@ -451,7 +453,7 @@ ui_build(void)
     }
     // Build toolbar via flow of buttons
     e9ui_component_t *flow = e9ui_flow_make();
-    debugger.ui.toolbar = flow;
+    e9ui->toolbar = flow;
     // Keep toolbar height tight to button height (no extra vertical padding)
     e9ui_flow_setPadding(flow, 0);
     e9ui_flow_setSpacing(flow, 8);
@@ -460,7 +462,7 @@ ui_build(void)
     e9ui_component_t *btn_continue = e9ui_button_make("Continue", ui_continue, NULL);
     e9ui_button_setIconAsset(btn_continue, "assets/icons/continue.png");
     e9ui_setTooltip(btn_continue, "Continue - c");
-    e9ui_button_registerHotkey(btn_continue, &debugger.ui.ctx, SDLK_c, (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI), 0);
+    e9ui_button_registerHotkey(btn_continue, &e9ui->ctx, SDLK_c, (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI), 0);
     e9ui_setHiddenVariable(btn_continue, machine_getRunningState(debugger.machine), 1);
     e9ui_flow_add(flow, btn_continue);
 
@@ -468,14 +470,14 @@ ui_build(void)
     e9ui_button_setIconAsset(btn_pause, "assets/icons/pause.png");
     e9ui_setTooltip(btn_pause, "Pause - p");
     e9ui_button_setLargestLabel(btn_pause, "Continue");
-    e9ui_button_registerHotkey(btn_pause, &debugger.ui.ctx, SDLK_p, 0, 0);
+    e9ui_button_registerHotkey(btn_pause, &e9ui->ctx, SDLK_p, 0, 0);
     e9ui_setHiddenVariable(btn_pause, machine_getRunningState(debugger.machine), 0);
     e9ui_flow_add(flow, btn_pause);
 
     e9ui_component_t *btn_step = e9ui_button_make("Step", ui_step, NULL);
     e9ui_button_setIconAsset(btn_step, "assets/icons/step.png");
     e9ui_setTooltip(btn_step, "Step - s");
-    e9ui_button_registerHotkey(btn_step, &debugger.ui.ctx, SDLK_s, 0, 0);
+    e9ui_button_registerHotkey(btn_step, &e9ui->ctx, SDLK_s, 0, 0);
     e9ui_setDisableVariable(btn_step, machine_getRunningState(debugger.machine), 1);
     e9ui_setHiddenVariable(btn_step, &debugger.elfValid, 0);
     e9ui_flow_add(flow, btn_step);
@@ -483,7 +485,7 @@ ui_build(void)
     e9ui_component_t *btn_next = e9ui_button_make("Next", ui_next, NULL);
     e9ui_button_setIconAsset(btn_next, "assets/icons/next.png");
     e9ui_setTooltip(btn_next, "Next - n");
-    e9ui_button_registerHotkey(btn_next, &debugger.ui.ctx, SDLK_n, 0, 0);
+    e9ui_button_registerHotkey(btn_next, &e9ui->ctx, SDLK_n, 0, 0);
     e9ui_setDisableVariable(btn_next, machine_getRunningState(debugger.machine), 1);
     e9ui_setHiddenVariable(btn_next, &debugger.elfValid, 0);
     e9ui_flow_add(flow, btn_next);
@@ -492,7 +494,7 @@ ui_build(void)
     e9ui_component_t *btn_stepi = e9ui_button_make("Inst", ui_stepi, NULL);
     e9ui_button_setIconAsset(btn_stepi, "assets/icons/step.png");
     e9ui_setTooltip(btn_stepi, "Step Inst - i");
-    e9ui_button_registerHotkey(btn_stepi, &debugger.ui.ctx, SDLK_i, 0, 0);
+    e9ui_button_registerHotkey(btn_stepi, &e9ui->ctx, SDLK_i, 0, 0);
     e9ui_setDisableVariable(btn_stepi, machine_getRunningState(debugger.machine), 1);
     e9ui_flow_add(flow, btn_stepi);
 
@@ -509,25 +511,25 @@ ui_build(void)
     e9ui_component_t *btn_speed = e9ui_button_make("", ui_speedToggle, NULL);
     e9ui_button_setIconAsset(btn_finish, "assets/icons/speed_normal.png");
     e9ui_setTooltip(btn_speed, "Speed toggle - F5");
-    e9ui_button_registerHotkey(btn_speed, &debugger.ui.ctx, SDLK_F5, 0, 0);
-    debugger.ui.speedButton = btn_speed;
+    e9ui_button_registerHotkey(btn_speed, &e9ui->ctx, SDLK_F5, 0, 0);
+    e9ui->speedButton = btn_speed;
     ui_speedButtonRefresh();
 
     e9ui_component_t *btn_frame_stepBack = e9ui_button_make("Back", ui_frameStepBack, NULL);
     e9ui_button_setIconAsset(btn_frame_stepBack, "assets/icons/back.png");
     e9ui_setTooltip(btn_frame_stepBack, "Frame step back - b");
-    e9ui_button_registerHotkey(btn_frame_stepBack, &debugger.ui.ctx, SDLK_b, 0, 0);
+    e9ui_button_registerHotkey(btn_frame_stepBack, &e9ui->ctx, SDLK_b, 0, 0);
     e9ui_flow_add(flow, btn_frame_stepBack);
 
     e9ui_component_t *btn_frame_step = e9ui_button_make("Frame", ui_frameStep, NULL);
     e9ui_button_setIconAsset(btn_frame_step, "assets/icons/step.png");
     e9ui_setTooltip(btn_frame_step, "Frame step - f");
-    e9ui_button_registerHotkey(btn_frame_step, &debugger.ui.ctx, SDLK_f, 0, 0);
+    e9ui_button_registerHotkey(btn_frame_step, &e9ui->ctx, SDLK_f, 0, 0);
     e9ui_flow_add(flow, btn_frame_step);
 
     e9ui_component_t *btn_frame_continue = e9ui_button_make("Continue", ui_frameContinue, NULL);
     e9ui_setTooltip(btn_frame_continue, "Frame continue - g");
-    e9ui_button_registerHotkey(btn_frame_continue, &debugger.ui.ctx, SDLK_g, 0, 0);
+    e9ui_button_registerHotkey(btn_frame_continue, &e9ui->ctx, SDLK_g, 0, 0);
     e9ui_setDisableVariable(btn_frame_continue, &debugger.frameStepMode, 0);
     e9ui_flow_add(flow, btn_frame_continue);
 
@@ -536,12 +538,12 @@ ui_build(void)
 
     e9ui_component_t *btn_save = e9ui_button_make("Save", ui_saveState, NULL);
     e9ui_setTooltip(btn_save, "Save state - F7");
-    e9ui_button_registerHotkey(btn_save, &debugger.ui.ctx, SDLK_F7, 0, 0);
+    e9ui_button_registerHotkey(btn_save, &e9ui->ctx, SDLK_F7, 0, 0);
     e9ui_flow_add(flow, btn_save);
 
     e9ui_component_t *btn_restore = e9ui_button_make("Restore", ui_restoreState, NULL);
     e9ui_setTooltip(btn_restore, "Restore state - F8");
-    e9ui_button_registerHotkey(btn_restore, &debugger.ui.ctx, SDLK_F8, 0, 0);
+    e9ui_button_registerHotkey(btn_restore, &e9ui->ctx, SDLK_F8, 0, 0);
     e9ui_setDisableVariable(btn_restore, &debugger.hasStateSnapshot, 0);
     e9ui_flow_add(flow, btn_restore);
 
@@ -554,13 +556,13 @@ ui_build(void)
     e9ui_box_setVAlign(toolbar_box, e9ui_valign_center);
     e9ui_component_t *top_row = e9ui_hstack_make();
     if (comp_logo) {
-        int logoSlotW = e9ui_scale_px(&debugger.ui.ctx, 240 + 20);
+        int logoSlotW = e9ui_scale_px(&e9ui->ctx, 240 + 20);
         e9ui_hstack_addFixed(top_row, comp_logo, logoSlotW);
     }
 
     e9ui_component_t *btn_settings = e9ui_button_make("Settings", settings_uiOpen, NULL);
     e9ui_setTooltip(btn_settings, "Settings");
-    debugger.ui.settingsButton = btn_settings;
+    e9ui->settingsButton = btn_settings;
     e9ui_flow_add(flow, btn_settings);
 
     if (btn_speed) {
@@ -569,8 +571,8 @@ ui_build(void)
 
     e9ui_component_t *btn_audio = e9ui_button_make("", ui_audioToggle, NULL);
     e9ui_setTooltip(btn_audio, "Audio - F6");
-    e9ui_button_registerHotkey(btn_audio, &debugger.ui.ctx, SDLK_F6, 0, 0);
-    debugger.ui.audioButton = btn_audio;
+    e9ui_button_registerHotkey(btn_audio, &e9ui->ctx, SDLK_F6, 0, 0);
+    e9ui->audioButton = btn_audio;
     ui_audioRefreshButton();
     e9ui_flow_add(flow, btn_audio);
 
@@ -578,19 +580,19 @@ ui_build(void)
     e9ui_setTooltip(btn_reset, "Reset core");
     e9ui_button_setIconAsset(btn_reset, "assets/icons/reset.png");
     e9ui_button_setTheme(btn_reset, e9ui_theme_button_preset_profile_active());
-    debugger.ui.resetButton = btn_reset;
+    e9ui->resetButton = btn_reset;
     e9ui_flow_add(flow, btn_reset);
 
     e9ui_component_t *btn_restart = e9ui_button_make("", ui_restart, NULL);
     e9ui_setTooltip(btn_restart, "Restart");
     e9ui_button_setIconAsset(btn_restart, "assets/icons/reset.png");
     e9ui_button_setTheme(btn_restart, e9ui_theme_button_preset_red());
-    debugger.ui.restartButton = btn_restart;
+    e9ui->restartButton = btn_restart;
     e9ui_flow_add(flow, btn_restart);
 
     if (comp_logo && flow->preferredHeight) {
-        int logo_h = comp_logo->preferredHeight(comp_logo, &debugger.ui.ctx, 10000);
-        int flow_h = flow->preferredHeight(flow, &debugger.ui.ctx, 10000);
+        int logo_h = comp_logo->preferredHeight(comp_logo, &e9ui->ctx, 10000);
+        int flow_h = flow->preferredHeight(flow, &e9ui->ctx, 10000);
         int margin = 0;
         if (logo_h > flow_h) {
             margin = (logo_h - flow_h) / 2;
@@ -645,14 +647,14 @@ ui_build(void)
 
     e9ui_component_t *btn_profile = e9ui_button_make("Profile", profile_uiToggle, NULL);
     e9ui_button_setMini(btn_profile, 1);
-    debugger.ui.profileButton = btn_profile;
+    e9ui->profileButton = btn_profile;
     profile_buttonRefresh();
     e9ui_setHiddenVariable(btn_profile, &debugger.elfValid, 0);
     e9ui_flow_add(comp_profile_toolbar, btn_profile);
 
     e9ui_component_t *btn_analyse = e9ui_button_make("Analyse", profile_uiAnalyse, NULL);
     e9ui_button_setMini(btn_analyse, 1);
-    debugger.ui.analyseButton = btn_analyse;
+    e9ui->analyseButton = btn_analyse;
     analyse_buttonRefresh();
     e9ui_setHidden(btn_analyse, 1);
     e9ui_button_setGlowPulse(btn_analyse, 1);
@@ -690,13 +692,21 @@ ui_build(void)
     e9ui_stack_addFlex(comp_stack, comp_lr);
     e9ui_component_t *comp_status_bar = status_bar_make();
     e9ui_stack_addFixed(comp_stack, comp_status_bar);
-    debugger.ui.root = comp_stack;
+    e9ui->root = comp_stack;
     // After tree is built and IDs are assigned, load persisted component state
-    e9ui_loadLayoutComponents();
+    if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
+        e9ui_component_t *geoBox = e9ui_findById(e9ui->root, "libretro_box");
+        if (geoBox) {
+            e9ui->fullscreen = geoBox;
+        }
+    } else {
+      e9ui_loadLayoutComponents(debugger_configPath());
+    }
+    
     // Apply loaded ratios immediately to avoid a frame of default layout
-    if (debugger.ui.root && debugger.ui.root->layout) {
-        int w,h; SDL_GetRendererOutputSize(debugger.ui.ctx.renderer, &w, &h);
+    if (e9ui->root && e9ui->root->layout) {
+        int w,h; SDL_GetRendererOutputSize(e9ui->ctx.renderer, &w, &h);
         e9ui_rect_t full = (e9ui_rect_t){0,0,w,h};
-        debugger.ui.root->layout(debugger.ui.root, &debugger.ui.ctx, full);
+        e9ui->root->layout(e9ui->root, &e9ui->ctx, full);
     }
 }

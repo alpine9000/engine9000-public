@@ -181,29 +181,27 @@ transition_rbar_renderToTexture(e9ui_component_t *comp, SDL_Texture *target,
     if (!target) {
         return;
     }
-    SDL_Texture *prev = SDL_GetRenderTarget(debugger.ui.ctx.renderer);
+    SDL_Texture *prev = SDL_GetRenderTarget(e9ui->ctx.renderer);
     SDL_SetTextureBlendMode(target, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderTarget(debugger.ui.ctx.renderer, target);
-    SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 0, 0, 0, 255);
-    SDL_RenderClear(debugger.ui.ctx.renderer);
+    SDL_SetRenderTarget(e9ui->ctx.renderer, target);
+    SDL_SetRenderDrawColor(e9ui->ctx.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(e9ui->ctx.renderer);
     if (!comp) {
-        SDL_SetRenderTarget(debugger.ui.ctx.renderer, prev);
+        SDL_SetRenderTarget(e9ui->ctx.renderer, prev);
         return;
     }
-    e9ui_component_t *prevRoot = debugger.ui.root;
-    e9ui_component_t *prevFullscreen = debugger.ui.fullscreen;
-    debugger.ui.fullscreen = fullscreenComp;
-    debugger.ui.root = comp;
+    e9ui_component_t *prevRoot = e9ui->root;
+    e9ui_component_t *prevFullscreen = e9ui->fullscreen;
+    e9ui->fullscreen = fullscreenComp;
+    e9ui->root = comp;
     if (comp->layout) {
         e9ui_rect_t full = (e9ui_rect_t){0, 0, w, h};
-        comp->layout(comp, &debugger.ui.ctx, full);
+        comp->layout(comp, &e9ui->ctx, full);
     }
-    debugger.glCompositeCapture = 1;
     e9ui_renderFrameNoLayoutNoPresent();
-    debugger.glCompositeCapture = 0;
-    debugger.ui.root = prevRoot;
-    debugger.ui.fullscreen = prevFullscreen;
-    SDL_SetRenderTarget(debugger.ui.ctx.renderer, prev);
+    e9ui->root = prevRoot;
+    e9ui->fullscreen = prevFullscreen;
+    SDL_SetRenderTarget(e9ui->ctx.renderer, prev);
 }
 
 void
@@ -215,14 +213,14 @@ transition_rbar_run(e9ui_component_t *from, e9ui_component_t *to, int w, int h)
 void
 transition_rbar_runTo(e9ui_component_t *from, e9ui_component_t *to, int w, int h)
 {
-    if (!debugger.ui.ctx.renderer || (!from && !to)) {
+    if (!e9ui->ctx.renderer || (!from && !to)) {
         return;
     }
 
-    SDL_Texture *prevTarget = SDL_GetRenderTarget(debugger.ui.ctx.renderer);
-    SDL_Texture *fromTex = SDL_CreateTexture(debugger.ui.ctx.renderer, SDL_PIXELFORMAT_RGBA8888,
+    SDL_Texture *prevTarget = SDL_GetRenderTarget(e9ui->ctx.renderer);
+    SDL_Texture *fromTex = SDL_CreateTexture(e9ui->ctx.renderer, SDL_PIXELFORMAT_RGBA8888,
                                              SDL_TEXTUREACCESS_TARGET, w, h);
-    SDL_Texture *toTex = SDL_CreateTexture(debugger.ui.ctx.renderer, SDL_PIXELFORMAT_RGBA8888,
+    SDL_Texture *toTex = SDL_CreateTexture(e9ui->ctx.renderer, SDL_PIXELFORMAT_RGBA8888,
                                            SDL_TEXTUREACCESS_TARGET, w, h);
     if (!fromTex || !toTex) {
         if (fromTex) {
@@ -231,12 +229,12 @@ transition_rbar_runTo(e9ui_component_t *from, e9ui_component_t *to, int w, int h
         if (toTex) {
             SDL_DestroyTexture(toTex);
         }
-        debugger.inTransition = 0;
+        e9ui->transition.inTransition = 0;
         return;
     }
 
-    e9ui_component_t *fromFullscreen = (from == debugger.ui.fullscreen) ? from : NULL;
-    e9ui_component_t *toFullscreen = (to && to != debugger.ui.root) ? to : NULL;
+    e9ui_component_t *fromFullscreen = (from == e9ui->fullscreen) ? from : NULL;
+    e9ui_component_t *toFullscreen = (to && to != e9ui->root) ? to : NULL;
     transition_rbar_renderToTexture(from, fromTex, fromFullscreen, w, h);
     transition_rbar_renderToTexture(to, toTex, toFullscreen, w, h);
 
@@ -271,10 +269,10 @@ transition_rbar_runTo(e9ui_component_t *from, e9ui_component_t *to, int w, int h
         float cosA = cosf(rad);
         float sinA = sinf(rad);
 
-        SDL_SetRenderTarget(debugger.ui.ctx.renderer, prevTarget);
-        SDL_SetRenderDrawColor(debugger.ui.ctx.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(debugger.ui.ctx.renderer);
-        SDL_RenderCopy(debugger.ui.ctx.renderer, fromTex, NULL, &dst);
+        SDL_SetRenderTarget(e9ui->ctx.renderer, prevTarget);
+        SDL_SetRenderDrawColor(e9ui->ctx.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(e9ui->ctx.renderer);
+        SDL_RenderCopy(e9ui->ctx.renderer, fromTex, NULL, &dst);
 
 #if SDL_VERSION_ATLEAST(2, 0, 18)
         transition_rbar_point_t quad[4];
@@ -311,15 +309,15 @@ transition_rbar_runTo(e9ui_component_t *from, e9ui_component_t *to, int w, int h
                 tris[triCount++] = i;
                 tris[triCount++] = i + 1;
             }
-            SDL_RenderGeometry(debugger.ui.ctx.renderer, toTex, verts, clippedCount, tris, triCount);
+            SDL_RenderGeometry(e9ui->ctx.renderer, toTex, verts, clippedCount, tris, triCount);
         }
 #else
         Uint8 alpha = (Uint8)(255.0f * t);
         SDL_SetTextureAlphaMod(toTex, alpha);
-        SDL_RenderCopy(debugger.ui.ctx.renderer, toTex, NULL, &dst);
+        SDL_RenderCopy(e9ui->ctx.renderer, toTex, NULL, &dst);
 #endif
 
-        SDL_RenderPresent(debugger.ui.ctx.renderer);
+        SDL_RenderPresent(e9ui->ctx.renderer);
         uint64_t now = SDL_GetPerformanceCounter();
         double elapsedMs = (double)(now - last) * 1000.0 / (double)freq;
         if (elapsedMs < frameMs) {
@@ -330,5 +328,5 @@ transition_rbar_runTo(e9ui_component_t *from, e9ui_component_t *to, int w, int h
 
     SDL_DestroyTexture(fromTex);
     SDL_DestroyTexture(toTex);
-    debugger.inTransition = -100;
+    e9ui->transition.inTransition = -100;
 }

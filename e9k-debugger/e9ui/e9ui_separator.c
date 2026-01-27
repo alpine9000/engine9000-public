@@ -7,7 +7,6 @@
  */
 
 #include "e9ui.h"
-#include "debugger.h"
 
 typedef struct e9ui_separator_state {
     int width;
@@ -98,8 +97,8 @@ e9ui_separator_measure(e9ui_component_t *comp, e9ui_context_t *ctx, int *out_w, 
     if (ctx) {
         w = e9ui_scale_px(ctx, w);
     }
-    int pad = ctx ? e9ui_scale_px(ctx, debugger.theme.button.padding) : 0;
-    TTF_Font *useFont = debugger.theme.button.font ? debugger.theme.button.font : (ctx ? ctx->font : NULL);
+    int pad = ctx ? e9ui_scale_px(ctx, e9ui->theme.button.padding) : 0;
+    TTF_Font *useFont = e9ui->theme.button.font ? e9ui->theme.button.font : (ctx ? ctx->font : NULL);
     int lh = useFont ? TTF_FontHeight(useFont) : 16;
     if (lh <= 0) {
         lh = 16;
