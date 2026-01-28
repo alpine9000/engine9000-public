@@ -646,9 +646,16 @@ endif
 
 CORE_DIR := ..
 
+OBJROOT   := build
+BUILD_DIR ?= $(OBJROOT)/$(platform)
+
 include Makefile.common
 
-OBJECTS := $(SOURCES_C:.c=.o)
+SOURCES_C_REL := $(patsubst $(CORE_DIR)/%,%,$(SOURCES_C))
+OBJECTS := $(SOURCES_C_REL:.c=.o)
+OBJECTS := $(addprefix $(BUILD_DIR)/,$(OBJECTS))
+
+TARGET := $(BUILD_DIR)/$(TARGET)
 
 ifeq ($(DEBUG), 1)
 ifneq (,$(findstring msvc,$(platform)))
@@ -724,18 +731,24 @@ ${LIBRARY_NAME}_FILES = $(SOURCES_C)
 include $(THEOS_MAKE_PATH)/library.mk
 else
 all: $(TARGET)
+	cp $(TARGET) ../../e9k-debugger/system
 $(TARGET): $(OBJECTS)
+	@mkdir -p $(dir $@)
 ifeq ($(STATIC_LINKING), 1)
 	$(AR) rcs $@ $(OBJECTS)
 else
 	$(LD) $(LINKOUT)$@ $^ $(LDFLAGS) $(LIBS)
 endif
 
-%.o: %.c
+$(BUILD_DIR)/%.o: $(CORE_DIR)/%.c
+	@mkdir -p $(dir $@)
 	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS)
 
 clean:
-	rm -f $(TARGET) $(OBJECTS)
+	rm -rf $(BUILD_DIR)
+
+clean-all:
+	rm -rf $(OBJROOT)
 
 install:
 	install -D -m 755 $(TARGET) $(DESTDIR)$(libdir)/$(LIBRETRO_INSTALL_DIR)/$(TARGET)
@@ -743,5 +756,5 @@ install:
 uninstall:
 	rm $(DESTDIR)$(libdir)/$(LIBRETRO_INSTALL_DIR)/$(TARGET)
 
-.PHONY: clean install uninstall
+.PHONY: clean clean-all install uninstall
 endif

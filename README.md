@@ -33,7 +33,7 @@ Supported platforms:
 
 ---
 
-## What `e9k-debugger` Does
+## Overview
 
 - ASM/C Source level debugger (needs ELF with DWARF - currently Neo Geo only)
 - Amiga/Neo Geo emulators with frame level rewind/fast forward and simple CRT shader
@@ -535,45 +535,29 @@ This project contains files with various licenses, unless otherwise specified as
 
 ### macOS
 
-1) Build the debugger:
-
-- `cd e9k-debugger`
 - `make`
 
-2) Build the geo9000 emulator:
-
-- `cd geo9000/libretro`
-- `./build.sh`
-
-3) Build the ami9000 emulator
-- `cd ami9000`
-- `make -j30`
-- produces `puae_libretro.dll` and copies it into `../e9k-debugger/system`
-Notes:
+This should create
+- `e9k-debugger/e9k-debugger` - macOS executable
+- `e9k-debugger/system/puae_libretro.dll` - Amiga emulator core
+- `e9k-debugger/system/geolith_libretro.dylib` - Neo Geo emulator core
 
 - `e9k-debugger` links against at least: SDL2, SDL2_ttf, SDL2_image, readline, and OpenGL/Cocoa frameworks.
 - The macOS build currently links sanitizers (`-fsanitize=address,undefined`) by default; adjust the Makefile if you want a non-sanitized release build.
 - Typical Homebrew deps: `brew install sdl2 sdl2_image sdl2_ttf readline`
-- `geo9000/libretro/build.sh` produces `geolith_libretro.dylib` and copies it into `e9k-debugger/system`.
 
 ### Windows (MinGW, cross-compiling)
 
 Windows builds use a `x86_64-w64-mingw32` toolchain and have so far only been tested by cross-compiling from macOS.
 
-1) Build the debugger:
+- `make w64`
 
-- `cd e9k-debugger`
-- `make w64` produces `dist/e9kd/e9k-debugger`
+This should create
 
-2) Build the geo9000 emulator
+- `e9k-debugger/dist/e9kd/e9k-debugger` - I create it here so can place all my .dll's for wine to find
+- `e9k-debugger/system/geolith_libretro.dll` - I link `e9k-debugger/system` to `e9k-debugger/dist/e9kd/system`
+- `e9k-debugger/system/puae_libretro.dll` - I link `e9k-debugger/system` to `e9k-debugger/dist/e9kd/system`
 
-- `cd geo9000/libretro`
-- `./build_w64.sh`
-- `geo9000/libretro/build.sh` produces `geolith_libretro.dll` and copies it into `e9k-debugger/system`.
-
-3) Build the ami9000 emulator
-- `cd ami9000`
-- `platform=win CC=x86_64-w64-mingw32-gcc make -j30`
-- produces `puae_libretro.dll` and copies it into `../e9k-debugger/system`
-
-You are likely to need to recreate my dist directory structure for the w64 build - I currently have dist/e9kd/ which contains the exe and any dll (SDL etc) used to link, inside that I symlink to ../../assets and ../../system - you will also need a "saves" folder 
+- You are likely to need to recreate my dist directory structure for the w64 build 
+- I currently have dist/e9kd/ which contains the exe and any dll (SDL etc) used to link
+- Inside that symlink to ../../assets and ../../system - you will also need a "saves" folder 

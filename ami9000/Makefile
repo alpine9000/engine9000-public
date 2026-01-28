@@ -333,8 +333,13 @@ include Makefile.common
 
 OBJECTS     += $(SOURCES_C:.c=.o) $(SOURCES_CXX:.cpp=.o) $(SOURCES_ASM:.S=.o)
 
-OBJDIR      := build
+OBJROOT     := build
+BUILD_DIR   ?= $(OBJROOT)/$(platform)
+
+OBJDIR      := $(BUILD_DIR)
 OBJECTS     := $(addprefix $(OBJDIR)/,$(OBJECTS))
+
+TARGET      := $(BUILD_DIR)/$(TARGET)
 
 INCDIRS     := $(EXTRA_INCLUDES) $(INCFLAGS)
 
@@ -342,15 +347,17 @@ default: info all
 
 info:
 	$(info CFLAGS: $(PLATFLAGS) $(CFLAGS))
+	$(info BUILD_DIR: $(BUILD_DIR))
 	$(info -------)
 
 all: $(TARGET)
 	cp $(TARGET) ../e9k-debugger/system
 
 
--include $(OBJECTS:.o=.d))
+-include $(OBJECTS:.o=.d)
 
 $(TARGET): $(OBJECTS)
+	@mkdir -p $(dir $@)
 ifeq ($(STATIC_LINKING_LINK),1)
 	$(AR) rcs $@ $(OBJECTS)
 else
@@ -381,6 +388,9 @@ $(OBJDIR)/%.o: %.S
 clean:
 	rm -rf $(OBJDIR)
 	rm -f $(TARGET)
+
+clean-all:
+	rm -rf $(OBJROOT)
 
 objectclean:
 	rm -rf $(OBJDIR)
