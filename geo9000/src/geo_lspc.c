@@ -728,8 +728,20 @@ static inline void geo_lspc_sprcalc(void) {
     unsigned hshrink = 0x0f; // Start at full width (no shrinking)
     unsigned vshrink = 0xff; // Start at full height (no shrinking)
 
-    for (unsigned i = 1; i < 382; ++i) {
-        if (lspc.vram[0x8200 + i] & 0x40) { // Sticky/Chain bit set
+    /*
+     * Original code (ENGINE9000 change):
+     *
+     * for (unsigned i = 1; i < 382; ++i) {
+     *     if (lspc.vram[0x8200 + i] & 0x40) { // Sticky/Chain bit set
+     *         ...
+     *     }
+     * }
+     *
+     * We now include sprite index 0 to match MAME/hardware behavior. The sticky
+     * bit only applies when there is a previous sprite to chain from.
+     */
+    for (unsigned i = 0; i < 382; ++i) {
+        if (i && (lspc.vram[0x8200 + i] & 0x40)) { // Sticky/Chain bit set
             /* Attach this sprite to the edge of the previous one, and do not
                set a new Y position or size/height. Account for any horizontal
                shrinking from the last sprite by using its hshrink value
@@ -961,15 +973,27 @@ void geo_lspc_run(unsigned cycs) {
         if ((start <= 573) && (end > 573)) {
             // Arbitrary placement until cycle accuracy is achieved
             geo_lspc_scanline();
-
-            if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM) {
-                if (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_VBLANK)
-                    ngsys.irq2_counter = ngsys.irq2_reload;
-            }
         }
 
-        if ((start <= 712) && (end > 712)) { // This is an educated guess
+        /*
+         * Original code (ENGINE9000 change):
+         *
+         * if ((start <= 712) && (end > 712)) { // This is an educated guess
+         *     lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
+         *     ...
+         * }
+         *
+         * We now advance the scanline at the true end-of-line (768 M68K cycles)
+         * so that IRQ2 timer values expressed in pixels align correctly.
+         */
+        if (end == M68K_CYC_PER_LINE) {
             lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
+
+            // Reload IRQ2 (Timer) counter when VBlank is reached
+            if ((lspc.scanline == 0) && (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_VBLANK)) {
+                ngsys.irq2_counter = ngsys.irq2_reload;
+                ngsys.irq2_frags = 0;
+            }
         }
 
         lspc.cyc = end;
