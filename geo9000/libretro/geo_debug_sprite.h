@@ -1,5 +1,4 @@
-#ifndef GEO_DEBUG_SPRITE_H
-#define GEO_DEBUG_SPRITE_H
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -21,10 +20,8 @@ typedef struct geo_debug_sprite_state {
 } geo_debug_sprite_state_t;
 
 size_t
-geo_debug_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap);
+geo_debug_neogeo_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap);
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

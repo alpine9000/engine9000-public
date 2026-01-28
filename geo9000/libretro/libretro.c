@@ -125,7 +125,7 @@ GEO_DEBUG_EXPORT uint64_t geo_debug_read_cycle_count(void) {
     return geo_cycles_get();
 }
 
-GEO_DEBUG_EXPORT size_t geo_debug_get_p1_rom(geo_debug_rom_region_t *out, size_t cap) {
+GEO_DEBUG_EXPORT size_t geo_debug_neogeo_get_p1_rom(geo_debug_rom_region_t *out, size_t cap) {
     if (!out || cap < sizeof(*out)) {
         return 0;
     }
@@ -136,6 +136,11 @@ GEO_DEBUG_EXPORT size_t geo_debug_get_p1_rom(geo_debug_rom_region_t *out, size_t
     out->data = rom->p;
     out->size = rom->psz;
     return sizeof(*out);
+}
+
+// Backward-compatible alias for older hosts.
+GEO_DEBUG_EXPORT size_t geo_debug_get_p1_rom(geo_debug_rom_region_t *out, size_t cap) {
+    return geo_debug_neogeo_get_p1_rom(out, cap);
 }
 
 GEO_DEBUG_EXPORT size_t geo_debug_disassemble_quick(uint32_t pc, char *out, size_t cap) {
@@ -221,7 +226,7 @@ static int video_crop_r = 8;
 static int video_width_visible = LSPC_WIDTH_VISIBLE;
 static int video_height_visible = LSPC_HEIGHT_VISIBLE;
 
-GEO_DEBUG_EXPORT size_t geo_debug_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap) {
+GEO_DEBUG_EXPORT size_t geo_debug_neogeo_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap) {
     if (!out || cap < sizeof(*out)) {
         return 0;
     }
@@ -235,6 +240,11 @@ GEO_DEBUG_EXPORT size_t geo_debug_get_sprite_state(geo_debug_sprite_state_t *out
     out->crop_l = video_crop_l;
     out->crop_r = video_crop_r;
     return sizeof(*out);
+}
+
+// Backward-compatible alias for older hosts.
+GEO_DEBUG_EXPORT size_t geo_debug_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap) {
+    return geo_debug_neogeo_get_sprite_state(out, cap);
 }
 static float video_aspect = 0.0;
 static unsigned coins34 = 0x00;
