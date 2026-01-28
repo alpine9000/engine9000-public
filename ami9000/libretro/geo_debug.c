@@ -5,6 +5,8 @@
 #include "geo_protect.h"
 #include "geo_watchpoint.h"
 
+#include "libretro.h"
+
 #include "sysconfig.h"
 #include "sysdeps.h"
 #include "options.h"
@@ -18,6 +20,8 @@
 #define GEO_DEBUG_BREAKPOINT_MAX 4096
 
 extern bool libretro_frame_end;
+
+#define GEO_DEBUG_EXPORT RETRO_API
 
 static int geo_debug_paused = 0;
 static uint32_t geo_debug_callstack[GEO_DEBUG_CALLSTACK_MAX];
@@ -213,7 +217,7 @@ geo_debug_consumeTempBreakpoint(uint32_t addr)
 	return 0;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_pause(void)
 {
 	geo_debug_paused = 1;
@@ -222,7 +226,7 @@ geo_debug_pause(void)
 	geo_debug_stepNext = 0;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_resume(void)
 {
 	geo_debug_paused = 0;
@@ -231,13 +235,13 @@ geo_debug_resume(void)
 	geo_debug_stepNext = 0;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_is_paused(void)
 {
 	return geo_debug_paused;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_step_instr(void)
 {
 	geo_debug_paused = 0;
@@ -246,13 +250,13 @@ geo_debug_step_instr(void)
 	geo_debug_stepInstrAfter = 0;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_step_line(void)
 {
 	geo_debug_step_instr();
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_step_next(void)
 {
 	geo_debug_paused = 0;
@@ -264,7 +268,7 @@ geo_debug_step_next(void)
 	geo_debug_stepNextSkipOnce = 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_callstack(uint32_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -280,7 +284,7 @@ geo_debug_read_callstack(uint32_t *out, size_t cap)
 	return count;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_regs(uint32_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -300,7 +304,7 @@ geo_debug_read_regs(uint32_t *out, size_t cap)
 	return count;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_memory(uint32_t addr, uint8_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -315,7 +319,7 @@ geo_debug_read_memory(uint32_t addr, uint8_t *out, size_t cap)
 	return cap;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_write_memory(uint32_t addr, uint32_t value, size_t size)
 {
 	geo_debug_watchpointSuspend++;
@@ -339,7 +343,7 @@ geo_debug_write_memory(uint32_t addr, uint32_t value, size_t size)
 	return 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_disassemble_quick(uint32_t pc, char *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -360,13 +364,13 @@ geo_debug_disassemble_quick(uint32_t pc, char *out, size_t cap)
 	return 2;
 }
 
-uint64_t
+GEO_DEBUG_EXPORT uint64_t
 geo_debug_read_cycle_count(void)
 {
 	return (uint64_t)get_cycles();
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_add_breakpoint(uint32_t addr)
 {
 	uint32_t addr24 = geo_debug_maskAddr((uaecptr)addr);
@@ -379,7 +383,7 @@ geo_debug_add_breakpoint(uint32_t addr)
 	geo_debug_breakpoints[geo_debug_breakpointCount++] = addr24;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_remove_breakpoint(uint32_t addr)
 {
 	uint32_t addr24 = geo_debug_maskAddr((uaecptr)addr);
@@ -395,7 +399,7 @@ geo_debug_remove_breakpoint(uint32_t addr)
 	}
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_add_temp_breakpoint(uint32_t addr)
 {
 	uint32_t addr24 = geo_debug_maskAddr((uaecptr)addr);
@@ -410,21 +414,21 @@ geo_debug_add_temp_breakpoint(uint32_t addr)
 	geo_debug_tempBreakpoints[geo_debug_tempBreakpointCount++] = addr24;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_remove_temp_breakpoint(uint32_t addr)
 {
 	uint32_t addr24 = geo_debug_maskAddr((uaecptr)addr);
 	(void)geo_debug_consumeTempBreakpoint(addr24);
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_set_vblank_callback(void (*cb)(void *), void *user)
 {
 	geo_debug_vblankCb = cb;
 	geo_debug_vblankUser = user;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_vblank_notify(void)
 {
 	if (geo_debug_vblankCb) {
@@ -569,28 +573,28 @@ next_write_byte:
 	return 1;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_memhook_afterRead(uint32_t addr24, uint32_t value, uint32_t sizeBits)
 {
 	addr24 &= 0x00ffffffu;
 	geo_debug_watchpointRead(addr24, value, sizeBits);
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_memhook_filterWrite(uint32_t addr24, uint32_t sizeBits, uint32_t oldValue, int oldValueValid, uint32_t *inoutValue)
 {
 	addr24 &= 0x00ffffffu;
 	return geo_debug_protectFilterWrite(addr24, sizeBits, oldValue, oldValueValid, inoutValue);
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_memhook_afterWrite(uint32_t addr24, uint32_t value, uint32_t oldValue, uint32_t sizeBits, int oldValueValid)
 {
 	addr24 &= 0x00ffffffu;
 	geo_debug_watchpointWrite(addr24, value, oldValue, sizeBits, oldValueValid);
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_instructionHook(uaecptr pc, uae_u16 opcode)
 {
 	uint32_t pc24 = geo_debug_maskAddr(pc);
@@ -657,7 +661,7 @@ geo_debug_instructionHook(uaecptr pc, uae_u16 opcode)
 	return 0;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_reset_watchpoints(void)
 {
 	memset(geo_debug_watchpoints, 0, sizeof(geo_debug_watchpoints));
@@ -667,7 +671,7 @@ geo_debug_reset_watchpoints(void)
 	geo_debug_watchpointSuspend = 0;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_add_watchpoint(uint32_t addr, uint32_t op_mask, uint32_t diff_operand, uint32_t value_operand,
                          uint32_t old_value_operand, uint32_t size_operand, uint32_t addr_mask_operand)
 {
@@ -693,7 +697,7 @@ geo_debug_add_watchpoint(uint32_t addr, uint32_t op_mask, uint32_t diff_operand,
 	return -1;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_remove_watchpoint(uint32_t index)
 {
 	if (index >= GEO_WATCHPOINT_COUNT) {
@@ -703,7 +707,7 @@ geo_debug_remove_watchpoint(uint32_t index)
 	memset(&geo_debug_watchpoints[index], 0, sizeof(geo_debug_watchpoints[index]));
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_watchpoints(geo_debug_watchpoint_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -717,13 +721,13 @@ geo_debug_read_watchpoints(geo_debug_watchpoint_t *out, size_t cap)
 	return count;
 }
 
-uint64_t
+GEO_DEBUG_EXPORT uint64_t
 geo_debug_get_watchpoint_enabled_mask(void)
 {
 	return geo_debug_watchpointEnabledMask;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_set_watchpoint_enabled_mask(uint64_t mask)
 {
 	if (mask) {
@@ -732,7 +736,7 @@ geo_debug_set_watchpoint_enabled_mask(uint64_t mask)
 	geo_debug_watchpointEnabledMask = mask;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_consume_watchbreak(geo_debug_watchbreak_t *out)
 {
 	if (!out) {
@@ -746,14 +750,14 @@ geo_debug_consume_watchbreak(geo_debug_watchbreak_t *out)
 	return 1;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_reset_protects(void)
 {
 	memset(geo_debug_protects, 0, sizeof(geo_debug_protects));
 	geo_debug_protectEnabledMask = 0;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_add_protect(uint32_t addr, uint32_t size_bits, uint32_t mode, uint32_t value)
 {
 	geo_debug_ensureMemhooks();
@@ -798,7 +802,7 @@ geo_debug_add_protect(uint32_t addr, uint32_t size_bits, uint32_t mode, uint32_t
 	return -1;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_remove_protect(uint32_t index)
 {
 	if (index >= GEO_PROTECT_COUNT) {
@@ -808,7 +812,7 @@ geo_debug_remove_protect(uint32_t index)
 	geo_debug_protectEnabledMask &= ~(1ull << index);
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_protects(geo_debug_protect_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -822,13 +826,13 @@ geo_debug_read_protects(geo_debug_protect_t *out, size_t cap)
 	return count;
 }
 
-uint64_t
+GEO_DEBUG_EXPORT uint64_t
 geo_debug_get_protect_enabled_mask(void)
 {
 	return geo_debug_protectEnabledMask;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_set_protect_enabled_mask(uint64_t mask)
 {
 	if (mask) {
@@ -837,26 +841,26 @@ geo_debug_set_protect_enabled_mask(uint64_t mask)
 	geo_debug_protectEnabledMask = mask;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_profiler_start(int stream)
 {
 	(void)stream;
 	geo_debug_profilerEnabled = 1;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_profiler_stop(void)
 {
 	geo_debug_profilerEnabled = 0;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_profiler_is_enabled(void)
 {
 	return geo_debug_profilerEnabled;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_profiler_stream_next(char *out, size_t cap)
 {
 	(void)out;
@@ -864,7 +868,7 @@ geo_debug_profiler_stream_next(char *out, size_t cap)
 	return 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_text_read(char *out, size_t cap)
 {
 	(void)out;
@@ -872,7 +876,7 @@ geo_debug_text_read(char *out, size_t cap)
 	return 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_neogeo_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap)
 {
 	(void)out;
@@ -880,13 +884,13 @@ geo_debug_neogeo_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap)
 	return 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_get_sprite_state(geo_debug_sprite_state_t *out, size_t cap)
 {
 	return geo_debug_neogeo_get_sprite_state(out, cap);
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_neogeo_get_p1_rom(geo_debug_rom_region_t *out, size_t cap)
 {
 	(void)out;
@@ -894,13 +898,13 @@ geo_debug_neogeo_get_p1_rom(geo_debug_rom_region_t *out, size_t cap)
 	return 0;
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_get_p1_rom(geo_debug_rom_region_t *out, size_t cap)
 {
 	return geo_debug_neogeo_get_p1_rom(out, cap);
 }
 
-size_t
+GEO_DEBUG_EXPORT size_t
 geo_debug_read_checkpoints(geo_debug_checkpoint_t *out, size_t cap)
 {
 	if (!out || cap == 0) {
@@ -914,19 +918,19 @@ geo_debug_read_checkpoints(geo_debug_checkpoint_t *out, size_t cap)
 	return count;
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_reset_checkpoints(void)
 {
 	memset(geo_debug_checkpoints, 0, sizeof(geo_debug_checkpoints));
 }
 
-void
+GEO_DEBUG_EXPORT void
 geo_debug_set_checkpoint_enabled(int enabled)
 {
 	geo_debug_checkpointEnabled = enabled ? 1 : 0;
 }
 
-int
+GEO_DEBUG_EXPORT int
 geo_debug_get_checkpoint_enabled(void)
 {
 	return geo_debug_checkpointEnabled;
