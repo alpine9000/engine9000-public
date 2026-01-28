@@ -65,11 +65,12 @@ snapshot_pathExistsDir(const char *path)
 static const char *
 snapshot_snapshotSaveDir(void)
 {
-    if (debugger.settingsEdit.savesDir[0]) {
-        return debugger.settingsEdit.savesDir;
+    if (debugger.libretro.saveDir[0]) {
+        return debugger.libretro.saveDir;
     }
-    if (debugger.config.savesDir[0]) {
-        return debugger.config.savesDir;
+    // Match libretro_host_start() behavior: if saveDir is not configured, fall back to systemDir.
+    if (debugger.libretro.systemDir[0]) {
+        return debugger.libretro.systemDir;
     }
     return NULL;
 }
@@ -84,8 +85,8 @@ snapshot_snapshotRomPath(void)
     if (debugger.libretro.romPath[0]) {
         return debugger.libretro.romPath;
     }
-    if (debugger.config.romPath[0]) {
-        return debugger.config.romPath;
+    if (debugger.libretro.romPath[0]) {
+        return debugger.libretro.romPath;
     }
     return NULL;
 }
@@ -193,7 +194,7 @@ snapshot_saveSnapshotOnExit(void)
     if (!snapshot_computeRomChecksum(&romChecksum)) {
         return;
     }
-    (void)state_buffer_saveSnapshotFile(path, romChecksum);
+    state_buffer_saveSnapshotFile(path, romChecksum);
 }
 
 static void

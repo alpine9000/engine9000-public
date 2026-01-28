@@ -1,8 +1,12 @@
-# ENGINE9000 Debugger/Profiler
+# ENGINE9000 68k Retro Debugger/Profiler
 
-*** NOTE - this is brand new software with almost no usage yet - expect instability/missing features/crashes ***
+Amiga/Neo Geo debugger/profiler - under heavy development so likely to be unstable for the time being. 
 
-Neo Geo debugger/profiler developed while I was learning Neo Geo programming over the xmas vacation.
+Expect file format changes and other incompatibilities with new versions. 
+
+The UI is custom SDL2, so expect some weird UI experiences.
+
+Amiga version does not support ELF yet, or it might if you install ngdevkit's toolchain.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=Q24F6S8J57U">
@@ -16,10 +20,11 @@ Neo Geo debugger/profiler developed while I was learning Neo Geo programming ove
 
 ![Debugger UI](assets/debugger.png)
 
-The debugger includes the `geo9000` emulator which is a fork of `geolith-libretro`, which is itself a fork of the original `geolith` emulator:
+Project layout
 
-- `geolith-libretro` (upstream fork): https://github.com/libretro/geolith-libretro  
-- `geolith` (original): https://gitlab.com/jgemu/geolith
+- `e9k-debugger` - The debugger project
+- `geo9000` - Neo Geo emulator - (forked from `geolith-libretro` https://github.com/libretro/geolith-libretro)
+- `ami9000` - Amiga emulator - (fored from `libretro-uae` https://github.com/libretro/libretro-uae)
 
 Supported platforms:
 
@@ -30,13 +35,13 @@ Supported platforms:
 
 ## What `e9k-debugger` Does
 
-- ASM/C Source level debugger (needs ELF with DWARF - if you use ngdevkit you're good to go)
-- NeoGeo emulator with frame level rewind/fast forward and simple CRT shader
+- ASM/C Source level debugger (needs ELF with DWARF - currently Neo Geo only)
+- Amiga/Neo Geo emulators with frame level rewind/fast forward and simple CRT shader
 - Source level profiler
 - Trainer/cheat mode
 - Smoke tester (record scenarios, replay, check all video frames identical)
 - Fake Neo Geo peripherals for debug console and profile checkpoints
-- Sprite debug visualiser
+- Neo Geo Sprite debug visualiser
 
 ### Debugging Features
 
@@ -61,7 +66,7 @@ Supported platforms:
 - Frame step
 - Frame reverse
 
-### Fake Peripherals
+### Neo Geo Fake Peripherals
 
 - `0xFFFF0` - characters written to this address will be output in the console and terminal
 - `0xFFFEC` - writing a checkpoint slot from 0-64 for checkpoint profiling stats
@@ -102,7 +107,7 @@ The debugger keeps a rolling save-state timeline (“state buffer”) implemente
 
 ### Sprite Debug Window
 
-![Sprite Debug](assets/sprite_debug.png)
+![Neo Geo Sprite Debug](assets/sprite_debug.png)
 
 - Available via a hidden button in the emulator window - hover in top right hand corner to reveal
 - Renders a full view of the Neo Geo coordinate space allowing visualsation of off screen sprites
@@ -129,7 +134,9 @@ The debugger keeps a rolling save-state timeline (“state buffer”) implemente
 
 ---
 
-## Hotkeys
+## Controls
+
+Clicking on a title bar collapses the panel, for horizontal panels click the icon to restore.
 
 Global debugger hotkeys
 
@@ -450,18 +457,27 @@ In this repo, the default `./system` directory corresponds to `e9k-debugger/syst
   - the filename prior to the extension has a rom designation (rom-p1.bin)
 - Use the ROM Folder to load mame style rom sets.
 
-### Emulator 
+### Amiga UAE File
 
-`e9k-debugger` requires the emulator DLL for your platform:
+Amiga config is specified by selecting a puae format .uae file
 
-- A geo9000 emulator dynamic library (`Settings → CORE`, or `--libretro-core PATH`)
+### Amiga Kickstart ROMs (required)
 
-Platform defaults:
+- Kickstart ROMS are not included. Kickstart rom paths should be set in the .uae file 
+- Please still set the system folder
 
-- macOS default core path: `./system/geolith_libretro.dylib`
-- Windows default core path: `./system/geolith_libretro.dll`
+### Amiga Disks/Configs
 
-### ELF + toolchain (required for source/symbol features)
+- Unsure at this stage how higher end configs work
+- Really designed for minimal A500/512/512 configs
+- For more complex configs we will need to add a way to disable rolling snapshot
+
+### Emulator Platform defaults:
+
+- macOS default core paths: `./system/geolith_libretro.dylib` for Neo Geo and `./system/puae_libretro.dylib` for Amiga
+- Windows default core paths: `./system/geolith_libretro.dll` for Neo Geo and `./system/puae_libretro.dll` for Amiga
+
+### ELF + toolchain (required for source/symbol features) (Currently Neo Geo only)
 
 For source-level stepping, symbol breakpoints, and rich `print` expressions, you must provide:
 
@@ -484,12 +500,12 @@ Useful environment variables:
 
 - `E9K_STATE_BUFFER_BYTES`: state buffer capacity (default is `64*1024*1024`)
 - `E9K_PROFILE_JSON`: output path for profiler analysis JSON (otherwise a temp file is used)
-- `E9K_DEBUG_LAYOUT`: enable UI layout debug overlay
 
 ### Command-line options
 
 Run `e9k-debugger --help` for the full list. The current options include:
 
+#### Neo Geo only (not implemented in Amiga uet)
 - `--elf PATH`
 - `--libretro-core PATH`
 - `--libretro-rom PATH`
@@ -498,6 +514,8 @@ Run `e9k-debugger --help` for the full list. The current options include:
 - `--libretro-save-dir PATH`
 - `--source-dir PATH`
 - `--audio-buffer-ms MS`
+
+#### Shared options
 - `--window-size WxH`
 - `--record PATH`, `--playback PATH`
 - `--make-smoke PATH`, `--smoke-test PATH`, `--smoke-open`
@@ -527,6 +545,10 @@ This project contains files with various licenses, unless otherwise specified as
 - `cd geo9000/libretro`
 - `./build.sh`
 
+3) Build the ami9000 emulator
+- `cd ami9000`
+- `make -j30`
+- produces `puae_libretro.dll` and copies it into `../e9k-debugger/system`
 Notes:
 
 - `e9k-debugger` links against at least: SDL2, SDL2_ttf, SDL2_image, readline, and OpenGL/Cocoa frameworks.
@@ -548,5 +570,10 @@ Windows builds use a `x86_64-w64-mingw32` toolchain and have so far only been te
 - `cd geo9000/libretro`
 - `./build_w64.sh`
 - `geo9000/libretro/build.sh` produces `geolith_libretro.dll` and copies it into `e9k-debugger/system`.
+
+3) Build the ami9000 emulator
+- `cd ami9000`
+- `platform=win CC=x86_64-w64-mingw32-gcc make -j30`
+- produces `puae_libretro.dll` and copies it into `../e9k-debugger/system`
 
 You are likely to need to recreate my dist directory structure for the w64 build - I currently have dist/e9kd/ which contains the exe and any dll (SDL etc) used to link, inside that I symlink to ../../assets and ../../system - you will also need a "saves" folder 

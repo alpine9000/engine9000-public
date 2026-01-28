@@ -125,13 +125,16 @@ e9ui_fileselect_getInitialDir(const e9ui_fileselect_state_t *st, char *out, size
     }
     size_t len = (size_t)(sep - path);
     if (len == 0) {
-        return 0;
+        out[0] = '/';
+        out[1] = '\0';
+        return 1;
     }
-    if (len >= cap) {
-        len = cap - 1;
+    if (len + 2 > cap) {
+        len = cap - 2;
     }
     memcpy(out, path, len);
-    out[len] = '\0';
+    out[len] = '/';
+    out[len + 1] = '\0';
     return 1;
 }
 

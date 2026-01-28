@@ -11,6 +11,7 @@
 #include <SDL_ttf.h>
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,7 +24,7 @@
 #include "debugger.h"
 #include "e9ui.h"
 #include "file.h"
-#include "geo9000.h"
+#include "emu.h"
 #include "libretro_host.h"
 #include "machine.h"
 #include "memory.h"
@@ -33,6 +34,7 @@
 #include "prompt.h"
 #include "registers.h"
 #include "settings.h"
+#include "snapshot.h"
 #include "source_pane.h"
 #include "stack.h"
 #include "status_bar.h"
@@ -125,13 +127,13 @@ ui_centerSourceOnAddress(uint32_t addr)
 void
 ui_applySourcePaneElfMode(void)
 {
-    int showToggle = debugger.elfValid ? 1 : 0;
+    int showToggle = 1;
     for (size_t i = 0; i < sizeof(ui_source_panes)/sizeof(ui_source_panes[0]); ++i) {
         e9ui_component_t *pane = ui_source_panes[i];
         if (!pane) {
             continue;
         }
-        if (!debugger.elfValid) {
+        if (!debugger.elfValid && source_pane_getMode(pane) == source_pane_mode_c) {
             source_pane_setMode(pane, source_pane_mode_a);
         }
         source_pane_setToggleVisible(pane, showToggle);
@@ -312,7 +314,34 @@ ui_saveState(e9ui_context_t *ctx, void *user)
     size_t size = 0;
     size_t diff = 0;
     if (libretro_host_saveState(&size, &diff)) {
-        debugger.hasStateSnapshot = state_buffer_snapshot() ? 1 : 0;
+        // Saving a state should work even if the rolling state buffer is disabled.
+        debugger.hasStateSnapshot = 1;
+        debug_printf("ui: saveState ok size=%zu diff=%zu maxBytes=%zu count=%zu",
+                     size, diff, state_buffer_getMaxBytes(), state_buffer_getCount());
+        fprintf(stderr, "ui: saveState ok size=%zu diff=%zu maxBytes=%zu count=%zu\n",
+                size, diff, state_buffer_getMaxBytes(), state_buffer_getCount());
+        fflush(stderr);
+        if (state_buffer_getMaxBytes() > 0 && state_buffer_getCount() > 0) {
+            (void)state_buffer_snapshot();
+        } else {
+            const uint8_t *stateData = NULL;
+            size_t stateSize = 0;
+            uint64_t frameNo = state_buffer_getCurrentFrameNo();
+            if (libretro_host_getStateData(&stateData, &stateSize)) {
+                int ok = state_buffer_setSaveKeyframe(stateData, stateSize, frameNo);
+                debug_printf("ui: saveState seeded snapshot ok=%d frameNo=%llu stateSize=%zu",
+                             ok, (unsigned long long)frameNo, stateSize);
+                fprintf(stderr, "ui: saveState seeded snapshot ok=%d frameNo=%llu stateSize=%zu\n",
+                        ok, (unsigned long long)frameNo, stateSize);
+                fflush(stderr);
+            } else {
+                debug_printf("ui: saveState missing host stateData");
+                fprintf(stderr, "ui: saveState missing host stateData\n");
+                fflush(stderr);
+            }
+        }
+        // Persist immediately, not just on exit (matches user expectation for the Save button).
+        snapshot_saveOnExit();
         e9ui_showTransientMessage("STATE SAVED");
     } else {
         debug_error("Save state failed");
@@ -327,11 +356,11 @@ ui_restoreState(e9ui_context_t *ctx, void *user)
     size_t size = 0;
     if (libretro_host_restoreState(&size)) {
         int ok = state_buffer_restoreSnapshot();
+        debugger.hasStateSnapshot = 1;
         if (ok) {
-            debugger.hasStateSnapshot = 1;
             debugger.frameCounter = state_buffer_getCurrentFrameNo();
-            e9ui_showTransientMessage("STATE RESTORED");
         }
+        e9ui_showTransientMessage("STATE RESTORED");
     } else {
         debug_error("Restore state failed");
     }
@@ -394,11 +423,15 @@ ui_build(void)
     e9ui->sourceBox = comp_sources_box;
     strncpy(e9ui->sourceTitle, "SOURCE", sizeof(e9ui->sourceTitle) - 1);
     e9ui->sourceTitle[sizeof(e9ui->sourceTitle) - 1] = '\0';
-    e9ui_component_t *comp_libretro_view = geo9000_makeComponent();
+    e9ui_component_t *comp_libretro_view = emu_makeComponent();
     comp_libretro_view->persist_id = "geo_view";
     e9ui_component_t *comp_libretro_box = e9ui_box_make(comp_libretro_view);
     comp_libretro_box->persist_id = "libretro_box";
-    e9ui_box_setTitlebar(comp_libretro_box, "NEO GEO", "assets/icons/game.png");
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+      e9ui_box_setTitlebar(comp_libretro_box, "AMIGA", "assets/icons/game.png");
+    } else {
+      e9ui_box_setTitlebar(comp_libretro_box, "NEO GEO", "assets/icons/game.png");
+    }
     e9ui_component_t *comp_gdb_geo = e9ui_split_makeComponent(comp_console_box, comp_libretro_box, e9ui_orient_horizontal, 0.60f, 6);
     e9ui_split_setId(comp_gdb_geo, "gdb_geo");
     e9ui_component_t *comp_split = e9ui_split_makeComponent(comp_sources_box, comp_gdb_geo, e9ui_orient_vertical, 0.66f, 6);

@@ -971,7 +971,7 @@ print_eval_defaultU32(print_index_t *index)
 static int
 print_eval_loadIndex(print_index_t *index)
 {
-    const char *elfPath = debugger.config.elfPath;
+    const char *elfPath = debugger.libretro.elfPath;
     if (!elfPath || !*elfPath || !index) {
         return 0;
     }

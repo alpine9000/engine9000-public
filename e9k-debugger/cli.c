@@ -75,62 +75,62 @@ cli_parseArgs(int argc, char **argv)
             return;
         }
         if (strcmp(argv[i], "--rom-folder") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.romFolder, sizeof(debugger.cliConfig.romFolder), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.romFolder, sizeof(debugger.cliConfig.neogeo.romFolder), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--rom-folder=", sizeof("--rom-folder=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.romFolder, sizeof(debugger.cliConfig.romFolder), argv[i] + sizeof("--rom-folder=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.romFolder, sizeof(debugger.cliConfig.neogeo.romFolder), argv[i] + sizeof("--rom-folder=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--elf") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.elfPath, sizeof(debugger.cliConfig.elfPath), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.elfPath, sizeof(debugger.cliConfig.neogeo.libretro.elfPath), argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--libretro-core") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.corePath, sizeof(debugger.cliConfig.corePath), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.corePath, sizeof(debugger.cliConfig.neogeo.libretro.corePath), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--libretro-core=", sizeof("--libretro-core=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.corePath, sizeof(debugger.cliConfig.corePath), argv[i] + sizeof("--libretro-core=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.corePath, sizeof(debugger.cliConfig.neogeo.libretro.corePath), argv[i] + sizeof("--libretro-core=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--libretro-rom") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.romPath, sizeof(debugger.cliConfig.romPath), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.romPath, sizeof(debugger.cliConfig.neogeo.libretro.romPath), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--libretro-rom=", sizeof("--libretro-rom=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.romPath, sizeof(debugger.cliConfig.romPath), argv[i] + sizeof("--libretro-rom=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.romPath, sizeof(debugger.cliConfig.neogeo.libretro.romPath), argv[i] + sizeof("--libretro-rom=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--libretro-system-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.biosDir, sizeof(debugger.cliConfig.biosDir), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.systemDir, sizeof(debugger.cliConfig.neogeo.libretro.systemDir), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--libretro-system-dir=", sizeof("--libretro-system-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.biosDir, sizeof(debugger.cliConfig.biosDir), argv[i] + sizeof("--libretro-system-dir=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.systemDir, sizeof(debugger.cliConfig.neogeo.libretro.systemDir), argv[i] + sizeof("--libretro-system-dir=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--libretro-save-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.savesDir, sizeof(debugger.cliConfig.savesDir), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.saveDir, sizeof(debugger.cliConfig.neogeo.libretro.saveDir), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--libretro-save-dir=", sizeof("--libretro-save-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.savesDir, sizeof(debugger.cliConfig.savesDir), argv[i] + sizeof("--libretro-save-dir=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.saveDir, sizeof(debugger.cliConfig.neogeo.libretro.saveDir), argv[i] + sizeof("--libretro-save-dir=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--source-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.sourceDir, sizeof(debugger.cliConfig.sourceDir), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.sourceDir, sizeof(debugger.cliConfig.neogeo.libretro.sourceDir), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--source-dir=", sizeof("--source-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.sourceDir, sizeof(debugger.cliConfig.sourceDir), argv[i] + sizeof("--source-dir=") - 1);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.sourceDir, sizeof(debugger.cliConfig.neogeo.libretro.sourceDir), argv[i] + sizeof("--source-dir=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--audio-buffer-ms") == 0 && i + 1 < argc) {
             char *end = NULL;
             long ms = strtol(argv[++i], &end, 10);
             if (end && end != argv[i] && ms > 0 && ms <= INT_MAX) {
-                debugger.cliConfig.audioBufferMs = (int)ms;
+                debugger.cliConfig.neogeo.libretro.audioBufferMs = (int)ms;
             }
             continue;
         }
@@ -139,7 +139,7 @@ cli_parseArgs(int argc, char **argv)
             char *end = NULL;
             long ms = strtol(val, &end, 10);
             if (end && end != val && ms > 0 && ms <= INT_MAX) {
-                debugger.cliConfig.audioBufferMs = (int)ms;
+                debugger.cliConfig.neogeo.libretro.audioBufferMs = (int)ms;
             }
             continue;
         }
@@ -298,29 +298,29 @@ cli_printUsage(const char *argv0)
 void
 cli_applyOverrides(void)
 {
-    if (debugger.cliConfig.corePath[0]) {
-        cli_copyPath(debugger.config.corePath, sizeof(debugger.config.corePath), debugger.cliConfig.corePath);
+    if (debugger.cliConfig.neogeo.libretro.corePath[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.corePath, sizeof(debugger.config.neogeo.libretro.corePath), debugger.cliConfig.neogeo.libretro.corePath);
     }
-    if (debugger.cliConfig.romPath[0]) {
-        cli_copyPath(debugger.config.romPath, sizeof(debugger.config.romPath), debugger.cliConfig.romPath);
+    if (debugger.cliConfig.neogeo.libretro.romPath[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.romPath, sizeof(debugger.config.neogeo.libretro.romPath), debugger.cliConfig.neogeo.libretro.romPath);
     }
-    if (debugger.cliConfig.romFolder[0]) {
-        cli_copyPath(debugger.config.romFolder, sizeof(debugger.config.romFolder), debugger.cliConfig.romFolder);
-        debugger.config.romPath[0] = '\0';
+    if (debugger.cliConfig.neogeo.romFolder[0]) {
+        cli_copyPath(debugger.config.neogeo.romFolder, sizeof(debugger.config.neogeo.romFolder), debugger.cliConfig.neogeo.romFolder);
+        debugger.config.neogeo.libretro.romPath[0] = '\0';
     }
-    if (debugger.cliConfig.elfPath[0]) {
-        cli_copyPath(debugger.config.elfPath, sizeof(debugger.config.elfPath), debugger.cliConfig.elfPath);
+    if (debugger.cliConfig.neogeo.libretro.elfPath[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.elfPath, sizeof(debugger.config.neogeo.libretro.elfPath), debugger.cliConfig.neogeo.libretro.elfPath);
     }
-    if (debugger.cliConfig.biosDir[0]) {
-        cli_copyPath(debugger.config.biosDir, sizeof(debugger.config.biosDir), debugger.cliConfig.biosDir);
+    if (debugger.cliConfig.neogeo.libretro.systemDir[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.systemDir, sizeof(debugger.config.neogeo.libretro.systemDir), debugger.cliConfig.neogeo.libretro.systemDir);
     }
-    if (debugger.cliConfig.savesDir[0]) {
-        cli_copyPath(debugger.config.savesDir, sizeof(debugger.config.savesDir), debugger.cliConfig.savesDir);
+    if (debugger.cliConfig.neogeo.libretro.saveDir[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.saveDir, sizeof(debugger.config.neogeo.libretro.saveDir), debugger.cliConfig.neogeo.libretro.saveDir);
     }
-    if (debugger.cliConfig.sourceDir[0]) {
-        cli_copyPath(debugger.config.sourceDir, sizeof(debugger.config.sourceDir), debugger.cliConfig.sourceDir);
+    if (debugger.cliConfig.neogeo.libretro.sourceDir[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.sourceDir, sizeof(debugger.config.neogeo.libretro.sourceDir), debugger.cliConfig.neogeo.libretro.sourceDir);
     }
-    if (debugger.cliConfig.audioBufferMs > 0) {
-        debugger.config.audioBufferMs = debugger.cliConfig.audioBufferMs;
+    if (debugger.cliConfig.neogeo.libretro.audioBufferMs > 0) {
+        debugger.config.neogeo.libretro.audioBufferMs = debugger.cliConfig.neogeo.libretro.audioBufferMs;
     }
 }

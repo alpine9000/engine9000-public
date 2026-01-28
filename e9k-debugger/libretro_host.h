@@ -38,6 +38,12 @@ libretro_host_getTexture(SDL_Renderer *renderer);
 bool
 libretro_host_getFrame(const uint8_t **out_data, int *out_width, int *out_height, size_t *out_pitch);
 
+float
+libretro_host_getDisplayAspect(void);
+
+double
+libretro_host_getTimingFps(void);
+
 void
 libretro_host_setJoypadState(unsigned port, unsigned id, int pressed);
 
@@ -187,6 +193,9 @@ bool
 libretro_host_setStateData(const void *data, size_t size);
 
 bool
+libretro_host_getStateData(const uint8_t **out_data, size_t *out_size);
+
+bool
 libretro_host_resetCore(void);
 
 uint64_t
@@ -209,4 +218,3 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff);
 
 bool
 libretro_host_restoreState(size_t *out_size);
-

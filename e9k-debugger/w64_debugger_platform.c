@@ -87,20 +87,34 @@ debugger_configPath(void)
 }
 
 void
-debugger_platform_setDefaults(e9k_path_config_t *config)
+debugger_platform_setDefaults(e9k_neogeo_config_t *config)
 {
     if (!config) {
         return;
     }
-    snprintf(config->corePath, sizeof(config->corePath), "./system/geolith_libretro.dll");
-    snprintf(config->biosDir, sizeof(config->biosDir), "./system");
-    snprintf(config->savesDir, sizeof(config->savesDir), "./saves");
-    snprintf(config->sourceDir, sizeof(config->sourceDir), ".");
-    config->audioBufferMs = 250;
+    snprintf(config->libretro.corePath, sizeof(config->libretro.corePath), "./system/geolith_libretro.dll");
+    snprintf(config->libretro.systemDir, sizeof(config->libretro.systemDir), "./system");
+    snprintf(config->libretro.saveDir, sizeof(config->libretro.saveDir), "./saves");
+    snprintf(config->libretro.sourceDir, sizeof(config->libretro.sourceDir), ".");
+    config->libretro.audioBufferMs = 250;
     config->skipBiosLogo = 0;
     strncpy(config->systemType, "aes", sizeof(config->systemType) - 1);
     config->systemType[sizeof(config->systemType) - 1] = '\0';
-    config->elfPath[0] = '\0';
+    config->libretro.elfPath[0] = '\0';
+}
+
+void
+debugger_platform_setDefaultsAmiga(e9k_amiga_config_t *config)
+{
+    if (!config) {
+        return;
+    }
+    snprintf(config->libretro.corePath, sizeof(config->libretro.corePath), "./system/puae_libretro.dll");
+    snprintf(config->libretro.systemDir, sizeof(config->libretro.systemDir), "./system");
+    snprintf(config->libretro.saveDir, sizeof(config->libretro.saveDir), "./saves");
+    snprintf(config->libretro.sourceDir, sizeof(config->libretro.sourceDir), ".");
+    config->libretro.audioBufferMs = 250;
+    config->libretro.elfPath[0] = '\0';
 }
 
 ssize_t

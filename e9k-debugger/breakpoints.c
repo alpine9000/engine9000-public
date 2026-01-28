@@ -49,7 +49,7 @@ breakpoints_resolveLocation(machine_breakpoint_t *bp)
     if (!bp || (bp->file[0] && bp->line > 0)) {
         return;
     }
-    const char *elf = debugger.config.elfPath;
+    const char *elf = debugger.libretro.elfPath;
     if (!elf || !*elf || !debugger.elfValid) {
         return;
     }
@@ -70,7 +70,7 @@ breakpoints_stripCliSrcPrefix(const char *path)
 {
     if (!path || !path[0]) return path;
 
-    const char *prefix = debugger.config.sourceDir;
+    const char *prefix = debugger.libretro.sourceDir;
     if (!prefix || !prefix[0]) return path;
 
     const size_t prefix_len = strlen(prefix);

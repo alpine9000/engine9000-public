@@ -509,12 +509,8 @@ console_cmd_break(int argc, char **argv)
         debug_printf("Usage: break <addr|symbol|file:line>\n");
         return 0;
     }
-    const char *elf = debugger.config.elfPath;
-    if (!elf || !*elf) {
-        debug_error("break: no ELF path configured (set --elf or Settings)");
-        return 0;
-    }
     const char *arg = argv[1];
+    const char *elf = debugger.libretro.elfPath;
     uint32_t addr = 0;
     int ok = 0;
     const char *colon = strrchr(arg, ':');
@@ -526,12 +522,32 @@ console_cmd_break(int argc, char **argv)
             if (len < sizeof(file_buf)) {
                 memcpy(file_buf, arg, len);
                 file_buf[len] = '\0';
+                if (!elf || !*elf) {
+                    debug_error("break: no ELF path configured (set --elf or Settings)");
+                    return 0;
+                }
                 ok = console_cmd_resolveFileLine(elf, file_buf, line_no, &addr);
             }
         }
     }
     if (!ok) {
         ok = console_cmd_parseHex(arg, &addr);
+    }
+    if (ok) {
+        machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
+        if (!bp) {
+            debug_error("break: failed to add breakpoint");
+            return 0;
+        }
+        breakpoints_resolveLocation(bp);
+        libretro_host_debugAddBreakpoint(addr);
+        breakpoints_markDirty();
+        debug_printf("break: added at 0x%06X\n", addr);
+        return 1;
+    }
+    if (!elf || !*elf) {
+        debug_error("break: no ELF path configured (set --elf or Settings)");
+        return 0;
     }
     if (!ok) {
         ok = console_cmd_resolveSymbol(elf, arg, &addr);
@@ -1280,7 +1296,7 @@ console_cmd_completeBreak(const char *prefix, char ***out_list, int *out_count)
     if (out_count) {
         *out_count = 0;
     }
-    const char *elf = debugger.config.elfPath;
+    const char *elf = debugger.libretro.elfPath;
     if (!elf || !*elf || !out_list || !out_count) {
         return 0;
     }

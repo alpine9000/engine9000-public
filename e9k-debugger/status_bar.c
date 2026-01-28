@@ -114,7 +114,7 @@ status_bar_render(e9ui_component_t *self, e9ui_context_t *ctx)
         snprintf(record, sizeof(record), " RECORDING:%.1f%%", pct);
     }
     const char *glLabel = gl_composite_isActive() ? " OPENGL" : "";
-    snprintf(label, sizeof(label), " %s FRAME:%llu%s FPS:%d/%d CYCLES:%llu%s%s",
+    snprintf(label, sizeof(label), " %s FRAME:%llu%s FPS:%d/%d CYCLES:%llu%s%s %s",
              stateLabel,
              (unsigned long long)frame,
              record,
@@ -122,7 +122,9 @@ status_bar_render(e9ui_component_t *self, e9ui_context_t *ctx)
              core_fps,
              (unsigned long long)cycles,
              profile,
-             glLabel);
+             glLabel,
+	     debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA ? "AMIGA" : "NEOGEO"
+	     );
     TTF_Font *font = ctx->font;
     if (font) {
         int tw = 0, th = 0;

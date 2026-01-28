@@ -24,3 +24,6 @@ settings_updateButton(int settingsOk);
 
 void
 settings_applyToolbarMode(void);
+
+void
+settings_pollRebuild(e9ui_context_t *ctx);

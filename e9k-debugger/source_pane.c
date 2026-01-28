@@ -32,7 +32,7 @@ typedef struct view_toggle_ctx {
 } view_toggle_t;
 
 typedef struct source_pane_state {
-    source_pane_mode_t viewMode; // C vs ASM
+    source_pane_mode_t viewMode; // C vs ASM vs HEX
     int               scrollLine; // 1-based first line for C view
     int               scrollLineValid;
     int               scrollIndex; // 0-based first instruction for ASM view
@@ -41,6 +41,13 @@ typedef struct source_pane_state {
     uint64_t          lastResolvedPc;
     uint64_t          overrideAddr;
     int               overrideActive;
+    int               frozenActive;
+    uint64_t          frozenPcAddr;
+    int               frozenAsmStartIndex;
+    int               frozenAsmMaxLines;
+    char            **frozenAsmLines;
+    uint64_t         *frozenAsmAddrs;
+    int               frozenAsmCount;
     char              curSrcPath[PATH_MAX];
     int               curSrcLine;
     char*             toggleBtnMeta;
@@ -63,6 +70,9 @@ typedef struct source_pane_line_metrics {
 
 static void
 source_pane_updateSourceLocation(source_pane_state_t *st);
+
+static void
+source_pane_followCurrent(source_pane_state_t *st);
 
 static const char *
 source_pane_basename(const char *path)
@@ -130,7 +140,7 @@ source_pane_fileMatches(const char *a, const char *b)
     if (ba && bb && strcmp(ba, bb) == 0) {
         return 1;
     }
-    const char *src = debugger.config.sourceDir;
+    const char *src = debugger.libretro.sourceDir;
     if (src && *src) {
         size_t src_len = strlen(src);
         if (strncmp(a, src, src_len) == 0) {
@@ -304,7 +314,7 @@ source_pane_adjustScroll(source_pane_state_t *st, source_pane_mode_t mode, int d
         return;
     }
     int dest = st->scrollIndex + delta;
-    if (dest < 0) {
+    if (dest < 0 && !(dasm_getFlags() & DASM_IFACE_FLAG_STREAMING)) {
         dest = 0;
     }
     st->scrollIndex = dest;
@@ -322,6 +332,10 @@ source_pane_scrollToStart(source_pane_state_t *st, source_pane_mode_t mode)
         st->scrollLine = 1;
         st->scrollLineValid = 1;
         st->gutterPending = 0;
+        return;
+    }
+    if (dasm_getFlags() & DASM_IFACE_FLAG_STREAMING) {
+        source_pane_followCurrent(st);
         return;
     }
     st->scrollIndex = 0;
@@ -357,6 +371,9 @@ source_pane_scrollToEnd(source_pane_state_t *st, source_pane_mode_t mode, int ma
         st->gutterPending = 0;
         return;
     }
+    if (dasm_getFlags() & DASM_IFACE_FLAG_STREAMING) {
+        return;
+    }
     int total = dasm_getTotal();
     int dest = total - maxLines;
     if (dest < 0) {
@@ -377,6 +394,26 @@ source_pane_followCurrent(source_pane_state_t *st)
     st->scrollIndexValid = 0;
     st->overrideActive = 0;
     st->gutterPending = 0;
+}
+
+static void
+source_pane_freeFrozenAsm(source_pane_state_t *st)
+{
+    if (!st) {
+        return;
+    }
+    if (st->frozenAsmLines) {
+        for (int i = 0; i < st->frozenAsmCount; ++i) {
+            alloc_free(st->frozenAsmLines[i]);
+        }
+        alloc_free(st->frozenAsmLines);
+    }
+    alloc_free(st->frozenAsmAddrs);
+    st->frozenAsmLines = NULL;
+    st->frozenAsmAddrs = NULL;
+    st->frozenAsmCount = 0;
+    st->frozenAsmStartIndex = 0;
+    st->frozenAsmMaxLines = 0;
 }
 
 static void
@@ -421,7 +458,7 @@ source_pane_updateSourceLocation(source_pane_state_t *st)
     st->curSrcLine = 0;
     st->curSrcPath[0] = '\0';
 
-    const char *elf = debugger.config.elfPath;
+    const char *elf = debugger.libretro.elfPath;
     if (!elf || !*elf || !debugger.elfValid) {
         return;
     }
@@ -441,7 +478,7 @@ static int
 source_pane_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
 {
     (void)self; (void)ctx; (void)availW;
-    return 0; // flexible
+    return 0;
 }
 
 static void
@@ -449,6 +486,30 @@ source_pane_layoutComp(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
 {
     (void)ctx;
     self->bounds = bounds;
+}
+
+static const char *
+source_pane_modeLabel(source_pane_mode_t mode)
+{
+    if (mode == source_pane_mode_c) {
+        return "C";
+    }
+    if (mode == source_pane_mode_h) {
+        return "HEX";
+    }
+    return "ASM";
+}
+
+static int
+source_pane_modePersistValue(source_pane_mode_t mode)
+{
+    if (mode == source_pane_mode_c) {
+        return 0;
+    }
+    if (mode == source_pane_mode_h) {
+        return 3;
+    }
+    return 2;
 }
 
 static void
@@ -459,7 +520,8 @@ source_pane_persistSave(e9ui_component_t *self, e9ui_context_t *ctx, FILE *f)
     return;
   }
   source_pane_state_t *st = (source_pane_state_t*)self->state;
-  fprintf(f, "comp.%s.mode=%d\n", self->persist_id, st ? st->viewMode : 0);
+  int m = st ? source_pane_modePersistValue(st->viewMode) : 0;
+  fprintf(f, "comp.%s.mode=%d\n", self->persist_id, m);
 }
 
 static void
@@ -469,12 +531,170 @@ source_pane_persistLoad(e9ui_component_t *self, e9ui_context_t *ctx, const char 
   if (!self || !key || !value) {
     return;
   }
-  source_pane_state_t *st = (source_pane_state_t*)self->state;
   if (strcmp(key, "mode") == 0) {
     int m = (int)strtol(value, NULL, 10);
-    // Historical values: 0=Source,1=Mixed,2=ASM. Map any non-zero to ASM.
-    st->viewMode = (m == 0) ? source_pane_mode_c : source_pane_mode_a;
+
+    source_pane_mode_t mode = source_pane_mode_a;
+    if (m == 0) {
+        mode = source_pane_mode_c;
+    } else if (m == 3) {
+        mode = source_pane_mode_h;
+    }
+    source_pane_setMode(self, mode);
   }
+}
+
+static int
+source_pane_getAsmWindow(source_pane_state_t *st, int maxLines, uint64_t *out_curAddr,
+                         const char ***out_lines, const uint64_t **out_addrs, int *out_count)
+{
+    if (out_curAddr) {
+        *out_curAddr = 0;
+    }
+    if (out_lines) {
+        *out_lines = NULL;
+    }
+    if (out_addrs) {
+        *out_addrs = NULL;
+    }
+    if (out_count) {
+        *out_count = 0;
+    }
+
+    if (!st || maxLines <= 0 || !out_lines || !out_addrs || !out_count || !out_curAddr) {
+        return 0;
+    }
+
+    int streaming = (dasm_getFlags() & DASM_IFACE_FLAG_STREAMING) ? 1 : 0;
+    int total = dasm_getTotal();
+    if (!streaming && total <= 0) {
+        return 0;
+    }
+
+    int freezeWhileRunning = 0;
+    if (!st->overrideActive && machine_getRunning(debugger.machine)) {
+        freezeWhileRunning = 1;
+    }
+    if (st->frozenActive && !freezeWhileRunning) {
+        st->frozenActive = 0;
+        source_pane_freeFrozenAsm(st);
+    }
+    if (freezeWhileRunning && !st->frozenActive) {
+        unsigned long pcAddr = 0;
+        (void)machine_findReg(&debugger.machine, "PC", &pcAddr);
+        pcAddr &= 0x00fffffful;
+        pcAddr &= ~1ul;
+        st->frozenPcAddr = (uint64_t)pcAddr;
+        st->frozenActive = 1;
+        st->frozenAsmStartIndex = INT_MIN;
+        st->frozenAsmMaxLines = 0;
+        source_pane_freeFrozenAsm(st);
+    }
+
+    uint64_t curAddr = 0;
+    if (freezeWhileRunning) {
+        curAddr = st->frozenPcAddr;
+    } else {
+        unsigned long pcAddr = 0;
+        (void)machine_findReg(&debugger.machine, "PC", &pcAddr);
+        pcAddr &= 0x00fffffful;
+        pcAddr &= ~1ul;
+        curAddr = (uint64_t)pcAddr;
+    }
+    *out_curAddr = curAddr;
+
+    int startIndex = 0;
+    if (st->scrollIndexValid) {
+        startIndex = st->scrollIndex;
+    } else {
+        int curIndex = 0;
+        if (!dasm_findIndexForAddr(curAddr, &curIndex) && !streaming) {
+            curIndex = 0;
+        }
+        startIndex = curIndex - (maxLines / 2);
+    }
+    if (startIndex < 0 && !streaming) {
+        startIndex = 0;
+    }
+    if (!streaming && startIndex >= total) {
+        startIndex = total - 1;
+    }
+    if (freezeWhileRunning && !st->scrollIndexValid) {
+        st->scrollIndex = startIndex;
+        st->scrollIndexValid = 1;
+    }
+    int endIndex = startIndex + maxLines - 1;
+    if (!streaming && endIndex >= total) {
+        endIndex = total - 1;
+    }
+
+    const char **lines = NULL;
+    const uint64_t *addrs = NULL;
+    int first = 0;
+    int count = 0;
+    if (freezeWhileRunning && st->frozenActive && st->frozenAsmLines &&
+        st->frozenAsmStartIndex == startIndex && st->frozenAsmMaxLines == maxLines) {
+        lines = (const char**)st->frozenAsmLines;
+        addrs = (const uint64_t*)st->frozenAsmAddrs;
+        first = st->frozenAsmStartIndex;
+        count = st->frozenAsmCount;
+    } else {
+        if (freezeWhileRunning) {
+            int dummy = 0;
+            (void)dasm_findIndexForAddr(curAddr, &dummy);
+        } else {
+            source_pane_trackPosition(st);
+        }
+        if (!dasm_getRangeByIndex(startIndex, endIndex, &lines, &addrs, &first, &count)) {
+            return 0;
+        }
+
+        if (!streaming && count < maxLines && total > 0) {
+            int missing = maxLines - count;
+            int altStart = first - missing;
+            if (altStart < 0) {
+                altStart = 0;
+            }
+            int altEnd = altStart + maxLines - 1;
+            if (altEnd >= total) {
+                altEnd = total - 1;
+            }
+            dasm_getRangeByIndex(altStart, altEnd, &lines, &addrs, &first, &count);
+        }
+
+        if (freezeWhileRunning) {
+            st->scrollIndex = first;
+            st->scrollIndexValid = 1;
+        } else if (st->scrollIndexValid) {
+            st->scrollIndex = first;
+        }
+
+        if (freezeWhileRunning && st->frozenActive && (st->frozenAsmStartIndex != first ||
+            st->frozenAsmCount != count || st->frozenAsmMaxLines != maxLines)) {
+            source_pane_freeFrozenAsm(st);
+            st->frozenAsmLines = (char**)alloc_calloc((size_t)count, sizeof(*st->frozenAsmLines));
+            st->frozenAsmAddrs = (uint64_t*)alloc_calloc((size_t)count, sizeof(*st->frozenAsmAddrs));
+            if (st->frozenAsmLines && st->frozenAsmAddrs) {
+                for (int i = 0; i < count; ++i) {
+                    st->frozenAsmLines[i] = alloc_strdup(lines[i] ? lines[i] : "");
+                    st->frozenAsmAddrs[i] = addrs[i];
+                }
+                st->frozenAsmCount = count;
+                st->frozenAsmStartIndex = first;
+                st->frozenAsmMaxLines = maxLines;
+                lines = (const char**)st->frozenAsmLines;
+                addrs = (const uint64_t*)st->frozenAsmAddrs;
+                first = st->frozenAsmStartIndex;
+                count = st->frozenAsmCount;
+            }
+        }
+    }
+
+    *out_lines = lines;
+    *out_addrs = addrs;
+    *out_count = count;
+    (void)first;
+    return 1;
 }
 
 static void
@@ -490,8 +710,6 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
     }
 
     source_pane_state_t *st = (source_pane_state_t*)self->state;
-    source_pane_trackPosition(st);
-
     source_pane_line_metrics_t metrics = source_pane_computeLineMetrics(self, useFont, padPx);
     if (metrics.innerHeight <= 0) {
         return;
@@ -501,8 +719,11 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
         maxLines = 1;
     }
 
-    int total = dasm_getTotal();
-    if (total <= 0) {
+    const char **lines = NULL;
+    const uint64_t *addrs = NULL;
+    int count = 0;
+    uint64_t curAddr = 0;
+    if (!source_pane_getAsmWindow(st, maxLines, &curAddr, &lines, &addrs, &count)) {
         SDL_Color icol = (SDL_Color){200,160,160,255};
         int tw = 0, th = 0;
         SDL_Texture *t = e9ui_text_cache_getText(ctx->renderer, useFont, "No disassembly available", icol, &tw, &th);
@@ -511,51 +732,6 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
             SDL_RenderCopy(ctx->renderer, t, NULL, &r);
         }
         return;
-    }
-
-    int curIndex = 0;
-    unsigned long curAddr = 0;
-    (void)machine_findReg(&debugger.machine, "PC", &curAddr);
-    if (!dasm_findIndexForAddr(curAddr, &curIndex)) {
-        curIndex = 0;
-    }
-    int startIndex = curIndex - (maxLines / 2);
-    if (st && st->scrollIndexValid) {
-        startIndex = st->scrollIndex;
-    }
-    if (startIndex < 0) {
-        startIndex = 0;
-    }
-    if (startIndex >= total) {
-        startIndex = total - 1;
-    }
-    int endIndex = startIndex + maxLines - 1;
-    if (endIndex >= total) {
-        endIndex = total - 1;
-    }
-
-    const char **lines = NULL;
-    const uint64_t *addrs = NULL;
-    int first = 0;
-    int count = 0;
-    if (!dasm_getRangeByIndex(startIndex, endIndex, &lines, &addrs, &first, &count)) {
-        return;
-    }
-
-    if (count < maxLines && total > 0) {
-        int missing = maxLines - count;
-        int altStart = first - missing;
-        if (altStart < 0) {
-            altStart = 0;
-        }
-        int altEnd = altStart + maxLines - 1;
-        if (altEnd >= total) {
-            altEnd = total - 1;
-        }
-        dasm_getRangeByIndex(altStart, altEnd, &lines, &addrs, &first, &count);
-    }
-    if (st) {
-        st->scrollIndex = first;
     }
 
     int hexw = dasm_getAddrHexWidth();
@@ -621,14 +797,154 @@ source_pane_renderAsm(e9ui_component_t *self, e9ui_context_t *ctx)
 }
 
 static void
+source_pane_renderHex(e9ui_component_t *self, e9ui_context_t *ctx)
+{
+    TTF_Font *useFont = source_pane_resolveFont(ctx);
+    SDL_Rect area = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
+    const int padPx = 10;
+    SDL_SetRenderDrawColor(ctx->renderer, 20, 20, 24, 255);
+    SDL_RenderFillRect(ctx->renderer, &area);
+    if (!useFont) {
+        return;
+    }
+
+    source_pane_state_t *st = (source_pane_state_t*)self->state;
+    source_pane_line_metrics_t metrics = source_pane_computeLineMetrics(self, useFont, padPx);
+    if (metrics.innerHeight <= 0) {
+        return;
+    }
+    int maxLines = metrics.maxLines;
+    if (maxLines <= 0) {
+        maxLines = 1;
+    }
+
+    const char **lines = NULL;
+    const uint64_t *addrs = NULL;
+    int count = 0;
+    uint64_t curAddr = 0;
+    if (!source_pane_getAsmWindow(st, maxLines, &curAddr, &lines, &addrs, &count)) {
+        SDL_Color icol = (SDL_Color){200,160,160,255};
+        int tw = 0, th = 0;
+        SDL_Texture *t = e9ui_text_cache_getText(ctx->renderer, useFont, "No disassembly available", icol, &tw, &th);
+        if (t) {
+            SDL_Rect r = {area.x + padPx, area.y + padPx, tw, th};
+            SDL_RenderCopy(ctx->renderer, t, NULL, &r);
+        }
+        return;
+    }
+
+    int hexw = dasm_getAddrHexWidth();
+    if (hexw < 6) {
+        hexw = 6;
+    }
+    if (hexw > 16) {
+        hexw = 16;
+    }
+    char sample[32];
+    for (int i = 0; i < hexw; ++i) {
+        sample[i] = 'F';
+    }
+    sample[hexw] = '\0';
+    int gutterW = 0;
+    int th = 0;
+    TTF_SizeText(useFont, sample, &gutterW, &th);
+    int gutterPad = e9ui_scale_px(ctx, 16);
+    SDL_SetRenderDrawColor(ctx->renderer, 26, 26, 30, 255);
+    SDL_Rect gutter = { area.x, area.y, padPx + gutterW + gutterPad, area.h };
+    SDL_RenderFillRect(ctx->renderer, &gutter);
+
+    SDL_Color txt = (SDL_Color){220,220,220,255};
+    SDL_Color lno = (SDL_Color){160,160,200,255};
+    SDL_Color lno_bp_on = (SDL_Color){120,200,120,255};
+    SDL_Color lno_bp_off = (SDL_Color){200,140,60,255};
+    int textX = area.x + padPx + gutterW + gutterPad;
+    int hitW = area.x + area.w - textX - padPx;
+    if (hitW < 0) {
+        hitW = 0;
+    }
+
+    int y = area.y + padPx;
+    for (int i = 0; i < count; ++i) {
+        uint64_t a = addrs[i];
+        const char *ins = lines[i] ? lines[i] : "";
+        if (a == curAddr) {
+            SDL_SetRenderDrawColor(ctx->renderer, 40, 72, 138, 255);
+            SDL_Rect hl = { area.x + 2, y - 2, area.w - 4, metrics.lineHeight + 4 };
+            SDL_RenderFillRect(ctx->renderer, &hl);
+        }
+
+        char abuf[32];
+        snprintf(abuf, sizeof(abuf), "%0*llX", hexw, (unsigned long long)a);
+        int nw = 0;
+        int nh = 0;
+        TTF_SizeText(useFont, abuf, &nw, &nh);
+        int lnx = area.x + padPx + (gutterW - nw);
+        SDL_Color use_col = lno;
+        machine_breakpoint_t *bp = machine_findBreakpointByAddr(&debugger.machine, (uint32_t)a);
+        if (bp) {
+            use_col = bp->enabled ? lno_bp_on : lno_bp_off;
+        }
+
+        size_t wantBytes = 2;
+        if (i + 1 < count) {
+            uint64_t diff = addrs[i + 1] - addrs[i];
+            if (diff > 0 && diff <= 64) {
+                wantBytes = (size_t)diff;
+            }
+        } else {
+            char tmp[64];
+            size_t len = 0;
+            if (libretro_host_debugDisassembleQuick((uint32_t)a, tmp, sizeof(tmp), &len) && len > 0 && len <= 64) {
+                wantBytes = len;
+            }
+        }
+        if (wantBytes > 16) {
+            wantBytes = 16;
+        }
+
+        uint8_t bytes[16];
+        memset(bytes, 0, sizeof(bytes));
+        int gotBytes = libretro_host_debugReadMemory((uint32_t)a, bytes, wantBytes) ? 1 : 0;
+
+        const int padBytes = 12;
+        char hexbuf[padBytes * 3 + 1];
+        size_t pos = 0;
+        for (size_t b = 0; b < (size_t)padBytes; ++b) {
+            if (b < wantBytes && gotBytes) {
+                pos += (size_t)snprintf(hexbuf + pos, sizeof(hexbuf) - pos, "%02X ", (unsigned)bytes[b]);
+            } else {
+                pos += (size_t)snprintf(hexbuf + pos, sizeof(hexbuf) - pos, "   ");
+            }
+            if (pos >= sizeof(hexbuf)) {
+                break;
+            }
+        }
+        hexbuf[sizeof(hexbuf) - 1] = '\0';
+
+        char linebuf[512];
+        snprintf(linebuf, sizeof(linebuf), "%s%s", hexbuf, ins);
+        linebuf[sizeof(linebuf) - 1] = '\0';
+
+        void *addrBucket = st ? (void*)&st->bucketAddr : (void*)self;
+        void *sourceBucket = st ? (void*)&st->bucketSource : (void*)self;
+        e9ui_text_select_drawText(ctx, self, useFont, abuf, use_col, lnx, y,
+                                  metrics.lineHeight, 0, addrBucket, 1, 1);
+        e9ui_text_select_drawText(ctx, self, useFont, linebuf, txt, textX, y,
+                                  metrics.lineHeight, hitW, sourceBucket, 0, 1);
+
+        y += metrics.lineHeight;
+        if (y > area.y + area.h - padPx) {
+            break;
+        }
+    }
+}
+
+static void
 source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
 {
     TTF_Font *useFont = e9ui->theme.text.source ? e9ui->theme.text.source : ctx->font;
     SDL_Rect area = { self->bounds.x, self->bounds.y, self->bounds.w, self->bounds.h };
     source_pane_state_t *st = (source_pane_state_t*)self->state;
-    if (st) {
-        source_pane_trackPosition(st);
-    }
     int padPx = 10;
     SDL_SetRenderDrawColor(ctx->renderer, 20, 20, 20, 255);
     SDL_RenderFillRect(ctx->renderer, &area);
@@ -636,9 +952,29 @@ source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
     if (!useFont) {
         goto done;
     }
+    int freezeWhileRunning = 0;
+    if (st && !st->overrideActive && machine_getRunning(debugger.machine)) {
+        freezeWhileRunning = 1;
+    }
+    if (st && st->frozenActive && !freezeWhileRunning) {
+        st->frozenActive = 0;
+        source_pane_freeFrozenAsm(st);
+    }
+    if (st && st->viewMode != source_pane_mode_a && st->viewMode != source_pane_mode_h &&
+        (st->frozenActive || st->frozenAsmLines)) {
+        st->frozenActive = 0;
+        source_pane_freeFrozenAsm(st);
+    }
     if (st && st->viewMode == source_pane_mode_a) {
         source_pane_renderAsm(self, ctx);
         goto done;
+    }
+    if (st && st->viewMode == source_pane_mode_h) {
+        source_pane_renderHex(self, ctx);
+        goto done;
+    }
+    if (st && !freezeWhileRunning) {
+        source_pane_trackPosition(st);
     }
     if (st) {
         source_pane_updateSourceLocation(st);
@@ -802,7 +1138,7 @@ source_pane_render(e9ui_component_t *self, e9ui_context_t *ctx)
       e9ui_component_t* overlay = e9ui_child_find(self, st->toggleBtnMeta);
       if (overlay) {
 	source_pane_mode_t mode = source_pane_getMode(self);
-	const char *label = (mode == source_pane_mode_c) ? "C" : "ASM";
+	const char *label = source_pane_modeLabel(mode);
 	e9ui_button_setLabel(overlay, label);
 	e9ui_button_measure(overlay, ctx, &overlay->bounds.w,  &overlay->bounds.h);
 	overlay->bounds.x = self->bounds.w + self->bounds.x - overlay->bounds.w - e9ui_scale_px(ctx, 8);
@@ -872,7 +1208,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
                 return 1;
             }
             uint32_t addr = 0;
-            if (!source_pane_resolveFileLine(debugger.config.elfPath, path, lineNo, &addr)) {
+            if (!source_pane_resolveFileLine(debugger.libretro.elfPath, path, lineNo, &addr)) {
                 return 0;
             }
             machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
@@ -886,7 +1222,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
             }
             return 0;
         }
-        if (st->gutterMode == source_pane_mode_a) {
+        if (st->gutterMode == source_pane_mode_a || st->gutterMode == source_pane_mode_h) {
             uint32_t addr = st->gutterAddr;
             machine_breakpoint_t *existing = machine_findBreakpointByAddr(&debugger.machine, addr);
             if (existing) {
@@ -1013,34 +1349,35 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
             st->gutterDownY = my;
             return 1;
         }
-        if (mode == source_pane_mode_a) {
+        if (mode == source_pane_mode_a || mode == source_pane_mode_h) {
             source_pane_line_metrics_t metrics = source_pane_computeLineMetrics(self, useFont, padPx);
             if (metrics.innerHeight <= 0) {
                 return 0;
             }
             int maxLines = metrics.maxLines > 0 ? metrics.maxLines : 1;
+            int streaming = (dasm_getFlags() & DASM_IFACE_FLAG_STREAMING) ? 1 : 0;
             int total = dasm_getTotal();
-            if (total <= 0) {
+            if (!streaming && total <= 0) {
                 return 0;
             }
             int curIndex = 0;
             unsigned long curAddr = 0;
             (void)machine_findReg(&debugger.machine, "PC", &curAddr);
-            if (!dasm_findIndexForAddr(curAddr, &curIndex)) {
+            if (!dasm_findIndexForAddr(curAddr, &curIndex) && !streaming) {
                 curIndex = 0;
             }
             int startIndex = curIndex - (maxLines / 2);
             if (st && st->scrollIndexValid) {
                 startIndex = st->scrollIndex;
             }
-            if (startIndex < 0) {
+            if (startIndex < 0 && !streaming) {
                 startIndex = 0;
             }
-            if (startIndex >= total) {
+            if (!streaming && startIndex >= total) {
                 startIndex = total - 1;
             }
             int endIndex = startIndex + maxLines - 1;
-            if (endIndex >= total) {
+            if (!streaming && endIndex >= total) {
                 endIndex = total - 1;
             }
             const char **lines = NULL;
@@ -1050,7 +1387,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
             if (!dasm_getRangeByIndex(startIndex, endIndex, &lines, &addrs, &first, &count)) {
                 return 0;
             }
-            if (count < maxLines && total > 0) {
+            if (!streaming && count < maxLines && total > 0) {
                 int missing = maxLines - count;
                 int altStart = first - missing;
                 if (altStart < 0) {
@@ -1087,7 +1424,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
                 return 0;
             }
             st->gutterPending = 1;
-            st->gutterMode = source_pane_mode_a;
+            st->gutterMode = mode;
             st->gutterAddr = (uint32_t)(addrs[row] & 0x00ffffffu);
             st->gutterDownX = mx;
             st->gutterDownY = my;
@@ -1142,9 +1479,23 @@ source_toggleMode(e9ui_context_t *ctx, void *user)
   e9ui_component_t* pane = state->pane;
   e9ui_component_t* button = state->button;
   source_pane_mode_t mode = source_pane_getMode(pane);
-  mode = (mode == source_pane_mode_c) ? source_pane_mode_a : source_pane_mode_c;
+  if (!debugger.elfValid) {
+    if (mode == source_pane_mode_h) {
+      mode = source_pane_mode_a;
+    } else {
+      mode = source_pane_mode_h;
+    }
+  } else {
+    if (mode == source_pane_mode_c) {
+      mode = source_pane_mode_a;
+    } else if (mode == source_pane_mode_a) {
+      mode = source_pane_mode_h;
+    } else {
+      mode = source_pane_mode_c;
+    }
+  }
   source_pane_setMode(pane, mode);
-  const char *label = (mode == source_pane_mode_c) ? "C" : "ASM";
+  const char *label = source_pane_modeLabel(mode);
   if (button) {
     e9ui_button_setLabel(button, label);
   }
@@ -1190,11 +1541,26 @@ void source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
         return;
     }
     source_pane_state_t *st = (source_pane_state_t*)comp->state;
-    if (mode != source_pane_mode_c && mode != source_pane_mode_a) {
-        mode = source_pane_mode_c;
+    if (mode != source_pane_mode_c && mode != source_pane_mode_a && mode != source_pane_mode_h) {
+        mode = source_pane_mode_a;
+    }
+    if (!debugger.elfValid && mode == source_pane_mode_c) {
+        mode = source_pane_mode_a;
     }
     st->viewMode = mode;
     st->gutterPending = 0;
+
+    if (mode != source_pane_mode_a && mode != source_pane_mode_h) {
+        st->frozenActive = 0;
+        source_pane_freeFrozenAsm(st);
+    }
+
+    if (st->toggleBtnMeta) {
+        e9ui_component_t *btn = e9ui_child_find(comp, st->toggleBtnMeta);
+        if (btn) {
+            e9ui_button_setLabel(btn, source_pane_modeLabel(mode));
+        }
+    }
 }
 
 source_pane_mode_t source_pane_getMode(e9ui_component_t *comp)
@@ -1272,7 +1638,7 @@ source_pane_centerOnAddress(e9ui_component_t *comp, e9ui_context_t *ctx, uint32_
     int idx = 0;
     if (dasm_findIndexForAddr((uint64_t)addr, &idx)) {
         int start = idx - (maxLines / 2);
-        if (start < 0) {
+        if (start < 0 && !(dasm_getFlags() & DASM_IFACE_FLAG_STREAMING)) {
             start = 0;
         }
         st->scrollIndex = start;

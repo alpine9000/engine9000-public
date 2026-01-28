@@ -33,6 +33,7 @@ int state_buffer_restoreFrameNo(uint64_t frame_no);
 int state_buffer_trimAfterFrameNo(uint64_t frame_no);
 int state_buffer_snapshot(void);
 int state_buffer_restoreSnapshot(void);
+int state_buffer_setSaveKeyframe(const uint8_t *state, size_t state_size, uint64_t frame_no);
 int state_buffer_saveSnapshotFile(const char *path, uint64_t rom_checksum);
 int state_buffer_loadSnapshotFile(const char *path, uint64_t *out_rom_checksum);
 int state_buffer_getSnapshotState(uint8_t **out_state, size_t *out_size, uint64_t *out_frame_no);
@@ -41,4 +42,3 @@ void state_buffer_setCurrentFrameNo(uint64_t frame_no);
 uint64_t state_buffer_getCurrentFrameNo(void);
 state_frame_t*
 state_buffer_getFrameAtPercent(float percent);
-

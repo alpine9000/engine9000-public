@@ -838,7 +838,7 @@ analyse_resolveLocations(const unsigned int *pcs, size_t count)
     if (!pcs || count == 0) {
         return 0;
     }
-    const char *elfPath = debugger.config.elfPath;
+    const char *elfPath = debugger.libretro.elfPath;
     analyse_resolved_entry *resolved = NULL;
     int didResolve = 0;
     if (elfPath && *elfPath) {
@@ -1125,12 +1125,12 @@ analyse_writeFinalJson(const char *jsonPath)
     if (!analyse_ensureCapacity()) {
         return 0;
     }
-    const char *elfPath = debugger.config.elfPath;
+    const char *elfPath = debugger.libretro.elfPath;
     if (!elfPath || !*elfPath) {
         debug_error("profile: ELF path not configured");
         return 0;
     }
-    const char *srcBase = debugger.config.sourceDir;
+    const char *srcBase = debugger.libretro.sourceDir;
     size_t entryCap = analyse_profileCount;
     int ok = 1;
     analyse_resolved_entry *entries = alloc_calloc(entryCap ? entryCap : 1, sizeof(analyse_resolved_entry));

@@ -14,7 +14,9 @@
 #include "transition.h"
 
 void
-debugger_platform_setDefaults(e9k_path_config_t *config);
+debugger_platform_setDefaults(e9k_neogeo_config_t *config);
+void
+debugger_platform_setDefaultsAmiga(e9k_amiga_config_t *config);
 
 static void
 config_setConfigValue(char *dest, size_t capacity, const char *value)
@@ -52,43 +54,68 @@ config_persistConfig(FILE *f)
     if (!f) {
         return;
     }
-    if (debugger.config.corePath[0]) {
-        fprintf(f, "comp.config.core=%s\n", debugger.config.corePath);
+    if (debugger.config.amiga.libretro.corePath[0]) {
+        fprintf(f, "comp.config.amiga.core=%s\n", debugger.config.amiga.libretro.corePath);
     }
-    if (debugger.config.romPath[0]) {
-        fprintf(f, "comp.config.rom=%s\n", debugger.config.romPath);
+    if (debugger.config.amiga.libretro.romPath[0]) {
+        fprintf(f, "comp.config.amiga.rom=%s\n", debugger.config.amiga.libretro.romPath);
     }
-    if (debugger.config.romFolder[0]) {
-        fprintf(f, "comp.config.rom_folder=%s\n", debugger.config.romFolder);
+    if (debugger.config.amiga.libretro.elfPath[0]) {
+        fprintf(f, "comp.config.amiga.elf=%s\n", debugger.config.amiga.libretro.elfPath);
     }
-    if (debugger.config.elfPath[0]) {
-        fprintf(f, "comp.config.elf=%s\n", debugger.config.elfPath);
+    if (debugger.config.amiga.libretro.systemDir[0]) {
+        fprintf(f, "comp.config.amiga.bios=%s\n", debugger.config.amiga.libretro.systemDir);
     }
-    if (debugger.config.biosDir[0]) {
-        fprintf(f, "comp.config.bios=%s\n", debugger.config.biosDir);
+    if (debugger.config.amiga.libretro.saveDir[0]) {
+        fprintf(f, "comp.config.amiga.saves=%s\n", debugger.config.amiga.libretro.saveDir);
     }
-    if (debugger.config.savesDir[0]) {
-        fprintf(f, "comp.config.saves=%s\n", debugger.config.savesDir);
+    if (debugger.config.amiga.libretro.sourceDir[0]) {
+        fprintf(f, "comp.config.amiga.source=%s\n", debugger.config.amiga.libretro.sourceDir);
     }
-    if (debugger.config.sourceDir[0]) {
-        fprintf(f, "comp.config.source=%s\n", debugger.config.sourceDir);
+    if (debugger.config.amiga.libretro.audioBufferMs > 0) {
+        fprintf(f, "comp.config.amiga.audio_ms=%d\n", debugger.config.amiga.libretro.audioBufferMs);
     }
-    if (debugger.config.systemType[0]) {
-        fprintf(f, "comp.config.system_type=%s\n", debugger.config.systemType);
+    if (!debugger.config.amiga.libretro.audioEnabled) {
+        fprintf(f, "comp.config.amiga.audio_enabled=0\n");
     }
-    if (debugger.config.audioBufferMs > 0) {
-        fprintf(f, "comp.config.audio_ms=%d\n", debugger.config.audioBufferMs);
+    if (debugger.config.neogeo.libretro.corePath[0]) {
+        fprintf(f, "comp.config.neogeo.core=%s\n", debugger.config.neogeo.libretro.corePath);
     }
-    if (!debugger.config.audioEnabled) {
-        fprintf(f, "comp.config.audio_enabled=0\n");
+    if (debugger.config.neogeo.libretro.romPath[0]) {
+        fprintf(f, "comp.config.neogeo.rom=%s\n", debugger.config.neogeo.libretro.romPath);
     }
-    if (debugger.config.skipBiosLogo) {
-        fprintf(f, "comp.config.skip_bios=1\n");
+    if (debugger.config.neogeo.romFolder[0]) {
+        fprintf(f, "comp.config.neogeo.rom_folder=%s\n", debugger.config.neogeo.romFolder);
     }
-    if (!crt_isEnabled()) {
+    if (debugger.config.neogeo.libretro.elfPath[0]) {
+        fprintf(f, "comp.config.neogeo.elf=%s\n", debugger.config.neogeo.libretro.elfPath);
+    }
+    if (debugger.config.neogeo.libretro.systemDir[0]) {
+        fprintf(f, "comp.config.neogeo.bios=%s\n", debugger.config.neogeo.libretro.systemDir);
+    }
+    if (debugger.config.neogeo.libretro.saveDir[0]) {
+        fprintf(f, "comp.config.neogeo.saves=%s\n", debugger.config.neogeo.libretro.saveDir);
+    }
+    if (debugger.config.neogeo.libretro.sourceDir[0]) {
+        fprintf(f, "comp.config.neogeo.source=%s\n", debugger.config.neogeo.libretro.sourceDir);
+    }
+    if (debugger.config.neogeo.systemType[0]) {
+        fprintf(f, "comp.config.neogeo.system_type=%s\n", debugger.config.neogeo.systemType);
+    }
+    if (debugger.config.neogeo.libretro.audioBufferMs > 0) {
+        fprintf(f, "comp.config.neogeo.audio_ms=%d\n", debugger.config.neogeo.libretro.audioBufferMs);
+    }
+    if (!debugger.config.neogeo.libretro.audioEnabled) {
+        fprintf(f, "comp.config.neogeo.audio_enabled=0\n");
+    }
+    if (debugger.config.neogeo.skipBiosLogo) {
+        fprintf(f, "comp.config.neogeo.skip_bios=1\n");
+    }
+    if (!debugger.config.crtEnabled) {
         fprintf(f, "comp.config.crt_enabled=0\n");
-    }
+    }    
     fprintf(f, "comp.config.transition=%s\n", transition_modeName(e9ui->transition.mode));
+    fprintf(f, "comp.config.core_system=%d\n", debugger.config.coreSystem);
     crt_persistConfig(f);
     sprite_debug_persistConfig(f);
 }
@@ -111,7 +138,8 @@ config_loadConfig(void)
     }
     FILE *f = fopen(path, "r");
     if (!f) {
-        debugger_platform_setDefaults(&debugger.config);
+        debugger_platform_setDefaults(&debugger.config.neogeo);
+        debugger_platform_setDefaultsAmiga(&debugger.config.amiga);
         return;
     }
     char key[256];
@@ -120,34 +148,56 @@ config_loadConfig(void)
         if (strncmp(key, "comp.config.", 12) == 0) {
             const char *prop = key + 12;
             const char *value = config_trimValue(val);
-            if (strcmp(prop, "core") == 0) {
-                config_setConfigValue(debugger.config.corePath, sizeof(debugger.config.corePath), value);
-            } else if (strcmp(prop, "rom") == 0) {
-                config_setConfigValue(debugger.config.romPath, sizeof(debugger.config.romPath), value);
-            } else if (strcmp(prop, "rom_folder") == 0) {
-                config_setConfigValue(debugger.config.romFolder, sizeof(debugger.config.romFolder), value);
-            } else if (strcmp(prop, "elf") == 0) {
-                config_setConfigValue(debugger.config.elfPath, sizeof(debugger.config.elfPath), value);
-            } else if (strcmp(prop, "bios") == 0) {
-                config_setConfigValue(debugger.config.biosDir, sizeof(debugger.config.biosDir), value);
-            } else if (strcmp(prop, "saves") == 0) {
-                config_setConfigValue(debugger.config.savesDir, sizeof(debugger.config.savesDir), value);
-            } else if (strcmp(prop, "source") == 0) {
-                config_setConfigValue(debugger.config.sourceDir, sizeof(debugger.config.sourceDir), value);
-            } else if (strcmp(prop, "system_type") == 0) {
-                config_setConfigValue(debugger.config.systemType, sizeof(debugger.config.systemType), value);
-            } else if (strcmp(prop, "audio_ms") == 0) {
+            if (strcmp(prop, "amiga.core") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.corePath, sizeof(debugger.config.amiga.libretro.corePath), value);
+            } else if (strcmp(prop, "amiga.rom") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.romPath, sizeof(debugger.config.amiga.libretro.romPath), value);
+            } else if (strcmp(prop, "amiga.elf") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.elfPath, sizeof(debugger.config.amiga.libretro.elfPath), value);
+            } else if (strcmp(prop, "amiga.bios") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.systemDir, sizeof(debugger.config.amiga.libretro.systemDir), value);
+            } else if (strcmp(prop, "amiga.saves") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.saveDir, sizeof(debugger.config.amiga.libretro.saveDir), value);
+            } else if (strcmp(prop, "amiga.source") == 0) {
+                config_setConfigValue(debugger.config.amiga.libretro.sourceDir, sizeof(debugger.config.amiga.libretro.sourceDir), value);
+            } else if (strcmp(prop, "amiga.audio_ms") == 0) {
                 char *end = NULL;
                 long ms = strtol(value, &end, 10);
                 if (end && end != value && ms > 0 && ms <= INT_MAX) {
-                    debugger.config.audioBufferMs = (int)ms;
+                    debugger.config.amiga.libretro.audioBufferMs = (int)ms;
                 }
-            } else if (strcmp(prop, "audio_enabled") == 0) {
-                debugger.config.audioEnabled = atoi(value) ? 1 : 0;
-            } else if (strcmp(prop, "skip_bios") == 0) {
-                debugger.config.skipBiosLogo = atoi(value) ? 1 : 0;
+            } else if (strcmp(prop, "amiga.audio_enabled") == 0) {
+                debugger.config.amiga.libretro.audioEnabled = atoi(value) ? 1 : 0;
+            } else if (strcmp(prop, "neogeo.core") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.corePath, sizeof(debugger.config.neogeo.libretro.corePath), value);
+            } else if (strcmp(prop, "neogeo.rom") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.romPath, sizeof(debugger.config.neogeo.libretro.romPath), value);
+            } else if (strcmp(prop, "neogeo.rom_folder") == 0) {
+                config_setConfigValue(debugger.config.neogeo.romFolder, sizeof(debugger.config.neogeo.romFolder), value);
+            } else if (strcmp(prop, "neogeo.elf") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.elfPath, sizeof(debugger.config.neogeo.libretro.elfPath), value);
+            } else if (strcmp(prop, "neogeo.bios") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.systemDir, sizeof(debugger.config.neogeo.libretro.systemDir), value);
+            } else if (strcmp(prop, "neogeo.saves") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.saveDir, sizeof(debugger.config.neogeo.libretro.saveDir), value);
+            } else if (strcmp(prop, "neogeo.source") == 0) {
+                config_setConfigValue(debugger.config.neogeo.libretro.sourceDir, sizeof(debugger.config.neogeo.libretro.sourceDir), value);
+            } else if (strcmp(prop, "neogeo.system_type") == 0) {
+                config_setConfigValue(debugger.config.neogeo.systemType, sizeof(debugger.config.neogeo.systemType), value);
+            } else if (strcmp(prop, "neogeo.audio_ms") == 0) {
+                char *end = NULL;
+                long ms = strtol(value, &end, 10);
+                if (end && end != value && ms > 0 && ms <= INT_MAX) {
+                    debugger.config.neogeo.libretro.audioBufferMs = (int)ms;
+                }
+            } else if (strcmp(prop, "neogeo.audio_enabled") == 0) {
+                debugger.config.neogeo.libretro.audioEnabled = atoi(value) ? 1 : 0;
+            } else if (strcmp(prop, "neogeo.skip_bios") == 0) {
+                debugger.config.neogeo.skipBiosLogo = atoi(value) ? 1 : 0;
             } else if (strcmp(prop, "crt_enabled") == 0) {
                 debugger.config.crtEnabled = atoi(value) ? 1 : 0;
+            } else if (strcmp(prop, "core_system") == 0) {
+                debugger_setCoreSystem((debugger_system_type_t)atoi(value));
             } else if (strcmp(prop, "transition") == 0) {
                 e9k_transition_mode_t mode = e9k_transition_none;
                 if (transition_parseMode(value, &mode)) {

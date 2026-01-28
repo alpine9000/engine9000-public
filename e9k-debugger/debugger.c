@@ -36,6 +36,8 @@
 #include "config.h"
 #include "romset.h"
 #include "ui.h"
+#include "emu_geo.h"
+#include "emu_ami.h"
 
 e9ui_global_t _e9ui;
 e9k_debugger_t debugger;
@@ -58,6 +60,29 @@ debugger_setArgv0(void)
     }
     strncpy(debugger.argv0, argv0, sizeof(debugger.argv0) - 1);
     debugger.argv0[sizeof(debugger.argv0) - 1] = '\0';
+}
+
+void
+debugger_setCoreSystem(debugger_system_type_t type)
+{
+    switch (type) {
+    case DEBUGGER_SYSTEM_AMIGA:
+        debugger.config.coreSystem = type;
+        debugger.dasm = &dasm_ami_iface;
+	debugger.emu = &emu_ami_iface;
+        break;
+    case DEBUGGER_SYSTEM_NEOGEO:
+    case DEBUGGER_SYSTEM_MEGADRIVE:
+        debugger.config.coreSystem = type;
+        debugger.dasm = &dasm_geo_iface;
+	debugger.emu = &emu_geo_iface;	
+        break;
+    default:
+        debugger.config.coreSystem = DEBUGGER_SYSTEM_NEOGEO;
+        debugger.dasm = &dasm_geo_iface;
+	debugger.emu = &emu_geo_iface;	
+        break;
+    }
 }
 
 void
@@ -138,28 +163,46 @@ debugger_pathExistsFile(const char *path)
 }
 
 void
-debugger_libretroSetupPaths(void)
+debugger_libretroSelectConfig(void)
 {
-    debugger_copyPath(debugger.libretro.corePath, sizeof(debugger.libretro.corePath), debugger.config.corePath);
-    debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), debugger.config.romPath);
-    debugger_copyPath(debugger.libretro.systemDir, sizeof(debugger.libretro.systemDir), debugger.config.biosDir);
-    debugger_copyPath(debugger.libretro.saveDir, sizeof(debugger.libretro.saveDir), debugger.config.savesDir);
-    if (debugger.config.romFolder[0]) {
-        char neo_path[PATH_MAX];
-        if (romset_buildNeoFromFolder(debugger.config.romFolder, neo_path, sizeof(neo_path))) {
-            debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), neo_path);
-        } else {
-            debugger.libretro.romPath[0] = '\0';
-        }
+  memset(&debugger.libretro, 0, sizeof(debugger.libretro));
+  
+  if (debugger.config.coreSystem == DEBUGGER_SYSTEM_NEOGEO) {
+    debugger.libretro.audioBufferMs = debugger.config.neogeo.libretro.audioBufferMs;
+    debugger.libretro.audioEnabled = debugger.config.neogeo.libretro.audioEnabled;
+    debugger_copyPath(debugger.libretro.sourceDir, sizeof(debugger.libretro.sourceDir), debugger.config.neogeo.libretro.sourceDir);
+    debugger_copyPath(debugger.libretro.elfPath, sizeof(debugger.libretro.elfPath), debugger.config.neogeo.libretro.elfPath);              
+    debugger_copyPath(debugger.libretro.corePath, sizeof(debugger.libretro.corePath), debugger.config.neogeo.libretro.corePath);
+    debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), debugger.config.neogeo.libretro.romPath);
+    debugger_copyPath(debugger.libretro.systemDir, sizeof(debugger.libretro.systemDir), debugger.config.neogeo.libretro.systemDir);
+    debugger_copyPath(debugger.libretro.saveDir, sizeof(debugger.libretro.saveDir), debugger.config.neogeo.libretro.saveDir);
+    if (debugger.config.neogeo.romFolder[0]) {
+      char neo_path[PATH_MAX];
+      if (romset_buildNeoFromFolder(debugger.config.neogeo.romFolder, neo_path, sizeof(neo_path))) {
+	debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), neo_path);
+      } else {
+	debugger.libretro.romPath[0] = '\0';
+      }
     }
-    debugger.libretro.enabled = (debugger.libretro.corePath[0] && debugger.libretro.romPath[0]) ? 1 : 0;
+  } else if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+    debugger.libretro.audioBufferMs = debugger.config.amiga.libretro.audioBufferMs;
+    debugger.libretro.audioEnabled = debugger.config.amiga.libretro.audioEnabled;
+    debugger_copyPath(debugger.libretro.sourceDir, sizeof(debugger.libretro.sourceDir), debugger.config.amiga.libretro.sourceDir);
+    debugger_copyPath(debugger.libretro.elfPath, sizeof(debugger.libretro.elfPath), debugger.config.amiga.libretro.elfPath);              
+    debugger_copyPath(debugger.libretro.corePath, sizeof(debugger.libretro.corePath), debugger.config.amiga.libretro.corePath);
+    debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), debugger.config.amiga.libretro.romPath);
+    debugger_copyPath(debugger.libretro.systemDir, sizeof(debugger.libretro.systemDir), debugger.config.amiga.libretro.systemDir);
+    debugger_copyPath(debugger.libretro.saveDir, sizeof(debugger.libretro.saveDir), debugger.config.amiga.libretro.saveDir);
+  }
+
+  debugger.libretro.enabled = (debugger.libretro.corePath[0] && debugger.libretro.romPath[0]) ? 1 : 0;  
 }
 
 void
 debugger_refreshElfValid(void)
 {
     debugger.elfValid = 0;
-    if (debugger.config.elfPath[0] && debugger_pathExistsFile(debugger.config.elfPath)) {
+    if (debugger.config.neogeo.libretro.elfPath[0] && debugger_pathExistsFile(debugger.config.neogeo.libretro.elfPath)) {
         debugger.elfValid = 1;
     }
     ui_applySourcePaneElfMode();
@@ -168,8 +211,8 @@ debugger_refreshElfValid(void)
 void
 debugger_applyCoreOptions(void)
 {
-    if (debugger.config.systemType[0]) {
-        libretro_host_setCoreOption("geolith_system_type", debugger.config.systemType);
+    if (debugger.config.neogeo.systemType[0]) {
+        libretro_host_setCoreOption("geolith_system_type", debugger.config.neogeo.systemType);
     } else {
         libretro_host_setCoreOption("geolith_system_type", NULL);
     }
@@ -219,6 +262,7 @@ debugger_ctor(void)
   memset(&debugger, 0, sizeof(debugger));
   srand((unsigned)time(NULL));
   debugger_setArgv0();
+  debugger_setCoreSystem(DEBUGGER_SYSTEM_AMIGA);
   debugger.opts.redirectStdout = E9K_DEBUG_PRINTF_STDOUT_DEFAULT;
   debugger.opts.redirectStderr = E9K_DEBUG_ERROR_STDERR_DEFAULT;
   debugger.opts.redirectGdbStdout = E9K_DEBUG_GDB_STDOUT_DEFAULT;
@@ -236,11 +280,11 @@ debugger_ctor(void)
   debugger.hasStateSnapshot = 0;
   debugger.speedMultiplier = 1;
   debugger.frameStepMode = 0;
-  debugger.config.audioEnabled = 1;
+  debugger.config.neogeo.libretro.audioEnabled = 1;
+  debugger.config.neogeo.libretro.audioBufferMs = 50;
+  debugger.config.neogeo.skipBiosLogo = 0;
   debugger.frameStepPending = 0;
-  debugger.vblankCaptureActive = 0;
-  debugger.config.audioBufferMs = 50;
-  debugger.config.skipBiosLogo = 0;
+  debugger.vblankCaptureActive = 0;  
   debugger.config.crtEnabled = 1;
   debugger.recordPath[0] = '\0';
   debugger.playbackPath[0] = '\0';
@@ -263,7 +307,7 @@ debugger_ctor(void)
   e9ui->layout.memTrackWinW = 0;
   e9ui->layout.memTrackWinH = 0;
   machine_init(&debugger.machine);
-  size_t buf_bytes = 64 * 1024 * 1024;
+  size_t buf_bytes = 512 * 1024 * 1024;
   const char *env_buf = getenv("E9K_STATE_BUFFER_BYTES");
   if (env_buf && *env_buf) {
     char *end = NULL;
@@ -344,7 +388,7 @@ debugger_main(int argc, char **argv)
 
   ui_build();
   cli_applyOverrides();
-  debugger_libretroSetupPaths();
+  debugger_libretroSelectConfig();
   debugger_refreshElfValid();
   if (debugger.elfValid && debugger_analyseInitFailed) {
     debug_error("profile: aggregator init failed");
@@ -374,7 +418,7 @@ debugger_main(int argc, char **argv)
       snapshot_loadOnBoot();
     }
   }
-  if (debugger.config.romPath[0] || debugger.config.romFolder[0]) {
+  if (debugger.config.neogeo.libretro.romPath[0] || debugger.config.neogeo.romFolder[0]) {
     if (!dasm_preloadText()) {
       debug_error("dasm: preload failed");
     }

@@ -27,7 +27,8 @@
 #include "state_buffer.h"
 #include "train.h"
 #include "debugger_signal.h"
-
+#include "settings.h"
+#include "debugger.h"
 void
 runtime_onVblank(void *user)
 {
@@ -35,6 +36,7 @@ runtime_onVblank(void *user)
     if (state_buffer_isPaused()) {
         return;
     }
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_NEOGEO)
     {
         geo_debug_sprite_state_t spriteState;
         if (libretro_host_debugGetSpriteState(&spriteState) && spriteState.vram && spriteState.vram_words) {
@@ -133,6 +135,7 @@ runtime_runLoop(void)
             e9ui_childRemove(e9ui->root, e9ui->pendingRemove, &e9ui->ctx);
             e9ui->pendingRemove = NULL;
         }
+        settings_pollRebuild(&e9ui->ctx);
         if (debugger.libretro.enabled) {
             int paused = 0;
             if (libretro_host_debugIsPaused(&paused)) {
@@ -202,7 +205,8 @@ runtime_runLoop(void)
                             runtime_executeFrame(DEBUGGER_RUNMODE_CAPTURE, 0);
                         }
                     } else {
-                        double frameTime = 1.0 / 60.0;
+                        double fps = libretro_host_getTimingFps();
+                        double frameTime = (fps > 1e-3) ? (1.0 / fps) : (1.0 / 60.0);
                         debugger.frameTimeAccum += dt;
                         if (debugger.frameTimeAccum >= frameTime) {
                             runtime_executeNextFrame();

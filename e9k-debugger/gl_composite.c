@@ -827,6 +827,7 @@ gl_composite_renderFrame(SDL_Renderer *renderer, const uint8_t *data, int width,
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 
     const uint8_t *uploadSrc = data;
     if (pitch != (size_t)width * 4) {
@@ -1122,6 +1123,7 @@ gl_composite_captureToRenderer(SDL_Renderer *renderer, const uint8_t *data, int 
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_STENCIL_TEST);
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 
     glc_glBindFramebuffer(glc_framebufferTarget, glc_fbo);
     if (glc_glDrawBuffer) {

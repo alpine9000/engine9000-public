@@ -24,8 +24,10 @@
 typedef struct settings_romselect_state {
     char *romPath;
     char *romFolder;
+    char *corePath;
     e9ui_component_t *romSelect;
     e9ui_component_t *folderSelect;
+    e9ui_component_t *coreSelect;
     int suppress;
 } settings_romselect_state_t;
 
@@ -35,6 +37,23 @@ typedef struct settings_systemtype_state {
     char            *systemType;
     int              updating;
 } settings_systemtype_state_t;
+
+typedef struct settings_coresystem_state {
+    e9ui_component_t       *neogeoCheckbox;
+    e9ui_component_t       *amigaCheckbox;
+    e9ui_component_t       *coreSelectNeogeo;
+    e9ui_component_t       *coreSelectAmiga;
+    debugger_system_type_t *coreSystem;
+    char                  *corePathNeogeo;
+    char                  *corePathAmiga;
+    int                    updating;
+    int                    allowRebuild;
+} settings_coresystem_state_t;
+
+static void
+settings_rebuildModalBody(e9ui_context_t *ctx);
+
+static int settings_pendingRebuild = 0;
 
 static int
 settings_pathExistsFile(const char *path)
@@ -62,7 +81,8 @@ settings_pathExistsDir(const char *path)
     return S_ISDIR(statBuffer.st_mode) ? 1 : 0;
 }
 
-static void
+//static
+void
 settings_copyPath(char *dest, size_t capacity, const char *src)
 {
     if (!dest || capacity == 0) {
@@ -115,23 +135,12 @@ settings_config_setValue(char *dest, size_t capacity, const char *value)
 }
 
 static void
-settings_copyConfig(e9k_path_config_t *dest, const e9k_path_config_t *src)
+settings_copyConfig(e9k_system_config_t *dest, const e9k_system_config_t *src)
 {
     if (!dest || !src) {
         return;
     }
-    settings_copyPath(dest->corePath, sizeof(dest->corePath), src->corePath);
-    settings_copyPath(dest->romPath, sizeof(dest->romPath), src->romPath);
-    settings_copyPath(dest->romFolder, sizeof(dest->romFolder), src->romFolder);
-    settings_copyPath(dest->elfPath, sizeof(dest->elfPath), src->elfPath);
-    settings_copyPath(dest->biosDir, sizeof(dest->biosDir), src->biosDir);
-    settings_copyPath(dest->savesDir, sizeof(dest->savesDir), src->savesDir);
-    settings_copyPath(dest->sourceDir, sizeof(dest->sourceDir), src->sourceDir);
-    settings_config_setValue(dest->systemType, sizeof(dest->systemType), src->systemType);
-    dest->audioBufferMs = src->audioBufferMs;
-    dest->audioEnabled = src->audioEnabled;
-    dest->skipBiosLogo = src->skipBiosLogo;
-    dest->crtEnabled = src->crtEnabled;
+    memcpy(dest, src, sizeof(e9k_system_config_t));
 }
 
 static void
@@ -140,6 +149,7 @@ settings_closeModal(void)
     if (!e9ui->settingsModal) {
         return;
     }
+    settings_pendingRebuild = 0;
     e9ui_setHidden(e9ui->settingsModal, 1);
     if (!e9ui->pendingRemove) {
         e9ui->pendingRemove = e9ui->settingsModal;
@@ -174,72 +184,162 @@ settings_updateButton(int settingsOk)
 }
 
 static int
-settings_configMissingPathsFor(const e9k_path_config_t *cfg)
+settings_configMissingPathsFor(const e9k_neogeo_config_t *cfg)
 {
     if (!cfg) {
         return 1;
     }
-    if (!cfg->corePath[0] ||
-        (!cfg->romPath[0] && !cfg->romFolder[0]) ||
-        !cfg->biosDir[0] ||
-        !cfg->savesDir[0] ||
-        !settings_pathExistsFile(cfg->corePath) ||
-        !settings_pathExistsDir(cfg->biosDir) ||
-        !settings_pathExistsDir(cfg->savesDir)) {
+    if (!cfg->libretro.corePath[0] ||
+        (!cfg->libretro.romPath[0] && !cfg->romFolder[0]) ||
+        !cfg->libretro.systemDir[0] ||
+        !cfg->libretro.saveDir[0] ||
+        !settings_pathExistsFile(cfg->libretro.corePath) ||
+        !settings_pathExistsDir(cfg->libretro.systemDir) ||
+        !settings_pathExistsDir(cfg->libretro.saveDir)) {
         return 1;
     }
-    if (cfg->romPath[0] && !settings_pathExistsFile(cfg->romPath)) {
+    if (cfg->libretro.romPath[0] && !settings_pathExistsFile(cfg->libretro.romPath)) {
         return 1;
     }
     if (cfg->romFolder[0] && !settings_pathExistsDir(cfg->romFolder)) {
         return 1;
     }
-    if (cfg->elfPath[0] && !settings_pathExistsFile(cfg->elfPath)) {
+    if (cfg->libretro.elfPath[0] && !settings_pathExistsFile(cfg->libretro.elfPath)) {
         return 1;
     }
-    if (cfg->sourceDir[0] && !settings_pathExistsDir(cfg->sourceDir)) {
+    if (cfg->libretro.sourceDir[0] && !settings_pathExistsDir(cfg->libretro.sourceDir)) {
         return 1;
     }
     return 0;
 }
 
 static int
-settings_configMissingPaths(void)
+settings_configMissingPathsForAmiga(const e9k_amiga_config_t *cfg)
 {
-    return settings_configMissingPathsFor(&debugger.config);
+    if (!cfg) {
+        return 1;
+    }
+    if (!cfg->libretro.corePath[0] ||
+        !cfg->libretro.romPath[0] ||
+        !cfg->libretro.systemDir[0] ||
+        !cfg->libretro.saveDir[0] ||
+        !settings_pathExistsFile(cfg->libretro.corePath) ||
+        !settings_pathExistsFile(cfg->libretro.romPath) ||
+        !settings_pathExistsDir(cfg->libretro.systemDir) ||
+        !settings_pathExistsDir(cfg->libretro.saveDir)) {
+        return 1;
+    }
+    if (cfg->libretro.elfPath[0] && !settings_pathExistsFile(cfg->libretro.elfPath)) {
+        return 1;
+    }
+    if (cfg->libretro.sourceDir[0] && !settings_pathExistsDir(cfg->libretro.sourceDir)) {
+        return 1;
+    }
+    return 0;
 }
 
 static int
-settings_configIsOkFor(const e9k_path_config_t *cfg)
+settings_configIsOkFor(const e9k_neogeo_config_t *cfg)
 {
     return settings_configMissingPathsFor(cfg) ? 0 : 1;
+}
+
+static int
+settings_configIsOkForAmiga(const e9k_amiga_config_t *cfg)
+{
+    return settings_configMissingPathsForAmiga(cfg) ? 0 : 1;
+}
+
+static int
+settings_configMissingPathsForSystem(const e9k_system_config_t *cfg)
+{
+    if (!cfg) {
+        return 1;
+    }
+    if (cfg->coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        return settings_configMissingPathsForAmiga(&cfg->amiga);
+    }
+    return settings_configMissingPathsFor(&cfg->neogeo);
+}
+
+static int
+settings_configMissingPaths(void)
+{
+    return settings_configMissingPathsForSystem(&debugger.config);
 }
 
 int
 settings_configIsOk(void)
 {
-    return settings_configIsOkFor(&debugger.config);
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        return settings_configIsOkForAmiga(&debugger.config.amiga);
+    }
+    return settings_configIsOkFor(&debugger.config.neogeo);
+}
+
+static int
+settings_audioBufferNormalized(int value)
+{
+    return value > 0 ? value : 50;
+}
+
+static int
+settings_restartNeededForNeogeo(const e9k_neogeo_config_t *before, const e9k_neogeo_config_t *after)
+{
+    if (!before || !after) {
+        return 1;
+    }
+    int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0 ||
+                     strcmp(before->romFolder, after->romFolder) != 0;
+    int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
+    int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
+    int sourceChanged = strcmp(before->libretro.sourceDir, after->libretro.sourceDir) != 0;
+    int coreChanged = strcmp(before->libretro.corePath, after->libretro.corePath) != 0;
+    int sysChanged = strcmp(before->systemType, after->systemType) != 0;
+    int audioBefore = settings_audioBufferNormalized(before->libretro.audioBufferMs);
+    int audioAfter = settings_audioBufferNormalized(after->libretro.audioBufferMs);
+    int audioChanged = audioBefore != audioAfter;
+    return romChanged || elfChanged || biosChanged || savesChanged || sourceChanged || coreChanged || sysChanged || audioChanged;
+}
+
+static int
+settings_restartNeededForAmiga(const e9k_amiga_config_t *before, const e9k_amiga_config_t *after)
+{
+    if (!before || !after) {
+        return 1;
+    }
+    int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0;
+    int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
+    int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
+    int sourceChanged = strcmp(before->libretro.sourceDir, after->libretro.sourceDir) != 0;
+    int coreChanged = strcmp(before->libretro.corePath, after->libretro.corePath) != 0;
+    int audioBefore = settings_audioBufferNormalized(before->libretro.audioBufferMs);
+    int audioAfter = settings_audioBufferNormalized(after->libretro.audioBufferMs);
+    int audioChanged = audioBefore != audioAfter;
+    return romChanged || elfChanged || biosChanged || savesChanged || sourceChanged || coreChanged || audioChanged;
 }
 
 static int
 settings_needsRestart(void)
 {
-    int romChanged = strcmp(debugger.config.romPath, debugger.settingsEdit.romPath) != 0 ||
-                     strcmp(debugger.config.romFolder, debugger.settingsEdit.romFolder) != 0;
-    int elfChanged = strcmp(debugger.config.elfPath, debugger.settingsEdit.elfPath) != 0;
-    int biosChanged = strcmp(debugger.config.biosDir, debugger.settingsEdit.biosDir) != 0;
-    int savesChanged = strcmp(debugger.config.savesDir, debugger.settingsEdit.savesDir) != 0;
-    int sourceChanged = strcmp(debugger.config.sourceDir, debugger.settingsEdit.sourceDir) != 0;
-    int coreChanged = strcmp(debugger.config.corePath, debugger.settingsEdit.corePath) != 0;
-    int sysChanged = strcmp(debugger.config.systemType, debugger.settingsEdit.systemType) != 0;
-    int audioBefore = debugger.config.audioBufferMs > 0 ? debugger.config.audioBufferMs : 50;
-    int audioAfter = debugger.settingsEdit.audioBufferMs > 0 ? debugger.settingsEdit.audioBufferMs : 50;
-    int audioChanged = audioBefore != audioAfter;
-    int okBefore = settings_configIsOkFor(&debugger.config);
-    int okAfter = settings_configIsOkFor(&debugger.settingsEdit);
+    int coreSystemChanged = (debugger.config.coreSystem != debugger.settingsEdit.coreSystem);
+    debugger_system_type_t selected = debugger.settingsEdit.coreSystem;
+    int configChanged = 0;
+    int okBefore = 0;
+    int okAfter = 0;
+    if (selected == DEBUGGER_SYSTEM_AMIGA) {
+        configChanged = settings_restartNeededForAmiga(&debugger.config.amiga, &debugger.settingsEdit.amiga);
+        okBefore = settings_configIsOkForAmiga(&debugger.config.amiga);
+        okAfter = settings_configIsOkForAmiga(&debugger.settingsEdit.amiga);
+    } else {
+        configChanged = settings_restartNeededForNeogeo(&debugger.config.neogeo, &debugger.settingsEdit.neogeo);
+        okBefore = settings_configIsOkFor(&debugger.config.neogeo);
+        okAfter = settings_configIsOkFor(&debugger.settingsEdit.neogeo);
+    }
     int okFixed = (!okBefore && okAfter);
-    return romChanged || elfChanged || biosChanged || savesChanged || sourceChanged ||
-           coreChanged || sysChanged || audioChanged || okFixed;
+    return coreSystemChanged || configChanged || okFixed;
 }
 
 static void
@@ -333,12 +433,19 @@ static void
 settings_save(void)
 {
     int needsRestart = settings_needsRestart();
-    if (debugger.settingsEdit.audioBufferMs <= 0) {
-        debugger.settingsEdit.audioBufferMs = 50;
+    if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        if (debugger.settingsEdit.amiga.libretro.audioBufferMs <= 0) {
+            debugger.settingsEdit.amiga.libretro.audioBufferMs = 50;
+        }
+    } else {
+        if (debugger.settingsEdit.neogeo.libretro.audioBufferMs <= 0) {
+            debugger.settingsEdit.neogeo.libretro.audioBufferMs = 50;
+        }
     }
     settings_copyConfig(&debugger.config, &debugger.settingsEdit);
+    debugger_setCoreSystem(debugger.config.coreSystem);
     crt_setEnabled(debugger.config.crtEnabled ? 1 : 0);
-    debugger_libretroSetupPaths();
+    debugger_libretroSelectConfig();
     debugger_applyCoreOptions();
     debugger_refreshElfValid();
     debugger.settingsOk = settings_configIsOk();
@@ -406,6 +513,29 @@ settings_updateRomSelectAllowEmpty(settings_romselect_state_t *st)
     }
 }
 
+static const char *
+settings_defaultCorePathForSystem(debugger_system_type_t system)
+{
+    switch (system) {
+    case DEBUGGER_SYSTEM_AMIGA:
+        return "./system/puae_libretro.dylib";
+    case DEBUGGER_SYSTEM_NEOGEO:
+    case DEBUGGER_SYSTEM_MEGADRIVE:
+    default:
+        return "./system/geolith_libretro.dylib";
+    }
+}
+
+static int
+settings_isDefaultCorePath(const char *path)
+{
+    if (!path || !*path) {
+        return 0;
+    }
+    return strcmp(path, "./system/puae_libretro.dylib") == 0 ||
+           strcmp(path, "./system/geolith_libretro.dylib") == 0;
+}
+
 static void
 settings_romPathChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *text, void *user)
 {
@@ -417,6 +547,13 @@ settings_romPathChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char 
     }
     settings_config_setPath(st->romPath, PATH_MAX, text);
     if (text && *text) {
+        const char *defaultCore = settings_defaultCorePathForSystem(debugger.settingsEdit.coreSystem);
+        if (defaultCore && st->corePath && (!st->corePath[0] || settings_isDefaultCorePath(st->corePath))) {
+            settings_config_setPath(st->corePath, PATH_MAX, defaultCore);
+            if (st->coreSelect) {
+                e9ui_fileSelect_setText(st->coreSelect, defaultCore);
+            }
+        }
         st->suppress = 1;
         settings_config_setPath(st->romFolder, PATH_MAX, "");
         if (st->folderSelect) {
@@ -578,6 +715,683 @@ settings_systemTypeMvsChanged(e9ui_component_t *self, e9ui_context_t *ctx, int s
     }
 }
 
+static void
+settings_coreSystemSync(settings_coresystem_state_t *st, debugger_system_type_t system, e9ui_context_t *ctx)
+{
+    if (!st || !st->coreSystem) {
+        return;
+    }
+    st->updating = 1;
+    debugger_system_type_t current = *st->coreSystem;
+    debugger_system_type_t normalized = (system == DEBUGGER_SYSTEM_AMIGA) ? DEBUGGER_SYSTEM_AMIGA : DEBUGGER_SYSTEM_NEOGEO;
+    int systemChanged = (current != normalized);
+    *st->coreSystem = normalized;
+    int amigaSelected = (normalized == DEBUGGER_SYSTEM_AMIGA);
+    int neogeoSelected = !amigaSelected;
+    const char *defaultCore = settings_defaultCorePathForSystem(normalized);
+    char *corePath = (normalized == DEBUGGER_SYSTEM_AMIGA) ? st->corePathAmiga : st->corePathNeogeo;
+    if (defaultCore && corePath && (!corePath[0] || settings_isDefaultCorePath(corePath))) {
+        settings_config_setPath(corePath, PATH_MAX, defaultCore);
+    }
+    if (st->allowRebuild && systemChanged) {
+        st->updating = 0;
+        settings_pendingRebuild = 1;
+        return;
+    }
+    if (st->neogeoCheckbox) {
+        e9ui_checkbox_setSelected(st->neogeoCheckbox, neogeoSelected, ctx);
+    }
+    if (st->amigaCheckbox) {
+        e9ui_checkbox_setSelected(st->amigaCheckbox, amigaSelected, ctx);
+    }
+    if (defaultCore && corePath && (!corePath[0] || settings_isDefaultCorePath(corePath))) {
+        e9ui_component_t *coreSelect = (normalized == DEBUGGER_SYSTEM_AMIGA) ? st->coreSelectAmiga : st->coreSelectNeogeo;
+        if (coreSelect) {
+            e9ui_fileSelect_setText(coreSelect, defaultCore);
+        }
+    }
+    st->updating = 0;
+    settings_updateSaveLabel();
+}
+
+static void
+settings_coreSystemNeoGeoChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user)
+{
+    (void)self;
+    settings_coresystem_state_t *st = (settings_coresystem_state_t *)user;
+    if (!st || st->updating) {
+        return;
+    }
+    settings_coreSystemSync(st, selected ? DEBUGGER_SYSTEM_NEOGEO : DEBUGGER_SYSTEM_AMIGA, ctx);
+}
+
+static void
+settings_coreSystemAmigaChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user)
+{
+    (void)self;
+    settings_coresystem_state_t *st = (settings_coresystem_state_t *)user;
+    if (!st || st->updating) {
+        return;
+    }
+    settings_coreSystemSync(st, selected ? DEBUGGER_SYSTEM_AMIGA : DEBUGGER_SYSTEM_NEOGEO, ctx);
+}
+
+static int
+settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
+{
+    if (!ctx) {
+        return 0;
+    }
+    const char *romExtsNeogeo[] = { "*.neo" };
+    const char *romExtsAmiga[] = { "*.uae" };
+    const char *elfExts[] = { "*.elf" };
+    e9ui_component_t *fsRom = NULL;
+    e9ui_component_t *fsRomFolder = NULL;
+    e9ui_component_t *fsElf = NULL;
+    e9ui_component_t *fsBios = NULL;
+    e9ui_component_t *fsSaves = NULL;
+    e9ui_component_t *fsSource = NULL;
+    e9ui_component_t *fsCore = NULL;
+    e9ui_component_t *ltAudio = NULL;
+    e9ui_component_t *rowSystemCenter = NULL;
+    e9ui_component_t *rowCoreCenter = NULL;
+    e9ui_component_t *rowGlobalCenter = NULL;
+    e9ui_component_t *gap = e9ui_vspacer_make(12);
+
+    e9ui_component_t *cbNeogeo = e9ui_checkbox_make("NEO GEO", 1, NULL, NULL);
+    e9ui_component_t *cbAmiga = e9ui_checkbox_make("AMIGA", 0, NULL, NULL);
+    e9ui_component_t *rowCore = e9ui_hstack_make();
+    rowCoreCenter = rowCore ? e9ui_center_make(rowCore) : NULL;
+
+    e9ui_component_t *cbFun = e9ui_checkbox_make("FUN", 0, NULL, NULL);
+    e9ui_component_t *cbCrt = e9ui_checkbox_make("CRT", 0, NULL, NULL);
+    e9ui_component_t *rowGlobal = e9ui_hstack_make();
+    rowGlobalCenter = rowGlobal ? e9ui_center_make(rowGlobal) : NULL;
+
+    if (isAmiga) {
+        fsRom = e9ui_fileSelect_make("UAE CONFIG", 120, 600, "...", romExtsAmiga, 1, E9UI_FILESELECT_FILE);
+        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsCore = e9ui_fileSelect_make("CORE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
+        ltAudio = e9ui_labeled_textbox_make("AUDIO BUFFER MS", 120, 600, NULL, NULL);
+    } else {
+        fsRom = e9ui_fileSelect_make("ROM", 120, 600, "...", romExtsNeogeo, 1, E9UI_FILESELECT_FILE);
+        fsRomFolder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsBios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsCore = e9ui_fileSelect_make("CORE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
+        e9ui_component_t *cbAes = e9ui_checkbox_make("AES", 1, NULL, NULL);
+        e9ui_component_t *cbMvs = e9ui_checkbox_make("MVS", 0, NULL, NULL);
+        e9ui_component_t *cbSkip = e9ui_checkbox_make("SKIP BIOS LOGO", 0, NULL, NULL);
+        e9ui_component_t *rowSystem = e9ui_hstack_make();
+        rowSystemCenter = rowSystem ? e9ui_center_make(rowSystem) : NULL;
+        ltAudio = e9ui_labeled_textbox_make("AUDIO BUFFER MS", 120, 600, NULL, NULL);
+        if (rowSystem && ctx) {
+            int gapPx = e9ui_scale_px(ctx, 12);
+            int wMvs = cbMvs ? settings_checkboxMeasureWidth("MVS", ctx) : 0;
+            int wAes = cbAes ? settings_checkboxMeasureWidth("AES", ctx) : 0;
+            int wSkip = cbSkip ? settings_checkboxMeasureWidth("SKIP BIOS LOGO", ctx) : 0;
+            int totalW = 0;
+            if (cbMvs) {
+                e9ui_hstack_addFixed(rowSystem, cbMvs, wMvs);
+                totalW += wMvs;
+            }
+            if (cbAes) {
+                if (totalW > 0) {
+                    e9ui_hstack_addFixed(rowSystem, e9ui_spacer_make(gapPx), gapPx);
+                    totalW += gapPx;
+                }
+                e9ui_hstack_addFixed(rowSystem, cbAes, wAes);
+                totalW += wAes;
+            }
+            if (cbSkip) {
+                if (totalW > 0) {
+                    e9ui_hstack_addFixed(rowSystem, e9ui_spacer_make(gapPx), gapPx);
+                    totalW += gapPx;
+                }
+                e9ui_hstack_addFixed(rowSystem, cbSkip, wSkip);
+                totalW += wSkip;
+            }
+            if (rowSystemCenter) {
+                e9ui_center_setSize(rowSystemCenter, e9ui_unscale_px(ctx, totalW), 0);
+            }
+        }
+    }
+
+    if (rowCore && ctx) {
+        int gapPx = e9ui_scale_px(ctx, 12);
+        int wNeogeo = cbNeogeo ? settings_checkboxMeasureWidth("NEO GEO", ctx) : 0;
+        int wAmiga = cbAmiga ? settings_checkboxMeasureWidth("AMIGA", ctx) : 0;
+        int totalW = 0;
+        if (cbNeogeo) {
+            e9ui_hstack_addFixed(rowCore, cbNeogeo, wNeogeo);
+            totalW += wNeogeo;
+        }
+        if (cbAmiga) {
+            if (totalW > 0) {
+                e9ui_hstack_addFixed(rowCore, e9ui_spacer_make(gapPx), gapPx);
+                totalW += gapPx;
+            }
+            e9ui_hstack_addFixed(rowCore, cbAmiga, wAmiga);
+            totalW += wAmiga;
+        }
+        if (rowCoreCenter) {
+            e9ui_center_setSize(rowCoreCenter, e9ui_unscale_px(ctx, totalW), 0);
+        }
+    }
+
+    if (rowGlobal && ctx) {
+        int gapPx = e9ui_scale_px(ctx, 12);
+        int wFun = cbFun ? settings_checkboxMeasureWidth("FUN", ctx) : 0;
+        int wCrt = cbCrt ? settings_checkboxMeasureWidth("CRT", ctx) : 0;
+        int totalW = 0;
+        if (cbFun) {
+            e9ui_hstack_addFixed(rowGlobal, cbFun, wFun);
+            totalW += wFun;
+        }
+        if (cbCrt) {
+            if (totalW > 0) {
+                e9ui_hstack_addFixed(rowGlobal, e9ui_spacer_make(gapPx), gapPx);
+                totalW += gapPx;
+            }
+            e9ui_hstack_addFixed(rowGlobal, cbCrt, wCrt);
+            totalW += wCrt;
+        }
+        if (rowGlobalCenter) {
+            e9ui_center_setSize(rowGlobalCenter, e9ui_unscale_px(ctx, totalW), 0);
+        }
+    }
+
+    int contentW = e9ui_scale_px(ctx, 600);
+    int hGap = gap && gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;
+    int hCoreRow = rowCoreCenter && rowCoreCenter->preferredHeight ? rowCoreCenter->preferredHeight(rowCoreCenter, ctx, contentW) : 0;
+    int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
+    int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
+    int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
+    int hSource = fsSource && fsSource->preferredHeight ? fsSource->preferredHeight(fsSource, ctx, contentW) : 0;
+    int hBios = fsBios && fsBios->preferredHeight ? fsBios->preferredHeight(fsBios, ctx, contentW) : 0;
+    int hSaves = fsSaves && fsSaves->preferredHeight ? fsSaves->preferredHeight(fsSaves, ctx, contentW) : 0;
+    int hCoreFs = fsCore && fsCore->preferredHeight ? fsCore->preferredHeight(fsCore, ctx, contentW) : 0;
+    int hAudio = ltAudio && ltAudio->preferredHeight ? ltAudio->preferredHeight(ltAudio, ctx, contentW) : 0;
+    int hSys = rowSystemCenter && rowSystemCenter->preferredHeight ? rowSystemCenter->preferredHeight(rowSystemCenter, ctx, contentW) : 0;
+    int hGlobal = rowGlobalCenter && rowGlobalCenter->preferredHeight ? rowGlobalCenter->preferredHeight(rowGlobalCenter, ctx, contentW) : 0;
+    int contentH = 0;
+    if (rowCoreCenter) {
+        contentH += hCoreRow + hGap;
+    }
+    contentH += hRom;
+    if (fsRomFolder) {
+        contentH += hGap + hRomFolder;
+    }
+    if (fsElf) {
+        contentH += hGap + hElf;
+    }
+    if (fsSource) {
+        contentH += hGap + hSource;
+    }
+    if (fsBios) {
+        contentH += hGap + hBios;
+    }
+    if (fsSaves) {
+        contentH += hGap + hSaves;
+    }
+    if (fsCore) {
+        contentH += hGap + hCoreFs;
+    }
+    if (ltAudio) {
+        contentH += hGap + hAudio;
+    }
+    if (rowSystemCenter) {
+        contentH += hGap + hSys;
+    }
+    if (rowGlobalCenter) {
+        contentH += hGap + hGlobal;
+    }
+
+    if (rowCoreCenter) {
+        e9ui_childDestroy(rowCoreCenter, ctx);
+    }
+    if (rowSystemCenter) {
+        e9ui_childDestroy(rowSystemCenter, ctx);
+    }
+    if (rowGlobalCenter) {
+        e9ui_childDestroy(rowGlobalCenter, ctx);
+    }
+    if (fsRom) {
+        e9ui_childDestroy(fsRom, ctx);
+    }
+    if (fsRomFolder) {
+        e9ui_childDestroy(fsRomFolder, ctx);
+    }
+    if (fsElf) {
+        e9ui_childDestroy(fsElf, ctx);
+    }
+    if (fsBios) {
+        e9ui_childDestroy(fsBios, ctx);
+    }
+    if (fsSaves) {
+        e9ui_childDestroy(fsSaves, ctx);
+    }
+    if (fsSource) {
+        e9ui_childDestroy(fsSource, ctx);
+    }
+    if (fsCore) {
+        e9ui_childDestroy(fsCore, ctx);
+    }
+    if (ltAudio) {
+        e9ui_childDestroy(ltAudio, ctx);
+    }
+    if (gap) {
+        e9ui_childDestroy(gap, ctx);
+    }
+
+    return contentH;
+}
+
+static e9ui_component_t *
+settings_buildModalBody(e9ui_context_t *ctx)
+{
+    if (!ctx) {
+        return NULL;
+    }
+    int isAmiga = (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA);
+    const char *romExtsNeogeo[] = { "*.neo" };
+    const char *romExtsAmiga[] = { "*.uae" };
+    const char *elfExts[] = { "*.elf" };
+    e9ui_component_t *fsRom = NULL;
+    e9ui_component_t *fsRomFolder = NULL;
+    e9ui_component_t *fsElf = NULL;
+    e9ui_component_t *fsBios = NULL;
+    e9ui_component_t *fsSaves = NULL;
+    e9ui_component_t *fsSource = NULL;
+    e9ui_component_t *fsCore = NULL;
+    e9ui_component_t *ltAudio = NULL;
+    e9ui_component_t *rowSystemCenter = NULL;
+    e9ui_component_t *rowGlobalCenter = NULL;
+    settings_systemtype_state_t *sysState = NULL;
+    settings_romselect_state_t *romState = NULL;
+
+    settings_coresystem_state_t *coreState = (settings_coresystem_state_t *)alloc_calloc(1, sizeof(*coreState));
+    int amigaSelected = isAmiga ? 1 : 0;
+    int neogeoSelected = !amigaSelected;
+    e9ui_component_t *cbNeogeo = e9ui_checkbox_make("NEO GEO", neogeoSelected, settings_coreSystemNeoGeoChanged, coreState);
+    e9ui_component_t *cbAmiga = e9ui_checkbox_make("AMIGA", amigaSelected, settings_coreSystemAmigaChanged, coreState);
+    e9ui_component_t *rowCore = e9ui_hstack_make();
+    e9ui_component_t *rowCoreCenter = rowCore ? e9ui_center_make(rowCore) : NULL;
+
+    int funSelected = (e9ui->transition.mode != e9k_transition_none);
+    e9ui_component_t *cbFun = e9ui_checkbox_make("FUN", funSelected, settings_funChanged, NULL);
+    e9ui_component_t *cbCrt = e9ui_checkbox_make("CRT",
+                                                 debugger.settingsEdit.crtEnabled,
+                                                 settings_crtChanged,
+                                                 &debugger.settingsEdit.crtEnabled);
+    e9ui_component_t *rowGlobal = e9ui_hstack_make();
+    rowGlobalCenter = rowGlobal ? e9ui_center_make(rowGlobal) : NULL;
+
+    if (isAmiga) {
+        fsRom = e9ui_fileSelect_make("UAE CONFIG", 120, 600, "...", romExtsAmiga, 1, E9UI_FILESELECT_FILE);
+        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsCore = e9ui_fileSelect_make("CORE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
+        ltAudio = e9ui_labeled_textbox_make("AUDIO BUFFER MS", 120, 600,
+                                            settings_audioChanged,
+                                            &debugger.settingsEdit.amiga.libretro.audioBufferMs);
+        e9ui_fileSelect_setText(fsRom, debugger.settingsEdit.amiga.libretro.romPath);
+        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.elfPath);
+        e9ui_fileSelect_setAllowEmpty(fsElf, 1);
+        e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.amiga.libretro.systemDir);
+        e9ui_fileSelect_setText(fsSaves, debugger.settingsEdit.amiga.libretro.saveDir);
+        e9ui_fileSelect_setText(fsSource, debugger.settingsEdit.amiga.libretro.sourceDir);
+        e9ui_fileSelect_setText(fsCore, debugger.settingsEdit.amiga.libretro.corePath);
+    } else {
+        fsRom = e9ui_fileSelect_make("ROM", 120, 600, "...", romExtsNeogeo, 1, E9UI_FILESELECT_FILE);
+        fsRomFolder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsBios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
+        fsCore = e9ui_fileSelect_make("CORE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
+        e9ui_component_t *cbSkip = e9ui_checkbox_make("SKIP BIOS LOGO",
+                                                      debugger.settingsEdit.neogeo.skipBiosLogo,
+                                                      settings_skipBiosChanged,
+                                                      &debugger.settingsEdit.neogeo.skipBiosLogo);
+        sysState = (settings_systemtype_state_t *)alloc_calloc(1, sizeof(*sysState));
+        int aesSelected = (strcmp(debugger.settingsEdit.neogeo.systemType, "aes") == 0);
+        int mvsSelected = (strcmp(debugger.settingsEdit.neogeo.systemType, "mvs") == 0);
+        e9ui_component_t *cbAes = e9ui_checkbox_make("AES", aesSelected, settings_systemTypeAesChanged, sysState);
+        e9ui_component_t *cbMvs = e9ui_checkbox_make("MVS", mvsSelected, settings_systemTypeMvsChanged, sysState);
+        e9ui_component_t *rowSystem = e9ui_hstack_make();
+        rowSystemCenter = rowSystem ? e9ui_center_make(rowSystem) : NULL;
+        ltAudio = e9ui_labeled_textbox_make("AUDIO BUFFER MS", 120, 600,
+                                            settings_audioChanged,
+                                            &debugger.settingsEdit.neogeo.libretro.audioBufferMs);
+        e9ui_fileSelect_setText(fsRom, debugger.settingsEdit.neogeo.libretro.romPath);
+        e9ui_fileSelect_setText(fsRomFolder, debugger.settingsEdit.neogeo.romFolder);
+        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.neogeo.libretro.elfPath);
+        e9ui_fileSelect_setAllowEmpty(fsElf, 1);
+        e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.neogeo.libretro.systemDir);
+        e9ui_fileSelect_setText(fsSaves, debugger.settingsEdit.neogeo.libretro.saveDir);
+        e9ui_fileSelect_setText(fsSource, debugger.settingsEdit.neogeo.libretro.sourceDir);
+        e9ui_fileSelect_setText(fsCore, debugger.settingsEdit.neogeo.libretro.corePath);
+        if (sysState) {
+            sysState->aesCheckbox = cbAes;
+            sysState->mvsCheckbox = cbMvs;
+            sysState->systemType = debugger.settingsEdit.neogeo.systemType;
+        }
+        if (rowSystem && ctx) {
+            int gap = e9ui_scale_px(ctx, 12);
+            int wMvs = cbMvs ? settings_checkboxMeasureWidth("MVS", ctx) : 0;
+            int wAes = cbAes ? settings_checkboxMeasureWidth("AES", ctx) : 0;
+            int wSkip = cbSkip ? settings_checkboxMeasureWidth("SKIP BIOS LOGO", ctx) : 0;
+            int totalW = 0;
+            if (cbMvs) {
+                e9ui_hstack_addFixed(rowSystem, cbMvs, wMvs);
+                totalW += wMvs;
+            }
+            if (cbAes) {
+                if (totalW > 0) {
+                    e9ui_hstack_addFixed(rowSystem, e9ui_spacer_make(gap), gap);
+                    totalW += gap;
+                }
+                e9ui_hstack_addFixed(rowSystem, cbAes, wAes);
+                totalW += wAes;
+            }
+            if (cbSkip) {
+                if (totalW > 0) {
+                    e9ui_hstack_addFixed(rowSystem, e9ui_spacer_make(gap), gap);
+                    totalW += gap;
+                }
+                e9ui_hstack_addFixed(rowSystem, cbSkip, wSkip);
+                totalW += wSkip;
+            }
+            if (rowSystemCenter) {
+                e9ui_center_setSize(rowSystemCenter, e9ui_unscale_px(ctx, totalW), 0);
+            }
+        }
+    }
+
+    if (coreState) {
+        coreState->neogeoCheckbox = cbNeogeo;
+        coreState->amigaCheckbox = cbAmiga;
+        coreState->coreSystem = &debugger.settingsEdit.coreSystem;
+        coreState->corePathNeogeo = debugger.settingsEdit.neogeo.libretro.corePath;
+        coreState->corePathAmiga = debugger.settingsEdit.amiga.libretro.corePath;
+        if (isAmiga) {
+            coreState->coreSelectAmiga = fsCore;
+        } else {
+            coreState->coreSelectNeogeo = fsCore;
+        }
+        coreState->allowRebuild = 0;
+        settings_coreSystemSync(coreState, debugger.settingsEdit.coreSystem, ctx);
+        coreState->allowRebuild = 1;
+    }
+
+    if (rowCore && ctx) {
+        int gap = e9ui_scale_px(ctx, 12);
+        int wNeogeo = cbNeogeo ? settings_checkboxMeasureWidth("NEO GEO", ctx) : 0;
+        int wAmiga = cbAmiga ? settings_checkboxMeasureWidth("AMIGA", ctx) : 0;
+        int totalW = 0;
+        if (cbNeogeo) {
+            e9ui_hstack_addFixed(rowCore, cbNeogeo, wNeogeo);
+            totalW += wNeogeo;
+        }
+        if (cbAmiga) {
+            if (totalW > 0) {
+                e9ui_hstack_addFixed(rowCore, e9ui_spacer_make(gap), gap);
+                totalW += gap;
+            }
+            e9ui_hstack_addFixed(rowCore, cbAmiga, wAmiga);
+            totalW += wAmiga;
+        }
+        if (rowCoreCenter) {
+            e9ui_center_setSize(rowCoreCenter, e9ui_unscale_px(ctx, totalW), 0);
+        }
+    }
+    if (rowGlobal && ctx) {
+        int gap = e9ui_scale_px(ctx, 12);
+        int wFun = cbFun ? settings_checkboxMeasureWidth("FUN", ctx) : 0;
+        int wCrt = cbCrt ? settings_checkboxMeasureWidth("CRT", ctx) : 0;
+        int totalW = 0;
+        if (cbFun) {
+            e9ui_hstack_addFixed(rowGlobal, cbFun, wFun);
+            totalW += wFun;
+        }
+        if (cbCrt) {
+            if (totalW > 0) {
+                e9ui_hstack_addFixed(rowGlobal, e9ui_spacer_make(gap), gap);
+                totalW += gap;
+            }
+            e9ui_hstack_addFixed(rowGlobal, cbCrt, wCrt);
+            totalW += wCrt;
+        }
+        if (rowGlobalCenter) {
+            e9ui_center_setSize(rowGlobalCenter, e9ui_unscale_px(ctx, totalW), 0);
+        }
+    }
+    if (ltAudio) {
+        char buf[32];
+        int audioValue = isAmiga ? debugger.settingsEdit.amiga.libretro.audioBufferMs : debugger.settingsEdit.neogeo.libretro.audioBufferMs;
+        if (audioValue > 0) {
+            snprintf(buf, sizeof(buf), "%d", audioValue);
+            e9ui_labeled_textbox_setText(ltAudio, buf);
+        } else {
+            e9ui_labeled_textbox_setText(ltAudio, "");
+        }
+        e9ui_component_t *tb = e9ui_labeled_textbox_getTextbox(ltAudio);
+        if (tb) {
+            e9ui_textbox_setNumericOnly(tb, 1);
+        }
+    }
+    romState = (settings_romselect_state_t *)alloc_calloc(1, sizeof(*romState));
+    if (romState) {
+        if (isAmiga) {
+            romState->romPath = debugger.settingsEdit.amiga.libretro.romPath;
+            romState->romFolder = NULL;
+            romState->corePath = debugger.settingsEdit.amiga.libretro.corePath;
+        } else {
+            romState->romPath = debugger.settingsEdit.neogeo.libretro.romPath;
+            romState->romFolder = debugger.settingsEdit.neogeo.romFolder;
+            romState->corePath = debugger.settingsEdit.neogeo.libretro.corePath;
+        }
+        romState->romSelect = fsRom;
+        romState->folderSelect = fsRomFolder;
+        romState->coreSelect = fsCore;
+        settings_updateRomSelectAllowEmpty(romState);
+    }
+    if (fsRom) {
+        e9ui_fileSelect_setOnChange(fsRom, settings_romPathChanged, romState);
+    }
+    if (fsRomFolder) {
+        e9ui_fileSelect_setOnChange(fsRomFolder, settings_romFolderChanged, romState);
+    }
+    if (fsElf) {
+        if (isAmiga) {
+            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.amiga.libretro.elfPath);
+        } else {
+            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.elfPath);
+        }
+    }
+    if (fsBios) {
+        if (isAmiga) {
+            e9ui_fileSelect_setOnChange(fsBios, settings_pathChanged, debugger.settingsEdit.amiga.libretro.systemDir);
+        } else {
+            e9ui_fileSelect_setOnChange(fsBios, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.systemDir);
+        }
+    }
+    if (fsSaves) {
+        if (isAmiga) {
+            e9ui_fileSelect_setOnChange(fsSaves, settings_pathChanged, debugger.settingsEdit.amiga.libretro.saveDir);
+        } else {
+            e9ui_fileSelect_setOnChange(fsSaves, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.saveDir);
+        }
+    }
+    if (fsSource) {
+        if (isAmiga) {
+            e9ui_fileSelect_setOnChange(fsSource, settings_pathChanged, debugger.settingsEdit.amiga.libretro.sourceDir);
+        } else {
+            e9ui_fileSelect_setOnChange(fsSource, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.sourceDir);
+        }
+    }
+    if (fsCore) {
+        if (isAmiga) {
+            e9ui_fileSelect_setOnChange(fsCore, settings_pathChanged, debugger.settingsEdit.amiga.libretro.corePath);
+        } else {
+            e9ui_fileSelect_setOnChange(fsCore, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.corePath);
+        }
+    }
+
+    e9ui_component_t *stack = e9ui_stack_makeVertical();
+    e9ui_component_t *gap = e9ui_vspacer_make(12);
+    if (rowCoreCenter) {
+        e9ui_stack_addFixed(stack, rowCoreCenter);
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+    }
+    if (fsRom) {
+        e9ui_stack_addFixed(stack, fsRom);
+    }
+    if (fsRomFolder) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsRomFolder);
+    }
+    if (fsElf) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsElf);
+    }
+    if (fsSource) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsSource);
+    }
+    if (fsBios) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsBios);
+    }
+    if (fsSaves) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsSaves);
+    }
+    if (fsCore) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsCore);
+    }
+    if (ltAudio) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, ltAudio);
+    }
+    if (rowSystemCenter) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, rowSystemCenter);
+    }
+    if (rowGlobalCenter) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, rowGlobalCenter);
+    }
+    e9ui_component_t *center = e9ui_center_make(stack);
+    e9ui_component_t *btnSave = e9ui_button_make("Save", settings_uiSave, NULL);
+    e9ui_component_t *btnCancel = e9ui_button_make("Cancel", settings_uiCancel, NULL);
+    e9ui->settingsSaveButton = btnSave;
+    settings_updateSaveLabel();
+    e9ui_component_t *footer = e9ui_flow_make();
+    e9ui_flow_setPadding(footer, 0);
+    e9ui_flow_setSpacing(footer, 8);
+    e9ui_flow_setWrap(footer, 0);
+    if (btnSave) {
+        e9ui_button_setTheme(btnSave, e9ui_theme_button_preset_green());
+        e9ui_button_setGlowPulse(btnSave, 1);
+        e9ui_flow_add(footer, btnSave);
+    }
+    if (btnCancel) {
+        e9ui_button_setTheme(btnCancel, e9ui_theme_button_preset_red());
+        e9ui_button_setGlowPulse(btnCancel, 1);
+        e9ui_flow_add(footer, btnCancel);
+    }
+    int contentW = e9ui_scale_px(ctx, 600);
+    int hGap = gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;
+    int hCoreRow = rowCoreCenter && rowCoreCenter->preferredHeight ? rowCoreCenter->preferredHeight(rowCoreCenter, ctx, contentW) : 0;
+    int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
+    int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
+    int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
+    int hSource = fsSource && fsSource->preferredHeight ? fsSource->preferredHeight(fsSource, ctx, contentW) : 0;
+    int hBios = fsBios && fsBios->preferredHeight ? fsBios->preferredHeight(fsBios, ctx, contentW) : 0;
+    int hSaves = fsSaves && fsSaves->preferredHeight ? fsSaves->preferredHeight(fsSaves, ctx, contentW) : 0;
+    int hCoreFs = fsCore && fsCore->preferredHeight ? fsCore->preferredHeight(fsCore, ctx, contentW) : 0;
+    int hAudio = ltAudio && ltAudio->preferredHeight ? ltAudio->preferredHeight(ltAudio, ctx, contentW) : 0;
+    int hSys = rowSystemCenter && rowSystemCenter->preferredHeight ? rowSystemCenter->preferredHeight(rowSystemCenter, ctx, contentW) : 0;
+    int hGlobal = rowGlobalCenter && rowGlobalCenter->preferredHeight ? rowGlobalCenter->preferredHeight(rowGlobalCenter, ctx, contentW) : 0;
+    int contentH = 0;
+    if (rowCoreCenter) {
+        contentH += hCoreRow + hGap;
+    }
+    contentH += hRom;
+    if (fsRomFolder) {
+        contentH += hGap + hRomFolder;
+    }
+    if (fsElf) {
+        contentH += hGap + hElf;
+    }
+    if (fsSource) {
+        contentH += hGap + hSource;
+    }
+    if (fsBios) {
+        contentH += hGap + hBios;
+    }
+    if (fsSaves) {
+        contentH += hGap + hSaves;
+    }
+    if (fsCore) {
+        contentH += hGap + hCoreFs;
+    }
+    if (ltAudio) {
+        contentH += hGap + hAudio;
+    }
+    if (rowSystemCenter) {
+        contentH += hGap + hSys;
+    }
+    if (rowGlobalCenter) {
+        contentH += hGap + hGlobal;
+    }
+    int otherHeight = settings_measureContentHeight(ctx, isAmiga ? 0 : 1);
+    int targetHeight = contentH > otherHeight ? contentH : otherHeight;
+    e9ui_center_setSize(center, 640, e9ui_unscale_px(ctx, targetHeight));
+    e9ui_component_t *overlay = e9ui_overlay_make(center, footer);
+    e9ui_overlay_setAnchor(overlay, e9ui_anchor_bottom_right);
+    e9ui_overlay_setMargin(overlay, 12);
+    return overlay;
+}
+
+static void
+settings_rebuildModalBody(e9ui_context_t *ctx)
+{
+    if (!e9ui->settingsModal || !ctx) {
+        return;
+    }
+    e9ui_component_t *overlay = settings_buildModalBody(ctx);
+    if (overlay) {
+        e9ui_modal_setBodyChild(e9ui->settingsModal, overlay, ctx);
+    }
+}
+
+void
+settings_pollRebuild(e9ui_context_t *ctx)
+{
+    if (!settings_pendingRebuild) {
+        return;
+    }
+    settings_pendingRebuild = 0;
+    if (!e9ui->settingsModal || !ctx) {
+        return;
+    }
+    if (e9ui->pendingRemove == e9ui->settingsModal) {
+        return;
+    }
+    settings_rebuildModalBody(ctx);
+}
+
 void
 settings_uiOpen(e9ui_context_t *ctx, void *user)
 {
@@ -597,192 +1411,9 @@ settings_uiOpen(e9ui_context_t *ctx, void *user)
     settings_copyConfig(&debugger.settingsEdit, &debugger.config);
     e9ui->settingsModal = e9ui_modal_show(ctx, "Settings", rect, settings_uiClosed, NULL);
     if (e9ui->settingsModal) {
-        const char *rom_exts[] = { "*.neo" };
-        const char *elf_exts[] = { "*.elf" };
-        e9ui_component_t *fs_rom = e9ui_fileSelect_make("ROM", 120, 600, "...", rom_exts, 1, E9UI_FILESELECT_FILE);
-        e9ui_component_t *fs_rom_folder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
-        e9ui_component_t *fs_elf = e9ui_fileSelect_make("ELF", 120, 600, "...", elf_exts, 1, E9UI_FILESELECT_FILE);
-        e9ui_component_t *fs_bios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
-        e9ui_component_t *fs_saves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
-        e9ui_component_t *fs_source = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
-        e9ui_component_t *fs_core = e9ui_fileSelect_make("CORE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
-        e9ui_component_t *cb_skip = e9ui_checkbox_make("SKIP BIOS LOGO",
-                                                       debugger.settingsEdit.skipBiosLogo,
-                                                       settings_skipBiosChanged,
-                                                       &debugger.settingsEdit.skipBiosLogo);
-        e9ui_component_t *cb_crt = e9ui_checkbox_make("CRT",
-                                                      debugger.settingsEdit.crtEnabled,
-                                                      settings_crtChanged,
-                                                      &debugger.settingsEdit.crtEnabled);
-        int funSelected = (e9ui->transition.mode != e9k_transition_none);
-        e9ui_component_t *cb_fun = e9ui_checkbox_make("FUN",
-                                                      funSelected,
-                                                      settings_funChanged,
-                                                      NULL);
-        settings_systemtype_state_t *sys_state = (settings_systemtype_state_t *)alloc_calloc(1, sizeof(*sys_state));
-        int aesSelected = (strcmp(debugger.settingsEdit.systemType, "aes") == 0);
-        int mvsSelected = (strcmp(debugger.settingsEdit.systemType, "mvs") == 0);
-        e9ui_component_t *cb_aes = e9ui_checkbox_make("AES", aesSelected, settings_systemTypeAesChanged, sys_state);
-        e9ui_component_t *cb_mvs = e9ui_checkbox_make("MVS", mvsSelected, settings_systemTypeMvsChanged, sys_state);
-        e9ui_component_t *row_system = e9ui_hstack_make();
-        e9ui_component_t *row_center = row_system ? e9ui_center_make(row_system) : NULL;
-        e9ui_component_t *lt_audio = e9ui_labeled_textbox_make("AUDIO BUFFER MS", 120, 600,
-                                                              settings_audioChanged,
-                                                              &debugger.settingsEdit.audioBufferMs);
-        e9ui_fileSelect_setText(fs_rom, debugger.settingsEdit.romPath);
-        e9ui_fileSelect_setText(fs_rom_folder, debugger.settingsEdit.romFolder);
-        e9ui_fileSelect_setText(fs_elf, debugger.settingsEdit.elfPath);
-        e9ui_fileSelect_setAllowEmpty(fs_elf, 1);
-        e9ui_fileSelect_setText(fs_bios, debugger.settingsEdit.biosDir);
-        e9ui_fileSelect_setText(fs_saves, debugger.settingsEdit.savesDir);
-        e9ui_fileSelect_setText(fs_source, debugger.settingsEdit.sourceDir);
-        e9ui_fileSelect_setText(fs_core, debugger.settingsEdit.corePath);
-        if (sys_state) {
-            sys_state->aesCheckbox = cb_aes;
-            sys_state->mvsCheckbox = cb_mvs;
-            sys_state->systemType = debugger.settingsEdit.systemType;
+        e9ui_component_t *overlay = settings_buildModalBody(ctx);
+        if (overlay) {
+            e9ui_modal_setBodyChild(e9ui->settingsModal, overlay, ctx);
         }
-        if (row_system && ctx) {
-            int gap = e9ui_scale_px(ctx, 12);
-            int w_mvs = cb_mvs ? settings_checkboxMeasureWidth("MVS", ctx) : 0;
-            int w_aes = cb_aes ? settings_checkboxMeasureWidth("AES", ctx) : 0;
-            int w_skip = cb_skip ? settings_checkboxMeasureWidth("SKIP BIOS LOGO", ctx) : 0;
-            int w_fun = cb_fun ? settings_checkboxMeasureWidth("FUN", ctx) : 0;
-            int w_crt = cb_crt ? settings_checkboxMeasureWidth("CRT", ctx) : 0;
-            int totalW = 0;
-            if (cb_mvs) {
-                e9ui_hstack_addFixed(row_system, cb_mvs, w_mvs);
-                totalW += w_mvs;
-            }
-            if (cb_aes) {
-                if (totalW > 0) {
-                    e9ui_hstack_addFixed(row_system, e9ui_spacer_make(gap), gap);
-                    totalW += gap;
-                }
-                e9ui_hstack_addFixed(row_system, cb_aes, w_aes);
-                totalW += w_aes;
-            }
-            if (cb_skip) {
-                if (totalW > 0) {
-                    e9ui_hstack_addFixed(row_system, e9ui_spacer_make(gap), gap);
-                    totalW += gap;
-                }
-                e9ui_hstack_addFixed(row_system, cb_skip, w_skip);
-                totalW += w_skip;
-            }
-            if (cb_fun) {
-                if (totalW > 0) {
-                    e9ui_hstack_addFixed(row_system, e9ui_spacer_make(gap), gap);
-                    totalW += gap;
-                }
-                e9ui_hstack_addFixed(row_system, cb_fun, w_fun);
-                totalW += w_fun;
-            }
-            if (cb_crt) {
-                if (totalW > 0) {
-                    e9ui_hstack_addFixed(row_system, e9ui_spacer_make(gap), gap);
-                    totalW += gap;
-                }
-                e9ui_hstack_addFixed(row_system, cb_crt, w_crt);
-                totalW += w_crt;
-            }
-            if (row_center) {
-                e9ui_center_setSize(row_center, e9ui_unscale_px(ctx, totalW), 0);
-            }
-        }
-        if (lt_audio) {
-            char buf[32];
-            if (debugger.settingsEdit.audioBufferMs > 0) {
-                snprintf(buf, sizeof(buf), "%d", debugger.settingsEdit.audioBufferMs);
-                e9ui_labeled_textbox_setText(lt_audio, buf);
-            } else {
-                e9ui_labeled_textbox_setText(lt_audio, "");
-            }
-            e9ui_component_t *tb = e9ui_labeled_textbox_getTextbox(lt_audio);
-            if (tb) {
-                e9ui_textbox_setNumericOnly(tb, 1);
-            }
-        }
-        settings_romselect_state_t *rom_state = (settings_romselect_state_t *)alloc_calloc(1, sizeof(*rom_state));
-        if (rom_state) {
-            rom_state->romPath = debugger.settingsEdit.romPath;
-            rom_state->romFolder = debugger.settingsEdit.romFolder;
-            rom_state->romSelect = fs_rom;
-            rom_state->folderSelect = fs_rom_folder;
-            settings_updateRomSelectAllowEmpty(rom_state);
-        }
-        e9ui_fileSelect_setOnChange(fs_rom, settings_romPathChanged, rom_state);
-        e9ui_fileSelect_setOnChange(fs_rom_folder, settings_romFolderChanged, rom_state);
-        e9ui_fileSelect_setOnChange(fs_elf, settings_pathChanged, debugger.settingsEdit.elfPath);
-        e9ui_fileSelect_setOnChange(fs_bios, settings_pathChanged, debugger.settingsEdit.biosDir);
-        e9ui_fileSelect_setOnChange(fs_saves, settings_pathChanged, debugger.settingsEdit.savesDir);
-        e9ui_fileSelect_setOnChange(fs_source, settings_pathChanged, debugger.settingsEdit.sourceDir);
-        e9ui_fileSelect_setOnChange(fs_core, settings_pathChanged, debugger.settingsEdit.corePath);
-        e9ui_component_t *stack = e9ui_stack_makeVertical();
-        e9ui_component_t *gap = e9ui_vspacer_make(12);
-        e9ui_stack_addFixed(stack, fs_rom);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_rom_folder);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_elf);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_source);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_bios);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_saves);
-        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-        e9ui_stack_addFixed(stack, fs_core);
-        if (lt_audio) {
-            e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-            e9ui_stack_addFixed(stack, lt_audio);
-        }
-        if (row_center) {
-            e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
-            e9ui_stack_addFixed(stack, row_center);
-        }
-        e9ui_component_t *center = e9ui_center_make(stack);
-        e9ui_component_t *btn_save = e9ui_button_make("Save", settings_uiSave, NULL);
-        e9ui_component_t *btn_cancel = e9ui_button_make("Cancel", settings_uiCancel, NULL);
-        e9ui->settingsSaveButton = btn_save;
-        settings_updateSaveLabel();
-        e9ui_component_t *footer = e9ui_flow_make();
-        e9ui_flow_setPadding(footer, 0);
-        e9ui_flow_setSpacing(footer, 8);
-        e9ui_flow_setWrap(footer, 0);
-        if (btn_save) {
-            e9ui_button_setTheme(btn_save, e9ui_theme_button_preset_green());
-            e9ui_button_setGlowPulse(btn_save, 1);
-            e9ui_flow_add(footer, btn_save);
-        }
-        if (btn_cancel) {
-            e9ui_button_setTheme(btn_cancel, e9ui_theme_button_preset_red());
-            e9ui_button_setGlowPulse(btn_cancel, 1);
-            e9ui_flow_add(footer, btn_cancel);
-        }
-        int contentW = e9ui_scale_px(ctx, 600);
-        int h1 = fs_rom->preferredHeight ? fs_rom->preferredHeight(fs_rom, ctx, contentW) : 0;
-        int h2 = fs_rom_folder->preferredHeight ? fs_rom_folder->preferredHeight(fs_rom_folder, ctx, contentW) : 0;
-        int h3 = fs_elf->preferredHeight ? fs_elf->preferredHeight(fs_elf, ctx, contentW) : 0;
-        int h4 = fs_source->preferredHeight ? fs_source->preferredHeight(fs_source, ctx, contentW) : 0;
-        int h5 = fs_bios->preferredHeight ? fs_bios->preferredHeight(fs_bios, ctx, contentW) : 0;
-        int h6 = fs_saves->preferredHeight ? fs_saves->preferredHeight(fs_saves, ctx, contentW) : 0;
-        int h7 = fs_core->preferredHeight ? fs_core->preferredHeight(fs_core, ctx, contentW) : 0;
-        int hSys = row_center && row_center->preferredHeight ? row_center->preferredHeight(row_center, ctx, contentW) : 0;
-        int h8 = lt_audio && lt_audio->preferredHeight ? lt_audio->preferredHeight(lt_audio, ctx, contentW) : 0;
-        int hGap = gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;
-        int contentH = h1 + hGap + h2 + hGap + h3 + hGap + h4 + hGap + h5 +
-                       hGap + h6 + hGap + h7;
-        if (lt_audio) {
-            contentH += hGap + h8;
-        }
-        if (row_center) {
-            contentH += hGap + hSys;
-        }
-        e9ui_center_setSize(center, 640, e9ui_unscale_px(ctx, contentH));
-        e9ui_component_t *overlay = e9ui_overlay_make(center, footer);
-        e9ui_overlay_setAnchor(overlay, e9ui_anchor_bottom_right);
-        e9ui_overlay_setMargin(overlay, 12);
-        e9ui_modal_setBodyChild(e9ui->settingsModal, overlay, ctx);
     }
 }

@@ -312,7 +312,7 @@ machine_fillFrame(machine_frame_t *frame, int level, uint32_t addr, const char *
         frame->file[sizeof(frame->file) - 1] = '\0';
         frame->line = line;
         if (line > 0) {
-            const char *src_base = debugger.config.sourceDir;
+            const char *src_base = debugger.libretro.sourceDir;
             FILE *f = NULL;
             if (src_base && *src_base && base && *base) {
                 char src_path[PATH_MAX];
@@ -351,7 +351,7 @@ machine_coreFetchStack(void)
     enum { kMaxFrames = 256 };
     uint32_t addrs[kMaxFrames];
     size_t count = 0;
-    const char *elf = debugger.config.elfPath;
+    const char *elf = debugger.libretro.elfPath;
 
     machine_clearStack(&debugger.machine);
     if (!libretro_host_debugReadCallstack(addrs, kMaxFrames, &count)) {

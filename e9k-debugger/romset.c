@@ -311,7 +311,7 @@ romset_buildNeoFromFolder(const char *folder, char *outPath, size_t capacity)
     if (set.vCount > 1) qsort(set.vChunks, set.vCount, sizeof(*set.vChunks), romset_romchunkCompare);
     if (set.cCount > 1) qsort(set.cChunks, set.cCount, sizeof(*set.cChunks), romset_romchunkCompare);
 
-    const char *base = debugger.config.savesDir[0] ? debugger.config.savesDir : debugger.config.biosDir;
+    const char *base = debugger.config.neogeo.libretro.saveDir[0] ? debugger.config.neogeo.libretro.saveDir : debugger.config.neogeo.libretro.systemDir;
     if (!base || !*base) {
         romset_romsetFree(&set);
         return 0;

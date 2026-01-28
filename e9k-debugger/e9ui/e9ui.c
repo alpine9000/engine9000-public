@@ -319,6 +319,19 @@ e9ui_controllerMapButton(SDL_GameControllerButton button, unsigned *outId)
   if (!outId) {
     return 0;
   }
+  if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+    switch (button) {
+      case SDL_CONTROLLER_BUTTON_A: *outId = RETRO_DEVICE_ID_JOYPAD_B; return 1;
+      case SDL_CONTROLLER_BUTTON_B: *outId = RETRO_DEVICE_ID_JOYPAD_A; return 1;
+      case SDL_CONTROLLER_BUTTON_DPAD_UP: *outId = RETRO_DEVICE_ID_JOYPAD_UP; return 1;
+      case SDL_CONTROLLER_BUTTON_DPAD_DOWN: *outId = RETRO_DEVICE_ID_JOYPAD_DOWN; return 1;
+      case SDL_CONTROLLER_BUTTON_DPAD_LEFT: *outId = RETRO_DEVICE_ID_JOYPAD_LEFT; return 1;
+      case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: *outId = RETRO_DEVICE_ID_JOYPAD_RIGHT; return 1;
+      default:
+        break;
+    }
+    return 0;
+  }
   switch (button) {
     case SDL_CONTROLLER_BUTTON_A: *outId = RETRO_DEVICE_ID_JOYPAD_B; return 1;
     case SDL_CONTROLLER_BUTTON_B: *outId = RETRO_DEVICE_ID_JOYPAD_A; return 1;
@@ -339,7 +352,7 @@ e9ui_controllerMapButton(SDL_GameControllerButton button, unsigned *outId)
 }
 
 static void
-e9ui_controllerSetDir(unsigned id, int *state, int pressed)
+e9ui_controllerSetDir(unsigned port, unsigned id, int *state, int pressed)
 {
   if (!state) {
     return;
@@ -348,22 +361,23 @@ e9ui_controllerSetDir(unsigned id, int *state, int pressed)
     return;
   }
   *state = pressed;
-  libretro_host_setJoypadState(0, id, pressed);
+  libretro_host_setJoypadState(port, id, pressed);
 }
 
 static void
 e9ui_controllerHandleAxis(SDL_GameControllerAxis axis, int value)
 {
+  unsigned port = 0u;
   if (axis == SDL_CONTROLLER_AXIS_LEFTX) {
     int left = (value < -e9ui_controllerDeadzone) ? 1 : 0;
     int right = (value > e9ui_controllerDeadzone) ? 1 : 0;
-    e9ui_controllerSetDir(RETRO_DEVICE_ID_JOYPAD_LEFT, &e9ui_controllerLeft, left);
-    e9ui_controllerSetDir(RETRO_DEVICE_ID_JOYPAD_RIGHT, &e9ui_controllerRight, right);
+    e9ui_controllerSetDir(port, RETRO_DEVICE_ID_JOYPAD_LEFT, &e9ui_controllerLeft, left);
+    e9ui_controllerSetDir(port, RETRO_DEVICE_ID_JOYPAD_RIGHT, &e9ui_controllerRight, right);
   } else if (axis == SDL_CONTROLLER_AXIS_LEFTY) {
     int up = (value < -e9ui_controllerDeadzone) ? 1 : 0;
     int down = (value > e9ui_controllerDeadzone) ? 1 : 0;
-    e9ui_controllerSetDir(RETRO_DEVICE_ID_JOYPAD_UP, &e9ui_controllerUp, up);
-    e9ui_controllerSetDir(RETRO_DEVICE_ID_JOYPAD_DOWN, &e9ui_controllerDown, down);
+    e9ui_controllerSetDir(port, RETRO_DEVICE_ID_JOYPAD_UP, &e9ui_controllerUp, up);
+    e9ui_controllerSetDir(port, RETRO_DEVICE_ID_JOYPAD_DOWN, &e9ui_controllerDown, down);
   }
 }
 
@@ -1628,7 +1642,8 @@ e9ui_processEvents(void)
                 unsigned id = 0;
                 if (e9ui_controllerMapButton((SDL_GameControllerButton)ev.cbutton.button, &id)) {
                     int pressed = (ev.type == SDL_CONTROLLERBUTTONDOWN) ? 1 : 0;
-                    libretro_host_setJoypadState(0, id, pressed);
+                    unsigned port = 0u;
+                    libretro_host_setJoypadState(port, id, pressed);
                 }
             }
             continue;

@@ -50,6 +50,7 @@ typedef size_t (*retro_get_memory_size_fn_t)(unsigned id);
 typedef size_t (*retro_serialize_size_fn_t)(void);
 typedef bool (*retro_serialize_fn_t)(void *data, size_t size);
 typedef bool (*retro_unserialize_fn_t)(const void *data, size_t size);
+typedef void (*retro_set_controller_port_device_fn_t)(unsigned port, unsigned device);
 typedef size_t (*geo_debug_read_regs_fn_t)(uint32_t *out, size_t cap);
 typedef void (*geo_debug_pause_fn_t)(void);
 typedef void (*geo_debug_resume_fn_t)(void);
@@ -82,8 +83,8 @@ typedef void (*geo_debug_profiler_stop_fn_t)(void);
 typedef int (*geo_debug_profiler_is_enabled_fn_t)(void);
 typedef size_t (*geo_debug_profiler_stream_next_fn_t)(char *out, size_t cap);
 typedef size_t (*geo_debug_text_read_fn_t)(char *out, size_t cap);
-typedef size_t (*geo_debug_get_sprite_state_fn_t)(geo_debug_sprite_state_t *out, size_t cap);
-typedef size_t (*geo_debug_get_p1_rom_fn_t)(geo_debug_rom_region_t *out, size_t cap);
+typedef size_t (*geo_debug_neogeo_get_sprite_state_fn_t)(geo_debug_sprite_state_t *out, size_t cap);
+typedef size_t (*geo_debug_neogeo_get_p1_rom_fn_t)(geo_debug_rom_region_t *out, size_t cap);
 typedef size_t (*geo_debug_disassemble_quick_fn_t)(uint32_t pc, char *out, size_t cap);
 typedef size_t (*geo_debug_read_checkpoints_fn_t)(geo_debug_checkpoint_t *out, size_t cap);
 typedef void (*geo_debug_reset_checkpoints_fn_t)(void);
@@ -149,6 +150,7 @@ typedef struct  {
     retro_serialize_size_fn_t serializeSize;
     retro_serialize_fn_t serialize;
     retro_unserialize_fn_t unserialize;
+    retro_set_controller_port_device_fn_t setControllerPortDevice;
     geo_debug_read_regs_fn_t debugReadRegs;
     geo_debug_pause_fn_t debugPause;
     geo_debug_resume_fn_t debugResume;
@@ -181,8 +183,8 @@ typedef struct  {
     geo_debug_profiler_is_enabled_fn_t debugProfilerIsEnabled;
     geo_debug_profiler_stream_next_fn_t debugProfilerStreamNext;
     geo_debug_text_read_fn_t debugTextRead;
-    geo_debug_get_sprite_state_fn_t debugGetSpriteState;
-    geo_debug_get_p1_rom_fn_t debugGetP1Rom;
+    geo_debug_neogeo_get_sprite_state_fn_t debugNeoGeoGetSpriteState;
+    geo_debug_neogeo_get_p1_rom_fn_t debugNeoGeoGetP1Rom;
     geo_debug_disassemble_quick_fn_t debugDisassembleQuick;
     geo_debug_read_checkpoints_fn_t debugReadCheckpoints;
     geo_debug_reset_checkpoints_fn_t debugResetCheckpoints;
@@ -212,6 +214,18 @@ libretro_host_setOptionValue(const char *key, const char *value);
 
 static void
 libretro_host_applyOptionOverrides(void);
+
+static void
+libretro_host_configureControllerPorts(void)
+{
+    if (!libretro_host.setControllerPortDevice) {
+        return;
+    }
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        libretro_host.setControllerPortDevice(0, RETRO_DEVICE_JOYPAD);
+        libretro_host.setControllerPortDevice(1, RETRO_DEVICE_MOUSE);
+    }
+}
 
 static void
 libretro_host_clearOptionOverrides(void)
@@ -475,7 +489,7 @@ libretro_host_openAudio(void)
     }
     libretro_host.audioDev = dev;
     libretro_host.audioSampleRate = got.freq;
-    int ms = debugger.config.audioBufferMs;
+    int ms = debugger.libretro.audioBufferMs;
     if (ms <= 0) {
         ms = 50;
     }
@@ -554,6 +568,14 @@ libretro_host_videoCallback(const void *data, unsigned width, unsigned height, s
         libretro_host.frameCapacity = needed;
     }
     memcpy(libretro_host.frameData, data, needed);
+    if (libretro_host.pixelFormat == RETRO_PIXEL_FORMAT_XRGB8888 && bytesPerPixel == 4) {
+        for (unsigned y = 0; y < height; ++y) {
+            uint32_t *row = (uint32_t *)(libretro_host.frameData + (size_t)y * pitch);
+            for (unsigned x = 0; x < width; ++x) {
+                row[x] |= 0xFF000000u;
+            }
+        }
+    }
     libretro_host.framePitch = pitch;
     libretro_host.frameWidth = (int)width;
     libretro_host.frameHeight = (int)height;
@@ -733,6 +755,23 @@ libretro_host_environment(unsigned cmd, void *data)
             return true;
         }
         return false;
+    case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
+        if (!data) {
+            return false;
+        }
+        libretro_host.avInfo = *(const struct retro_system_av_info *)data;
+        return true;
+    case RETRO_ENVIRONMENT_SET_GEOMETRY:
+        if (!data) {
+            return false;
+        }
+        {
+            const struct retro_game_geometry *geom = (const struct retro_game_geometry *)data;
+            libretro_host.avInfo.geometry.base_width = geom->base_width;
+            libretro_host.avInfo.geometry.base_height = geom->base_height;
+            libretro_host.avInfo.geometry.aspect_ratio = geom->aspect_ratio;
+        }
+        return true;
     case RETRO_ENVIRONMENT_GET_LOG_INTERFACE:
         if (!data) {
             return false;
@@ -925,6 +964,7 @@ libretro_host_start(const char *corePath, const char *romPath,
     libretro_host.serializeSize = (retro_serialize_size_fn_t)libretro_host_loadSymbol("retro_serialize_size");
     libretro_host.serialize = (retro_serialize_fn_t)libretro_host_loadSymbol("retro_serialize");
     libretro_host.unserialize = (retro_unserialize_fn_t)libretro_host_loadSymbol("retro_unserialize");
+    libretro_host.setControllerPortDevice = (retro_set_controller_port_device_fn_t)libretro_host_loadSymbol("retro_set_controller_port_device");
     libretro_host.debugReadRegs = (geo_debug_read_regs_fn_t)libretro_host_loadSymbol("geo_debug_read_regs");
     libretro_host.debugPause = (geo_debug_pause_fn_t)libretro_host_loadSymbol("geo_debug_pause");
     libretro_host.debugResume = (geo_debug_resume_fn_t)libretro_host_loadSymbol("geo_debug_resume");
@@ -957,8 +997,14 @@ libretro_host_start(const char *corePath, const char *romPath,
     libretro_host.debugProfilerIsEnabled = (geo_debug_profiler_is_enabled_fn_t)libretro_host_loadSymbol("geo_debug_profiler_is_enabled");
     libretro_host.debugProfilerStreamNext = (geo_debug_profiler_stream_next_fn_t)libretro_host_loadSymbol("geo_debug_profiler_stream_next");
     libretro_host.debugTextRead = (geo_debug_text_read_fn_t)libretro_host_loadSymbol("geo_debug_text_read");
-    libretro_host.debugGetSpriteState = (geo_debug_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_get_sprite_state");
-    libretro_host.debugGetP1Rom = (geo_debug_get_p1_rom_fn_t)libretro_host_loadSymbol("geo_debug_get_p1_rom");
+    libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_neogeo_get_sprite_state");
+    if (!libretro_host.debugNeoGeoGetSpriteState) {
+        libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_get_sprite_state");
+    }
+    libretro_host.debugNeoGeoGetP1Rom = (geo_debug_neogeo_get_p1_rom_fn_t)libretro_host_loadSymbol("geo_debug_neogeo_get_p1_rom");
+    if (!libretro_host.debugNeoGeoGetP1Rom) {
+        libretro_host.debugNeoGeoGetP1Rom = (geo_debug_neogeo_get_p1_rom_fn_t)libretro_host_loadSymbol("geo_debug_get_p1_rom");
+    }
     libretro_host.debugDisassembleQuick = (geo_debug_disassemble_quick_fn_t)libretro_host_loadSymbol("geo_debug_disassemble_quick");
     libretro_host.debugReadCheckpoints = (geo_debug_read_checkpoints_fn_t)libretro_host_loadSymbol("geo_debug_read_checkpoints");
     libretro_host.debugResetCheckpoints = (geo_debug_reset_checkpoints_fn_t)libretro_host_loadSymbol("geo_debug_reset_checkpoints");
@@ -992,10 +1038,11 @@ libretro_host_start(const char *corePath, const char *romPath,
         libretro_host_shutdown();
         return false;
     }
+    libretro_host_configureControllerPorts();
     if (libretro_host.reset) {
         libretro_host.reset();
     }
-    if (debugger.config.skipBiosLogo) {
+    if (debugger.config.neogeo.skipBiosLogo) {
         libretro_host.autoPressDelayFrames = 85;
         libretro_host.autoPressHoldFrames = 5;
     } else {
@@ -1112,6 +1159,34 @@ libretro_host_getFrame(const uint8_t **out_data, int *out_width, int *out_height
     *out_height = libretro_host.frameHeight;
     *out_pitch = libretro_host.framePitch;
     return true;
+}
+
+float
+libretro_host_getDisplayAspect(void)
+{
+    float aspect = libretro_host.avInfo.geometry.aspect_ratio;
+    if (aspect > 0.0001f) {
+        return aspect;
+    }
+    unsigned w = libretro_host.avInfo.geometry.base_width;
+    unsigned h = libretro_host.avInfo.geometry.base_height;
+    if (w > 0 && h > 0) {
+        return (float)w / (float)h;
+    }
+    if (libretro_host.frameWidth > 0 && libretro_host.frameHeight > 0) {
+        return (float)libretro_host.frameWidth / (float)libretro_host.frameHeight;
+    }
+    return 0.0f;
+}
+
+double
+libretro_host_getTimingFps(void)
+{
+    double fps = libretro_host.avInfo.timing.fps;
+    if (fps > 1e-3) {
+        return fps;
+    }
+    return 60.0;
 }
 
 void
@@ -1569,20 +1644,20 @@ libretro_host_debugTextRead(char *out, size_t cap)
 bool
 libretro_host_debugGetSpriteState(geo_debug_sprite_state_t *out)
 {
-    if (!out || !libretro_host.debugGetSpriteState) {
+    if (!out || !libretro_host.debugNeoGeoGetSpriteState) {
         return false;
     }
-    size_t n = libretro_host.debugGetSpriteState(out, sizeof(*out));
+    size_t n = libretro_host.debugNeoGeoGetSpriteState(out, sizeof(*out));
     return n == sizeof(*out);
 }
 
 bool
 libretro_host_debugGetP1Rom(geo_debug_rom_region_t *out)
 {
-    if (!out || !libretro_host.debugGetP1Rom) {
+    if (!out || !libretro_host.debugNeoGeoGetP1Rom) {
         return false;
     }
-    size_t n = libretro_host.debugGetP1Rom(out, sizeof(*out));
+    size_t n = libretro_host.debugNeoGeoGetP1Rom(out, sizeof(*out));
     if (n != sizeof(*out) || !out->data || out->size == 0) {
         fprintf(stderr, "libretro: debugGetP1Rom failed (n=%zu data=%p size=%zu)\n",
                 n, out ? (void *)out->data : NULL, out ? (size_t)out->size : 0);
@@ -1711,13 +1786,34 @@ libretro_host_setStateData(const void *data, size_t size)
 }
 
 bool
+libretro_host_getStateData(const uint8_t **out_data, size_t *out_size)
+{
+    if (out_data) {
+        *out_data = NULL;
+    }
+    if (out_size) {
+        *out_size = 0;
+    }
+    if (!libretro_host.stateData || libretro_host.stateSize == 0) {
+        return false;
+    }
+    if (out_data) {
+        *out_data = (const uint8_t *)libretro_host.stateData;
+    }
+    if (out_size) {
+        *out_size = libretro_host.stateSize;
+    }
+    return true;
+}
+
+bool
 libretro_host_resetCore(void)
 {
     if (!libretro_host.reset) {
         return false;
     }
     libretro_host.reset();
-    if (debugger.config.skipBiosLogo) {
+    if (debugger.config.neogeo.skipBiosLogo) {
         libretro_host.autoPressDelayFrames = 80;
         libretro_host.autoPressHoldFrames = 3;
     } else {
