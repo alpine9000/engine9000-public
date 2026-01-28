@@ -73,6 +73,21 @@ static TTF_Font *e9ui_fpsFont = NULL;
 static int e9ui_fpsFontSize = 0;
 
 static void
+e9ui_toggleCoreSystemAndRestart(void)
+{
+    debugger_system_type_t nextSystem = (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) ?
+        DEBUGGER_SYSTEM_NEOGEO : DEBUGGER_SYSTEM_AMIGA;
+    debugger_setCoreSystem(nextSystem);
+    if (nextSystem == DEBUGGER_SYSTEM_AMIGA) {
+        e9ui_showTransientMessage("RESTARTING AS AMIGA");
+    } else {
+        e9ui_showTransientMessage("RESTARTING AS NEO GEO");
+    }
+    config_saveConfig();
+    debugger.restartRequested = 1;
+}
+
+static void
 e9ui_applyWindowIcon(SDL_Window *win)
 {
   if (!win) {
@@ -1703,6 +1718,11 @@ e9ui_processEvents(void)
                 e9ui_fpsEnabled = !e9ui_fpsEnabled;
                 e9ui_setFocus(&e9ui->ctx, NULL);
                 e9ui_showTransientMessage(e9ui_fpsEnabled ? "FPS ON" : "FPS OFF");
+                continue;
+            }
+            if (ev.key.keysym.sym == SDLK_F12 && ev.key.repeat == 0) {
+                e9ui_setFocus(&e9ui->ctx, NULL);
+                e9ui_toggleCoreSystemAndRestart();
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_c) {

@@ -129,7 +129,7 @@ emu_geo_spriteHash(const uint16_t *scb2, const uint16_t *scb3, const uint16_t *s
         return 0u;
     }
     uint32_t h = 2166136261u;
-    for (unsigned i = 1; i < count; ++i) {
+    for (unsigned i = 0; i < count; ++i) {
         h ^= scb2[i];
         h *= 16777619u;
         h ^= scb3[i];
@@ -329,7 +329,7 @@ emu_geo_spriteOverlayRender(SDL_Renderer *renderer, const SDL_Rect *dst, const g
     }
 
     int active_total = 0;
-    for (unsigned i = 1; i < GEO_SPRITE_COUNT; ) {
+    for (unsigned i = 0; i < GEO_SPRITE_COUNT; ) {
         if (scb3[i] & 0x40u) {
             ++i;
             continue;
@@ -355,11 +355,11 @@ emu_geo_spriteOverlayRender(SDL_Renderer *renderer, const SDL_Rect *dst, const g
         unsigned sprsize = 0;
         unsigned hshrink = 0x0f;
 
-        for (unsigned i = 1; i < GEO_SPRITE_COUNT; ++i) {
+        for (unsigned i = 0; i < GEO_SPRITE_COUNT; ++i) {
             uint16_t scb3w = scb3[i];
             uint16_t scb2w = scb2[i];
             uint16_t scb4w = scb4[i];
-            if (scb3w & 0x40u) {
+            if (i && (scb3w & 0x40u)) {
                 xpos = (unsigned)((xpos + (hshrink + 1)) & 0x1ff);
             } else {
                 xpos = (unsigned)((scb4w >> 7) & 0x1ff);

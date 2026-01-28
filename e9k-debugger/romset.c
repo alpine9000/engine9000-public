@@ -48,6 +48,100 @@ typedef struct romset_romset {
 } romset_romset_t;
 
 static const char *
+romset_basename(const char *path);
+
+static int
+romset_strEqNoCase(const char *a, const char *b)
+{
+    if (!a || !b) {
+        return 0;
+    }
+    while (*a && *b) {
+        int ca = tolower((unsigned char)*a++);
+        int cb = tolower((unsigned char)*b++);
+        if (ca != cb) {
+            return 0;
+        }
+    }
+    return (*a == '\0' && *b == '\0');
+}
+
+static int
+romset_chunkHasExpectedExtension(const romset_romchunk_t *chunk, char tagChar)
+{
+    if (!chunk || !chunk->path || !*chunk->path || chunk->index <= 0) {
+        return 0;
+    }
+    const char *base = romset_basename(chunk->path);
+    if (!base || !*base) {
+        return 0;
+    }
+    const char *dot = strrchr(base, '.');
+    if (!dot || !dot[1]) {
+        return 0;
+    }
+    char expected[16];
+    snprintf(expected, sizeof(expected), "%c%d", tagChar, chunk->index);
+    return romset_strEqNoCase(dot + 1, expected);
+}
+
+static void
+romset_dedupeChunksByIndex(romset_romchunk_t *chunks, size_t *count, char tagChar)
+{
+    if (!chunks || !count || *count == 0) {
+        return;
+    }
+    size_t writeIndex = 0;
+    for (size_t readIndex = 0; readIndex < *count; ) {
+        size_t runStart = readIndex;
+        size_t runEnd = readIndex + 1;
+        while (runEnd < *count && chunks[runEnd].index == chunks[runStart].index) {
+            runEnd++;
+        }
+
+        size_t bestIndex = runStart;
+        for (size_t candIndex = runStart + 1; candIndex < runEnd; ++candIndex) {
+            int bestHasExt = romset_chunkHasExpectedExtension(&chunks[bestIndex], tagChar);
+            int candHasExt = romset_chunkHasExpectedExtension(&chunks[candIndex], tagChar);
+            if (candHasExt && !bestHasExt) {
+                bestIndex = candIndex;
+                continue;
+            }
+            if (candHasExt == bestHasExt) {
+                if (chunks[candIndex].size > chunks[bestIndex].size) {
+                    bestIndex = candIndex;
+                    continue;
+                }
+                if (chunks[candIndex].size == chunks[bestIndex].size && chunks[candIndex].path && chunks[bestIndex].path) {
+                    if (strcmp(chunks[candIndex].path, chunks[bestIndex].path) < 0) {
+                        bestIndex = candIndex;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        romset_romchunk_t best = chunks[bestIndex];
+        chunks[bestIndex].path = NULL;
+        chunks[bestIndex].size = 0;
+        chunks[bestIndex].index = 0;
+
+        for (size_t freeIndex = runStart; freeIndex < runEnd; ++freeIndex) {
+            if (chunks[freeIndex].path) {
+                free(chunks[freeIndex].path);
+                chunks[freeIndex].path = NULL;
+            }
+            chunks[freeIndex].size = 0;
+            chunks[freeIndex].index = 0;
+        }
+
+        chunks[writeIndex++] = best;
+        readIndex = runEnd;
+    }
+    *count = writeIndex;
+}
+
+static const char *
 romset_basename(const char *path)
 {
     if (!path || !*path) {
@@ -311,6 +405,12 @@ romset_buildNeoFromFolder(const char *folder, char *outPath, size_t capacity)
     if (set.vCount > 1) qsort(set.vChunks, set.vCount, sizeof(*set.vChunks), romset_romchunkCompare);
     if (set.cCount > 1) qsort(set.cChunks, set.cCount, sizeof(*set.cChunks), romset_romchunkCompare);
 
+    romset_dedupeChunksByIndex(set.pChunks, &set.pCount, 'p');
+    romset_dedupeChunksByIndex(set.sChunks, &set.sCount, 's');
+    romset_dedupeChunksByIndex(set.mChunks, &set.mCount, 'm');
+    romset_dedupeChunksByIndex(set.vChunks, &set.vCount, 'v');
+    romset_dedupeChunksByIndex(set.cChunks, &set.cCount, 'c');
+
     const char *base = debugger.config.neogeo.libretro.saveDir[0] ? debugger.config.neogeo.libretro.saveDir : debugger.config.neogeo.libretro.systemDir;
     if (!base || !*base) {
         romset_romsetFree(&set);
@@ -368,33 +468,29 @@ romset_buildNeoFromFolder(const char *folder, char *outPath, size_t capacity)
         romset_romsetFree(&set);
         return 0;
     }
-    if (set.cCount == 1) {
-        if (!romset_writeFileData(output, set.cChunks, set.cCount)) {
+    for (size_t chunkIndex = 0; chunkIndex < set.cCount; ) {
+        romset_romchunk_t *chunk = &set.cChunks[chunkIndex];
+        if ((chunk->index & 1) && (chunkIndex + 1) < set.cCount && set.cChunks[chunkIndex + 1].index == (chunk->index + 1)) {
+            romset_romchunk_t *nextChunk = &set.cChunks[chunkIndex + 1];
+            if (chunk->size != nextChunk->size) {
+                fclose(output);
+                romset_romsetFree(&set);
+                return 0;
+            }
+            if (!romset_writeFileInterleaved(output, chunk->path, nextChunk->path)) {
+                fclose(output);
+                romset_romsetFree(&set);
+                return 0;
+            }
+            chunkIndex += 2;
+            continue;
+        }
+        if (!romset_writeFileData(output, chunk, 1)) {
             fclose(output);
             romset_romsetFree(&set);
             return 0;
         }
-    } else {
-        for (size_t chunkIndex = 0; chunkIndex + 1 < set.cCount; chunkIndex += 2) {
-            if (set.cChunks[chunkIndex].size != set.cChunks[chunkIndex + 1].size) {
-                fclose(output);
-                romset_romsetFree(&set);
-                return 0;
-            }
-            if (!romset_writeFileInterleaved(output, set.cChunks[chunkIndex].path, set.cChunks[chunkIndex + 1].path)) {
-                fclose(output);
-                romset_romsetFree(&set);
-                return 0;
-            }
-        }
-        if (set.cCount % 2 != 0) {
-            romset_romchunk_t *lastChunk = &set.cChunks[set.cCount - 1];
-            if (!romset_writeFileData(output, lastChunk, 1)) {
-                fclose(output);
-                romset_romsetFree(&set);
-                return 0;
-            }
-        }
+        chunkIndex += 1;
     }
     fclose(output);
     romset_romsetFree(&set);
