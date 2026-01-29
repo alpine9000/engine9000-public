@@ -346,6 +346,11 @@ e9ui_fileSelect_make(const char *label, int labelWidth_px, int totalWidth_px,
     st->button = e9ui_button_make((buttonText && *buttonText) ? buttonText : "...",
                                   e9ui_fileselect_openDialog, st);
     st->mode = mode;
+    if (st->textbox) {
+        e9ui_textbox_setCompletionMode(st->textbox,
+                                       (mode == E9UI_FILESELECT_FOLDER) ? e9ui_textbox_completion_folder
+                                                                        : e9ui_textbox_completion_filename);
+    }
     c->name = "e9ui_fileSelect";
     c->state = st;
     c->preferredHeight = e9ui_fileselect_preferredHeight;

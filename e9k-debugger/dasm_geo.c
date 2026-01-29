@@ -19,8 +19,6 @@
 #include "elfutil.h"
 #include "libretro_host.h"
 
-#define OBJDUMP_BIN "m68k-neogeo-elf-objdump"
-
 #ifdef _WIN32
 #define getline w64_getline
 #endif
@@ -190,13 +188,18 @@ dasm_geo_preloadText(void)
     return dasm_preloadFromCore();
   }
   dasm_clear();
+  char objdump[PATH_MAX];
+  if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+    debug_error("dasm: failed to resolve objdump binary");
+    return dasm_preloadFromCore();
+  }
   char cmd[PATH_MAX + 256];
   snprintf(cmd, sizeof(cmd),
 	   "%s -d -z -j .text --start-address=0x%llx --stop-address=0x%llx %s",
-	   OBJDUMP_BIN, (unsigned long long)lo, (unsigned long long)hi, elf);
+	   objdump, (unsigned long long)lo, (unsigned long long)hi, elf);
   FILE *pipe = popen(cmd, "r");
   if (!pipe) {
-    debug_error("dasm: failed to run %s: %s", OBJDUMP_BIN, strerror(errno));
+    debug_error("dasm: failed to run %s: %s", objdump, strerror(errno));
     return dasm_preloadFromCore();
   }
   int width = (hi > 0xFFFFFFFFull) ? 16 : 8;
@@ -221,7 +224,7 @@ dasm_geo_preloadText(void)
     free(line);
   }
   if (pclose(pipe) == -1) {
-    debug_error("dasm: failed to close %s pipe: %s", OBJDUMP_BIN, strerror(errno));
+    debug_error("dasm: failed to close %s pipe: %s", objdump, strerror(errno));
   }
   g_dasm.ready = (g_dasm.n > 0);
   if (!g_dasm.ready) {

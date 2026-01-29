@@ -14,116 +14,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "print_eval.h"
+#include "print_eval_internal.h"
+#include "print_debuginfo_readelf.h"
+#include "print_debuginfo_readelf_frames.h"
+#include "print_debuginfo_objdump_stabs.h"
 #include "alloc.h"
 #include "debug.h"
 #include "debugger.h"
 #include "libretro.h"
 #include "libretro_host.h"
 #include "machine.h"
-
-typedef enum print_dwarf_tag {
-    print_dwarf_tag_unknown = 0,
-    print_dwarf_tag_base_type,
-    print_dwarf_tag_pointer_type,
-    print_dwarf_tag_structure_type,
-    print_dwarf_tag_member,
-    print_dwarf_tag_array_type,
-    print_dwarf_tag_subrange_type,
-    print_dwarf_tag_typedef,
-    print_dwarf_tag_const_type,
-    print_dwarf_tag_volatile_type,
-    print_dwarf_tag_enumeration_type,
-    print_dwarf_tag_enumerator,
-    print_dwarf_tag_variable
-} print_dwarf_tag_t;
-
-typedef enum print_base_encoding {
-    print_base_encoding_unknown = 0,
-    print_base_encoding_signed,
-    print_base_encoding_unsigned,
-    print_base_encoding_float,
-    print_base_encoding_boolean
-} print_base_encoding_t;
-
-typedef struct print_dwarf_node {
-    uint32_t offset;
-    uint32_t parentOffset;
-    print_dwarf_tag_t tag;
-    char *name;
-    uint32_t typeRef;
-    uint64_t byteSize;
-    uint64_t addr;
-    int64_t memberOffset;
-    int64_t upperBound;
-    int64_t count;
-    print_base_encoding_t encoding;
-    int hasTypeRef;
-    int hasByteSize;
-    int hasAddr;
-    int hasMemberOffset;
-    int hasUpperBound;
-    int hasCount;
-} print_dwarf_node_t;
-
-typedef struct print_symbol {
-    char *name;
-    uint32_t addr;
-} print_symbol_t;
-
-typedef struct print_variable {
-    char *name;
-    uint32_t addr;
-    uint32_t typeRef;
-} print_variable_t;
-
-typedef enum print_type_kind {
-    print_type_invalid = 0,
-    print_type_base,
-    print_type_pointer,
-    print_type_struct,
-    print_type_array,
-    print_type_typedef,
-    print_type_const,
-    print_type_volatile,
-    print_type_enum
-} print_type_kind_t;
-
-typedef struct print_member {
-    char *name;
-    uint32_t offset;
-    struct print_type *type;
-} print_member_t;
-
-typedef struct print_type {
-    uint32_t dieOffset;
-    print_type_kind_t kind;
-    char *name;
-    size_t byteSize;
-    print_base_encoding_t encoding;
-    struct print_type *targetType;
-    print_member_t *members;
-    int memberCount;
-    size_t arrayCount;
-} print_type_t;
-
-typedef struct print_index {
-    char elfPath[PATH_MAX];
-    print_dwarf_node_t *nodes;
-    int nodeCount;
-    int nodeCap;
-    print_symbol_t *symbols;
-    int symbolCount;
-    int symbolCap;
-    print_variable_t *vars;
-    int varCount;
-    int varCap;
-    print_type_t **types;
-    int typeCount;
-    int typeCap;
-    print_type_t *defaultU32;
-} print_index_t;
 
 typedef struct print_value {
     print_type_t *type;
@@ -138,7 +41,69 @@ typedef struct print_temp_type {
     struct print_temp_type *next;
 } print_temp_type_t;
 
+static print_value_t
+print_eval_makeAddressValue(print_type_t *type, uint32_t addr);
+
+static print_value_t
+print_eval_makeImmediateValue(print_type_t *type, uint64_t immediate);
+
+static print_type_t *
+print_eval_getType(print_index_t *index, uint32_t offset);
+
+static print_type_t *
+print_eval_defaultU32(print_index_t *index);
+
 static print_index_t print_eval_index = {0};
+
+static int
+print_eval_debugEnabled(void)
+{
+    static int cached = -1;
+    if (cached >= 0) {
+        return cached;
+    }
+    const char *v = getenv("E9K_PRINT_DEBUG");
+    if (!v || !*v || strcmp(v, "0") == 0) {
+        cached = 0;
+        return cached;
+    }
+    cached = 1;
+    return cached;
+}
+
+static int
+print_eval_debugWantsSymbol(const char *name)
+{
+    const char *want = getenv("E9K_PRINT_DEBUG_SYM");
+    if (!want || !*want || !name) {
+        return 0;
+    }
+    return strstr(name, want) != NULL;
+}
+
+static int
+print_eval_perfEnabled(void)
+{
+    static int cached = -1;
+    if (cached >= 0) {
+        return cached;
+    }
+    const char *v = getenv("E9K_PRINT_PERF");
+    if (!v || !*v || strcmp(v, "0") == 0) {
+        cached = 0;
+        return cached;
+    }
+    cached = 1;
+    return cached;
+}
+
+static uint64_t
+print_eval_nowNs(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
 
 static void
 print_eval_freeString(char *s)
@@ -163,278 +128,6 @@ print_eval_strdup(const char *s)
     return out;
 }
 
-static void
-print_eval_trimRight(char *s)
-{
-    if (!s) {
-        return;
-    }
-    size_t len = strlen(s);
-    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r' || isspace((unsigned char)s[len - 1]))) {
-        s[--len] = '\0';
-    }
-}
-
-static char *
-print_eval_parseNameValue(const char *line)
-{
-    if (!line) {
-        return NULL;
-    }
-    const char *colon = strrchr(line, ':');
-    if (!colon || !colon[1]) {
-        return NULL;
-    }
-    const char *start = colon + 1;
-    while (*start && isspace((unsigned char)*start)) {
-        ++start;
-    }
-    if (!*start) {
-        return NULL;
-    }
-    char buf[512];
-    strncpy(buf, start, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-    print_eval_trimRight(buf);
-    if (buf[0] == '\0') {
-        return NULL;
-    }
-    return print_eval_strdup(buf);
-}
-
-static int
-print_eval_parseDieHeader(const char *line, int *outDepth, uint32_t *outOffset, char *outTag, size_t tagCap)
-{
-    if (!line || !outDepth || !outOffset || !outTag || tagCap == 0) {
-        return 0;
-    }
-    const char *p = strchr(line, '<');
-    if (!p) {
-        return 0;
-    }
-    const char *q = strchr(p + 1, '>');
-    if (!q) {
-        return 0;
-    }
-    char depthBuf[16];
-    size_t depthLen = (size_t)(q - (p + 1));
-    if (depthLen >= sizeof(depthBuf)) {
-        return 0;
-    }
-    memcpy(depthBuf, p + 1, depthLen);
-    depthBuf[depthLen] = '\0';
-    int depth = atoi(depthBuf);
-    const char *p2 = strchr(q + 1, '<');
-    if (!p2) {
-        return 0;
-    }
-    const char *q2 = strchr(p2 + 1, '>');
-    if (!q2) {
-        return 0;
-    }
-    char offsetBuf[32];
-    size_t offLen = (size_t)(q2 - (p2 + 1));
-    if (offLen >= sizeof(offsetBuf)) {
-        return 0;
-    }
-    memcpy(offsetBuf, p2 + 1, offLen);
-    offsetBuf[offLen] = '\0';
-    uint32_t offset = (uint32_t)strtoul(offsetBuf, NULL, 16);
-    const char *tagStart = strstr(line, "(DW_TAG_");
-    if (!tagStart) {
-        return 0;
-    }
-    tagStart += 1;
-    const char *tagEnd = strchr(tagStart, ')');
-    if (!tagEnd) {
-        return 0;
-    }
-    size_t tagLen = (size_t)(tagEnd - tagStart);
-    if (tagLen >= tagCap) {
-        tagLen = tagCap - 1;
-    }
-    memcpy(outTag, tagStart, tagLen);
-    outTag[tagLen] = '\0';
-    *outDepth = depth;
-    *outOffset = offset;
-    return 1;
-}
-
-static print_dwarf_tag_t
-print_eval_tagFromString(const char *tag)
-{
-    if (!tag) {
-        return print_dwarf_tag_unknown;
-    }
-    if (strcmp(tag, "DW_TAG_base_type") == 0) {
-        return print_dwarf_tag_base_type;
-    }
-    if (strcmp(tag, "DW_TAG_pointer_type") == 0) {
-        return print_dwarf_tag_pointer_type;
-    }
-    if (strcmp(tag, "DW_TAG_structure_type") == 0) {
-        return print_dwarf_tag_structure_type;
-    }
-    if (strcmp(tag, "DW_TAG_member") == 0) {
-        return print_dwarf_tag_member;
-    }
-    if (strcmp(tag, "DW_TAG_array_type") == 0) {
-        return print_dwarf_tag_array_type;
-    }
-    if (strcmp(tag, "DW_TAG_subrange_type") == 0) {
-        return print_dwarf_tag_subrange_type;
-    }
-    if (strcmp(tag, "DW_TAG_typedef") == 0) {
-        return print_dwarf_tag_typedef;
-    }
-    if (strcmp(tag, "DW_TAG_const_type") == 0) {
-        return print_dwarf_tag_const_type;
-    }
-    if (strcmp(tag, "DW_TAG_volatile_type") == 0) {
-        return print_dwarf_tag_volatile_type;
-    }
-    if (strcmp(tag, "DW_TAG_enumeration_type") == 0) {
-        return print_dwarf_tag_enumeration_type;
-    }
-    if (strcmp(tag, "DW_TAG_enumerator") == 0) {
-        return print_dwarf_tag_enumerator;
-    }
-    if (strcmp(tag, "DW_TAG_variable") == 0) {
-        return print_dwarf_tag_variable;
-    }
-    return print_dwarf_tag_unknown;
-}
-
-static print_base_encoding_t
-print_eval_parseEncoding(const char *line)
-{
-    if (!line) {
-        return print_base_encoding_unknown;
-    }
-    if (strstr(line, "DW_ATE_float")) {
-        return print_base_encoding_float;
-    }
-    if (strstr(line, "DW_ATE_boolean")) {
-        return print_base_encoding_boolean;
-    }
-    if (strstr(line, "DW_ATE_unsigned") || strstr(line, "unsigned")) {
-        return print_base_encoding_unsigned;
-    }
-    if (strstr(line, "DW_ATE_signed")) {
-        return print_base_encoding_signed;
-    }
-    return print_base_encoding_unknown;
-}
-
-static int
-print_eval_parseFirstNumber(const char *line, uint64_t *out)
-{
-    if (!line || !out) {
-        return 0;
-    }
-    const char *p = strchr(line, ':');
-    if (p) {
-        ++p;
-    } else {
-        p = line;
-    }
-    while (*p) {
-        if (isdigit((unsigned char)*p) || (*p == '0' && (p[1] == 'x' || p[1] == 'X'))) {
-            errno = 0;
-            char *end = NULL;
-            uint64_t val = strtoull(p, &end, 0);
-            if (errno == 0 && end && end != p) {
-                *out = val;
-                return 1;
-            }
-        }
-        ++p;
-    }
-    return 0;
-}
-
-static int
-print_eval_parseTypeRef(const char *line, uint32_t *outRef)
-{
-    if (!line || !outRef) {
-        return 0;
-    }
-    const char *p = strrchr(line, '<');
-    const char *q = NULL;
-    if (p) {
-        q = strchr(p + 1, '>');
-    }
-    if (!p || !q) {
-        return 0;
-    }
-    char buf[32];
-    size_t len = (size_t)(q - (p + 1));
-    if (len >= sizeof(buf)) {
-        return 0;
-    }
-    memcpy(buf, p + 1, len);
-    buf[len] = '\0';
-    *outRef = (uint32_t)strtoul(buf, NULL, 16);
-    return 1;
-}
-
-static int
-print_eval_parseLocationAddr(const char *line, uint64_t *outAddr)
-{
-    if (!line || !outAddr) {
-        return 0;
-    }
-    const char *op = strstr(line, "DW_OP_addr");
-    const char *p = NULL;
-    if (op) {
-        p = strstr(op, "0x");
-        if (!p) {
-            p = strstr(op, "DW_OP_addr:");
-            if (p) {
-                p += strlen("DW_OP_addr:");
-                while (*p && isspace((unsigned char)*p)) {
-                    ++p;
-                }
-            }
-        }
-    } else {
-        p = strstr(line, "0x");
-    }
-    if (!p || !*p) {
-        return 0;
-    }
-    errno = 0;
-    uint64_t val = strtoull(p, NULL, 0);
-    if (errno != 0) {
-        return 0;
-    }
-    *outAddr = val;
-    return 1;
-}
-
-static print_dwarf_node_t *
-print_eval_addNode(print_index_t *index, uint32_t offset, uint32_t parentOffset, print_dwarf_tag_t tag)
-{
-    if (!index) {
-        return NULL;
-    }
-    if (index->nodeCount >= index->nodeCap) {
-        int next = index->nodeCap ? index->nodeCap * 2 : 256;
-        print_dwarf_node_t *nextNodes = (print_dwarf_node_t *)alloc_realloc(index->nodes, sizeof(*nextNodes) * (size_t)next);
-        if (!nextNodes) {
-            return NULL;
-        }
-        index->nodes = nextNodes;
-        index->nodeCap = next;
-    }
-    print_dwarf_node_t *node = &index->nodes[index->nodeCount++];
-    memset(node, 0, sizeof(*node));
-    node->offset = offset;
-    node->parentOffset = parentOffset;
-    node->tag = tag;
-    return node;
-}
-
 static print_dwarf_node_t *
 print_eval_findNode(print_index_t *index, uint32_t offset)
 {
@@ -445,33 +138,307 @@ print_eval_findNode(print_index_t *index, uint32_t offset)
         if (index->nodes[i].offset == offset) {
             return &index->nodes[i];
         }
+        if (index->nodes[i].hasAltOffset && index->nodes[i].altOffset == offset) {
+            return &index->nodes[i];
+        }
+        if (index->nodes[i].hasAltOffset2 && index->nodes[i].altOffset2 == offset) {
+            return &index->nodes[i];
+        }
     }
     return NULL;
 }
 
 static int
-print_eval_addSymbol(print_index_t *index, const char *name, uint32_t addr)
+print_eval_getRegValueByDwarfReg(uint8_t dwarfReg, uint32_t *outValue)
 {
-    if (!index || !name || !*name) {
+    if (outValue) {
+        *outValue = 0;
+    }
+    if (!outValue) {
         return 0;
     }
-    if (index->symbolCount >= index->symbolCap) {
-        int next = index->symbolCap ? index->symbolCap * 2 : 128;
-        print_symbol_t *nextSyms = (print_symbol_t *)alloc_realloc(index->symbols, sizeof(*nextSyms) * (size_t)next);
-        if (!nextSyms) {
-            return 0;
-        }
-        index->symbols = nextSyms;
-        index->symbolCap = next;
+    char name[8];
+    if (dwarfReg <= 7) {
+        snprintf(name, sizeof(name), "D%u", (unsigned)dwarfReg);
+    } else if (dwarfReg <= 15) {
+        snprintf(name, sizeof(name), "A%u", (unsigned)(dwarfReg - 8u));
+    } else {
+        return 0;
     }
-    print_symbol_t *sym = &index->symbols[index->symbolCount++];
-    sym->name = print_eval_strdup(name);
-    sym->addr = addr;
-    return sym->name != NULL;
+    unsigned long v = 0;
+    if (!machine_findReg(&debugger.machine, name, &v)) {
+        return 0;
+    }
+    *outValue = (uint32_t)v;
+    return 1;
 }
 
 static int
-print_eval_addVariable(print_index_t *index, const char *name, uint32_t addr, uint32_t typeRef)
+print_eval_computeCfa(print_index_t *index, uint32_t pc, uint32_t *outCfa)
+{
+    if (outCfa) {
+        *outCfa = 0;
+    }
+    if (!index || !outCfa) {
+        return 0;
+    }
+    if (!index->fdes || index->fdeCount <= 0) {
+        return 0;
+    }
+    for (int i = 0; i < index->fdeCount; ++i) {
+        print_cfi_fde_t *fde = &index->fdes[i];
+        if (pc < fde->pcStart || pc >= fde->pcEnd) {
+            continue;
+        }
+        uint8_t reg = fde->defaultCfaReg;
+        int32_t off = fde->defaultCfaOffset;
+        for (int r = 0; r < fde->rowCount; ++r) {
+            if (pc >= fde->rows[r].loc) {
+                reg = fde->rows[r].cfaReg;
+                off = fde->rows[r].cfaOffset;
+            } else {
+                break;
+            }
+        }
+        uint32_t regVal = 0;
+        if (!print_eval_getRegValueByDwarfReg(reg, &regVal)) {
+            return 0;
+        }
+        int64_t cfa64 = (int64_t)(uint64_t)regVal + (int64_t)off;
+        *outCfa = (uint32_t)cfa64;
+        return 1;
+    }
+    return 0;
+}
+
+static int
+print_eval_nodeRangeContainsPc(const print_dwarf_node_t *node, uint32_t pc)
+{
+    if (!node || !node->hasLowPc || !node->hasHighPc) {
+        return 0;
+    }
+    uint64_t begin = node->lowPc;
+    uint64_t end = node->highPcIsOffset ? (node->lowPc + node->highPc) : node->highPc;
+    return (uint64_t)pc >= begin && (uint64_t)pc < end;
+}
+
+static print_dwarf_node_t *
+print_eval_findScopeForPc(print_index_t *index, uint32_t pc)
+{
+    if (!index) {
+        return NULL;
+    }
+    print_dwarf_node_t *best = NULL;
+    int bestDepth = -1;
+    uint64_t bestSize = UINT64_MAX;
+    for (int i = 0; i < index->nodeCount; ++i) {
+        print_dwarf_node_t *node = &index->nodes[i];
+        if (node->tag != print_dwarf_tag_subprogram &&
+            node->tag != print_dwarf_tag_lexical_block &&
+            node->tag != print_dwarf_tag_inlined_subroutine) {
+            continue;
+        }
+        if (!print_eval_nodeRangeContainsPc(node, pc)) {
+            continue;
+        }
+        uint64_t begin = node->lowPc;
+        uint64_t end = node->highPcIsOffset ? (node->lowPc + node->highPc) : node->highPc;
+        uint64_t size = (end > begin) ? (end - begin) : 0;
+        int depth = (int)node->depth;
+        if (depth > bestDepth || (depth == bestDepth && size < bestSize)) {
+            best = node;
+            bestDepth = depth;
+            bestSize = size;
+        }
+    }
+    return best;
+}
+
+static int
+print_eval_resolveAbstractOrigin(print_index_t *index, const print_dwarf_node_t *node, const char **outName, uint32_t *outTypeRef)
+{
+    if (outName) {
+        *outName = NULL;
+    }
+    if (outTypeRef) {
+        *outTypeRef = 0;
+    }
+    if (!index || !node || !node->hasAbstractOrigin) {
+        return 0;
+    }
+    print_dwarf_node_t *origin = print_eval_findNode(index, node->abstractOrigin);
+    if (!origin) {
+        return 0;
+    }
+    if (outName) {
+        *outName = origin->name;
+    }
+    if (outTypeRef && origin->hasTypeRef) {
+        *outTypeRef = origin->typeRef;
+    }
+    return 1;
+}
+
+static int
+print_eval_resolveLocal(const char *name, print_index_t *index, print_value_t *out, int typeOnly)
+{
+    if (!name || !*name || !index || !out) {
+        return 0;
+    }
+    if (machine_getRunning(debugger.machine)) {
+        return 0;
+    }
+    unsigned long pcRaw = 0;
+    if (!machine_findReg(&debugger.machine, "PC", &pcRaw)) {
+        return 0;
+    }
+    uint32_t pc = (uint32_t)pcRaw & 0x00ffffffu;
+
+    uint32_t cfa = 0;
+    if (!print_eval_computeCfa(index, pc, &cfa)) {
+        return 0;
+    }
+
+    print_dwarf_node_t *scope = print_eval_findScopeForPc(index, pc);
+    if (!scope) {
+        return 0;
+    }
+
+    uint32_t chain[64];
+    int chainCount = 0;
+    for (const print_dwarf_node_t *cur = scope; cur && chainCount < (int)(sizeof(chain) / sizeof(chain[0]));) {
+        chain[chainCount++] = cur->offset;
+        if (cur->parentOffset == 0) {
+            break;
+        }
+        cur = print_eval_findNode(index, cur->parentOffset);
+    }
+
+    // Nearest subprogram in the chain provides frame base.
+    print_dwarf_node_t *subp = NULL;
+    for (int i = 0; i < chainCount; ++i) {
+        print_dwarf_node_t *n = print_eval_findNode(index, chain[i]);
+        if (n && n->tag == print_dwarf_tag_subprogram) {
+            subp = n;
+            break;
+        }
+    }
+    uint32_t frameBase = cfa;
+    if (subp && subp->hasFrameBase && subp->frameBaseKind == print_dwarf_location_cfa) {
+        frameBase = cfa;
+    }
+
+    for (int c = 0; c < chainCount; ++c) {
+        uint32_t scopeOff = chain[c];
+        for (int i = 0; i < index->nodeCount; ++i) {
+            print_dwarf_node_t *n = &index->nodes[i];
+            if (n->parentOffset != scopeOff) {
+                continue;
+            }
+            if (n->tag != print_dwarf_tag_variable && n->tag != print_dwarf_tag_formal_parameter) {
+                continue;
+            }
+            const char *nName = n->name;
+            uint32_t typeRef = n->hasTypeRef ? n->typeRef : 0;
+            if ((!nName || !*nName) && n->hasAbstractOrigin) {
+                const char *originName = NULL;
+                uint32_t originType = 0;
+                if (print_eval_resolveAbstractOrigin(index, n, &originName, &originType)) {
+                    if (originName && *originName) {
+                        nName = originName;
+                    }
+                    if (typeRef == 0 && originType != 0) {
+                        typeRef = originType;
+                    }
+                }
+            }
+            if (!nName || strcmp(nName, name) != 0) {
+                continue;
+            }
+
+            print_type_t *type = NULL;
+            if (typeRef != 0) {
+                type = print_eval_getType(index, typeRef);
+            }
+            if (!type) {
+                type = print_eval_defaultU32(index);
+            }
+
+            if (n->locationKind == print_dwarf_location_fbreg) {
+                int64_t addr64 = (int64_t)(uint64_t)frameBase + (int64_t)n->locationOffset;
+                uint32_t addr = (uint32_t)addr64 & 0x00ffffffu;
+                if (typeOnly) {
+                    *out = print_eval_makeAddressValue(type, 0);
+                    out->hasAddress = 0;
+                } else {
+                    *out = print_eval_makeAddressValue(type, addr);
+                }
+                return 1;
+            }
+            if (n->locationKind == print_dwarf_location_breg) {
+                uint32_t regVal = 0;
+                if (!print_eval_getRegValueByDwarfReg(n->locationReg, &regVal)) {
+                    return 0;
+                }
+                int64_t addr64 = (int64_t)(uint64_t)regVal + (int64_t)n->locationOffset;
+                uint32_t addr = (uint32_t)addr64 & 0x00ffffffu;
+                if (typeOnly) {
+                    *out = print_eval_makeAddressValue(type, 0);
+                    out->hasAddress = 0;
+                } else {
+                    *out = print_eval_makeAddressValue(type, addr);
+                }
+                return 1;
+            }
+            if (n->locationKind == print_dwarf_location_addr && n->hasAddr) {
+                uint32_t addr = (uint32_t)n->addr & 0x00ffffffu;
+                if (typeOnly) {
+                    *out = print_eval_makeAddressValue(type, 0);
+                    out->hasAddress = 0;
+                } else {
+                    *out = print_eval_makeAddressValue(type, addr);
+                }
+                return 1;
+            }
+            if (n->locationKind == print_dwarf_location_const && n->hasConstValue) {
+                if (typeOnly) {
+                    *out = print_eval_makeImmediateValue(type, 0);
+                    out->hasImmediate = 0;
+                } else {
+                    *out = print_eval_makeImmediateValue(type, n->constValue);
+                }
+                return 1;
+            }
+            if (n->locationKind == print_dwarf_location_reg) {
+                uint32_t regVal = 0;
+                if (!print_eval_getRegValueByDwarfReg(n->locationReg, &regVal)) {
+                    return 0;
+                }
+                if (typeOnly) {
+                    *out = print_eval_makeImmediateValue(type, 0);
+                    out->hasImmediate = 0;
+                } else {
+                    *out = print_eval_makeImmediateValue(type, (uint64_t)regVal);
+                }
+                return 1;
+            }
+            if (n->locationKind == print_dwarf_location_cfa) {
+                if (typeOnly) {
+                    *out = print_eval_makeAddressValue(type, 0);
+                    out->hasAddress = 0;
+                } else {
+                    *out = print_eval_makeAddressValue(type, cfa & 0x00ffffffu);
+                }
+                return 1;
+            }
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static int
+print_eval_addVariable(print_index_t *index, const char *name, uint32_t addr, uint32_t typeRef, size_t byteSize, int hasByteSize)
 {
     if (!index || !name || !*name) {
         return 0;
@@ -486,9 +453,12 @@ print_eval_addVariable(print_index_t *index, const char *name, uint32_t addr, ui
         index->varCap = next;
     }
     print_variable_t *var = &index->vars[index->varCount++];
+    memset(var, 0, sizeof(*var));
     var->name = print_eval_strdup(name);
     var->addr = addr;
     var->typeRef = typeRef;
+    var->byteSize = byteSize;
+    var->hasByteSize = hasByteSize ? 1 : 0;
     return var->name != NULL;
 }
 
@@ -505,6 +475,18 @@ print_eval_clearIndex(print_index_t *index)
     index->nodes = NULL;
     index->nodeCount = 0;
     index->nodeCap = 0;
+    if (index->fdes) {
+        for (int i = 0; i < index->fdeCount; ++i) {
+            alloc_free(index->fdes[i].rows);
+            index->fdes[i].rows = NULL;
+            index->fdes[i].rowCount = 0;
+            index->fdes[i].rowCap = 0;
+        }
+    }
+    alloc_free(index->fdes);
+    index->fdes = NULL;
+    index->fdeCount = 0;
+    index->fdeCap = 0;
     for (int i = 0; i < index->symbolCount; ++i) {
         print_eval_freeString(index->symbols[i].name);
     }
@@ -512,6 +494,9 @@ print_eval_clearIndex(print_index_t *index)
     index->symbols = NULL;
     index->symbolCount = 0;
     index->symbolCap = 0;
+    alloc_free(index->symbolLookup);
+    index->symbolLookup = NULL;
+    index->symbolLookupMask = 0;
     for (int i = 0; i < index->varCount; ++i) {
         print_eval_freeString(index->vars[i].name);
     }
@@ -534,171 +519,82 @@ print_eval_clearIndex(print_index_t *index)
     index->types = NULL;
     index->typeCount = 0;
     index->typeCap = 0;
+    index->defaultU8 = NULL;
+    index->defaultU16 = NULL;
     index->defaultU32 = NULL;
+    index->defaultU64 = NULL;
+    index->cacheTextBaseAddr = 0;
+    index->cacheDataBaseAddr = 0;
+    index->cacheBssBaseAddr = 0;
     index->elfPath[0] = '\0';
 }
 
-static int
-print_eval_parseSymbols(const char *elfPath, print_index_t *index)
+static uint32_t
+print_eval_hashString(const char *s)
 {
-    if (!elfPath || !*elfPath || !index) {
-        return 0;
+    uint32_t h = 2166136261u;
+    if (!s) {
+        return h;
     }
-    char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-objdump --syms '%s'", elfPath);
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
-        return 0;
+    while (*s) {
+        h ^= (uint8_t)(*s++);
+        h *= 16777619u;
     }
-    char line[1024];
-    while (fgets(line, sizeof(line), fp)) {
-        char *tokens[8];
-        int count = 0;
-        char *cursor = line;
-        while (count < (int)(sizeof(tokens) / sizeof(tokens[0]))) {
-            while (*cursor && isspace((unsigned char)*cursor)) {
-                ++cursor;
-            }
-            if (!*cursor) {
-                break;
-            }
-            tokens[count++] = cursor;
-            while (*cursor && !isspace((unsigned char)*cursor)) {
-                ++cursor;
-            }
-            if (*cursor) {
-                *cursor++ = '\0';
-            }
-        }
-        if (count < 2) {
-            continue;
-        }
-        char *end = NULL;
-        uint32_t addr = (uint32_t)strtoul(tokens[0], &end, 16);
-        if (!end || end == tokens[0]) {
-            continue;
-        }
-        const char *name = tokens[count - 1];
+    return h;
+}
+
+static void
+print_eval_buildSymbolLookup(print_index_t *index)
+{
+    if (!index) {
+        return;
+    }
+    alloc_free(index->symbolLookup);
+    index->symbolLookup = NULL;
+    index->symbolLookupMask = 0;
+
+    if (index->symbolCount <= 0) {
+        return;
+    }
+    uint32_t need = (uint32_t)index->symbolCount * 2u;
+    if (need < 16u) {
+        need = 16u;
+    }
+    uint32_t cap = 1u;
+    while (cap < need && cap < (1u << 30)) {
+        cap <<= 1u;
+    }
+    uint32_t *table = (uint32_t *)alloc_calloc((size_t)cap, sizeof(*table));
+    if (!table) {
+        return;
+    }
+    uint32_t mask = cap - 1u;
+
+    for (int i = 0; i < index->symbolCount; ++i) {
+        const char *name = index->symbols[i].name;
         if (!name || !*name) {
             continue;
         }
-        print_eval_addSymbol(index, name, addr);
+        uint32_t h = print_eval_hashString(name);
+        uint32_t pos = h & mask;
+        for (uint32_t step = 0; step < cap; ++step) {
+            uint32_t slot = table[pos];
+            if (slot == 0) {
+                table[pos] = (uint32_t)(i + 1);
+                break;
+            }
+            uint32_t existingIndex = slot - 1u;
+            if (existingIndex < (uint32_t)index->symbolCount &&
+                index->symbols[existingIndex].name &&
+                strcmp(index->symbols[existingIndex].name, name) == 0) {
+                break;
+            }
+            pos = (pos + 1u) & mask;
+        }
     }
-    pclose(fp);
-    return 1;
-}
 
-static int
-print_eval_parseDwarfInfo(const char *elfPath, print_index_t *index)
-{
-    if (!elfPath || !*elfPath || !index) {
-        return 0;
-    }
-    char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-readelf --debug-dump=info '%s'", elfPath);
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
-        return 0;
-    }
-    uint32_t parentStack[64];
-    int depthStack[64];
-    memset(parentStack, 0, sizeof(parentStack));
-    memset(depthStack, 0, sizeof(depthStack));
-    int stackDepth = 0;
-    print_dwarf_node_t *current = NULL;
-    char line[1024];
-    while (fgets(line, sizeof(line), fp)) {
-        int depth = 0;
-        uint32_t offset = 0;
-        char tagBuf[128];
-        if (print_eval_parseDieHeader(line, &depth, &offset, tagBuf, sizeof(tagBuf))) {
-            print_dwarf_tag_t tag = print_eval_tagFromString(tagBuf);
-            while (stackDepth > 0 && depthStack[stackDepth - 1] >= depth) {
-                --stackDepth;
-            }
-            uint32_t parentOffset = (stackDepth > 0) ? parentStack[stackDepth - 1] : 0;
-            current = print_eval_addNode(index, offset, parentOffset, tag);
-            if (current) {
-                parentStack[stackDepth] = offset;
-                depthStack[stackDepth] = depth;
-                if (stackDepth < (int)(sizeof(parentStack) / sizeof(parentStack[0])) - 1) {
-                    ++stackDepth;
-                }
-            }
-            continue;
-        }
-        if (!current) {
-            continue;
-        }
-        if (strstr(line, "DW_AT_name")) {
-            char *name = print_eval_parseNameValue(line);
-            if (name) {
-                print_eval_freeString(current->name);
-                current->name = name;
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_type")) {
-            uint32_t ref = 0;
-            if (print_eval_parseTypeRef(line, &ref)) {
-                current->typeRef = ref;
-                current->hasTypeRef = 1;
-            } else {
-                uint64_t val = 0;
-                if (print_eval_parseFirstNumber(line, &val)) {
-                    current->typeRef = (uint32_t)val;
-                    current->hasTypeRef = 1;
-                }
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_byte_size")) {
-            uint64_t val = 0;
-            if (print_eval_parseFirstNumber(line, &val)) {
-                current->byteSize = val;
-                current->hasByteSize = 1;
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_encoding")) {
-            current->encoding = print_eval_parseEncoding(line);
-            continue;
-        }
-        if (strstr(line, "DW_AT_data_member_location")) {
-            uint64_t val = 0;
-            if (print_eval_parseFirstNumber(line, &val)) {
-                current->memberOffset = (int64_t)val;
-                current->hasMemberOffset = 1;
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_upper_bound")) {
-            uint64_t val = 0;
-            if (print_eval_parseFirstNumber(line, &val)) {
-                current->upperBound = (int64_t)val;
-                current->hasUpperBound = 1;
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_count")) {
-            uint64_t val = 0;
-            if (print_eval_parseFirstNumber(line, &val)) {
-                current->count = (int64_t)val;
-                current->hasCount = 1;
-            }
-            continue;
-        }
-        if (strstr(line, "DW_AT_location")) {
-            uint64_t addr = 0;
-            if (print_eval_parseLocationAddr(line, &addr)) {
-                current->addr = addr;
-                current->hasAddr = 1;
-            }
-            continue;
-        }
-    }
-    pclose(fp);
-    return 1;
+    index->symbolLookup = table;
+    index->symbolLookupMask = mask;
 }
 
 static uint32_t
@@ -708,6 +604,28 @@ print_eval_lookupSymbolAddr(print_index_t *index, const char *name, int *found)
         *found = 0;
     }
     if (!index || !name) {
+        return 0;
+    }
+    if (index->symbolLookup && index->symbolLookupMask != 0) {
+        uint32_t h = print_eval_hashString(name);
+        uint32_t pos = h & index->symbolLookupMask;
+        uint32_t cap = index->symbolLookupMask + 1u;
+        for (uint32_t step = 0; step < cap; ++step) {
+            uint32_t slot = index->symbolLookup[pos];
+            if (slot == 0) {
+                return 0;
+            }
+            uint32_t idx = slot - 1u;
+            if (idx < (uint32_t)index->symbolCount &&
+                index->symbols[idx].name &&
+                strcmp(index->symbols[idx].name, name) == 0) {
+                if (found) {
+                    *found = 1;
+                }
+                return index->symbols[idx].addr;
+            }
+            pos = (pos + 1u) & index->symbolLookupMask;
+        }
         return 0;
     }
     for (int i = 0; i < index->symbolCount; ++i) {
@@ -747,7 +665,7 @@ print_eval_buildVariables(print_index_t *index)
         if (!hasAddr) {
             continue;
         }
-        print_eval_addVariable(index, node->name, addr, node->typeRef);
+        print_eval_addVariable(index, node->name, addr, node->typeRef, 0, 0);
     }
 }
 
@@ -938,6 +856,68 @@ print_eval_resolveType(print_type_t *type)
 }
 
 static print_type_t *
+print_eval_defaultU8(print_index_t *index)
+{
+    if (!index) {
+        return NULL;
+    }
+    if (index->defaultU8) {
+        return index->defaultU8;
+    }
+    print_type_t *type = (print_type_t *)alloc_calloc(1, sizeof(*type));
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_base;
+    type->byteSize = 1;
+    type->encoding = print_base_encoding_unsigned;
+    type->name = print_eval_strdup("uint8_t");
+    index->defaultU8 = type;
+    if (index->typeCount >= index->typeCap) {
+        int next = index->typeCap ? index->typeCap * 2 : 128;
+        print_type_t **nextTypes = (print_type_t **)alloc_realloc(index->types, sizeof(*nextTypes) * (size_t)next);
+        if (!nextTypes) {
+            return type;
+        }
+        index->types = nextTypes;
+        index->typeCap = next;
+    }
+    index->types[index->typeCount++] = type;
+    return type;
+}
+
+static print_type_t *
+print_eval_defaultU16(print_index_t *index)
+{
+    if (!index) {
+        return NULL;
+    }
+    if (index->defaultU16) {
+        return index->defaultU16;
+    }
+    print_type_t *type = (print_type_t *)alloc_calloc(1, sizeof(*type));
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_base;
+    type->byteSize = 2;
+    type->encoding = print_base_encoding_unsigned;
+    type->name = print_eval_strdup("uint16_t");
+    index->defaultU16 = type;
+    if (index->typeCount >= index->typeCap) {
+        int next = index->typeCap ? index->typeCap * 2 : 128;
+        print_type_t **nextTypes = (print_type_t **)alloc_realloc(index->types, sizeof(*nextTypes) * (size_t)next);
+        if (!nextTypes) {
+            return type;
+        }
+        index->types = nextTypes;
+        index->typeCap = next;
+    }
+    index->types[index->typeCount++] = type;
+    return type;
+}
+
+static print_type_t *
 print_eval_defaultU32(print_index_t *index)
 {
     if (!index) {
@@ -968,6 +948,37 @@ print_eval_defaultU32(print_index_t *index)
     return type;
 }
 
+static print_type_t *
+print_eval_defaultU64(print_index_t *index)
+{
+    if (!index) {
+        return NULL;
+    }
+    if (index->defaultU64) {
+        return index->defaultU64;
+    }
+    print_type_t *type = (print_type_t *)alloc_calloc(1, sizeof(*type));
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_base;
+    type->byteSize = 8;
+    type->encoding = print_base_encoding_unsigned;
+    type->name = print_eval_strdup("uint64_t");
+    index->defaultU64 = type;
+    if (index->typeCount >= index->typeCap) {
+        int next = index->typeCap ? index->typeCap * 2 : 128;
+        print_type_t **nextTypes = (print_type_t **)alloc_realloc(index->types, sizeof(*nextTypes) * (size_t)next);
+        if (!nextTypes) {
+            return type;
+        }
+        index->types = nextTypes;
+        index->typeCap = next;
+    }
+    index->types[index->typeCount++] = type;
+    return type;
+}
+
 static int
 print_eval_loadIndex(print_index_t *index)
 {
@@ -975,15 +986,73 @@ print_eval_loadIndex(print_index_t *index)
     if (!elfPath || !*elfPath || !index) {
         return 0;
     }
-    if (index->elfPath[0] != '\0' && strcmp(index->elfPath, elfPath) == 0) {
+    uint32_t curText = debugger.machine.textBaseAddr;
+    uint32_t curData = debugger.machine.dataBaseAddr;
+    uint32_t curBss = debugger.machine.bssBaseAddr;
+    if (index->elfPath[0] != '\0' && strcmp(index->elfPath, elfPath) == 0 &&
+        index->cacheTextBaseAddr == curText &&
+        index->cacheDataBaseAddr == curData &&
+        index->cacheBssBaseAddr == curBss) {
         return 1;
+    }
+    if (print_eval_debugEnabled()) {
+        debug_printf("print: load debuginfo elf='%s' bases text=0x%08X data=0x%08X bss=0x%08X\n",
+                     elfPath, (unsigned)curText, (unsigned)curData, (unsigned)curBss);
+    }
+    uint64_t t0 = 0;
+    if (print_eval_perfEnabled()) {
+        t0 = print_eval_nowNs();
     }
     print_eval_clearIndex(index);
     strncpy(index->elfPath, elfPath, sizeof(index->elfPath) - 1);
     index->elfPath[sizeof(index->elfPath) - 1] = '\0';
-    print_eval_parseSymbols(elfPath, index);
-    print_eval_parseDwarfInfo(elfPath, index);
+    index->cacheTextBaseAddr = curText;
+    index->cacheDataBaseAddr = curData;
+    index->cacheBssBaseAddr = curBss;
+    print_debuginfo_readelf_loadSymbols(elfPath, index);
+    uint64_t tSymbols = 0;
+    if (print_eval_perfEnabled()) {
+        tSymbols = print_eval_nowNs();
+    }
+    print_debuginfo_readelf_loadDwarfInfo(elfPath, index);
+    uint64_t tDwarf = 0;
+    if (print_eval_perfEnabled()) {
+        tDwarf = print_eval_nowNs();
+    }
+    (void)print_debuginfo_readelf_loadFrames(elfPath, index);
+    uint64_t tFrames = 0;
+    if (print_eval_perfEnabled()) {
+        tFrames = print_eval_nowNs();
+    }
+    if (print_eval_debugEnabled()) {
+        debug_printf("print: readelf pass nodes=%d symbols=%d\n", index->nodeCount, index->symbolCount);
+    }
+    if (index->nodeCount == 0) {
+        if (print_eval_debugEnabled()) {
+            debug_printf("print: falling back to objdump -G (STABS)\n");
+        }
+        (void)print_debuginfo_objdump_stabs_loadSymbols(elfPath, index);
+        if (print_eval_debugEnabled()) {
+            debug_printf("print: stabs pass symbols=%d\n", index->symbolCount);
+        }
+    }
+    print_eval_buildSymbolLookup(index);
+    uint64_t tLookup = 0;
+    if (print_eval_perfEnabled()) {
+        tLookup = print_eval_nowNs();
+    }
     print_eval_buildVariables(index);
+    if (print_eval_perfEnabled()) {
+        uint64_t tVars = print_eval_nowNs();
+        debug_printf("print: perf loadSymbols=%llums loadDwarf=%llums loadFrames=%llums buildLookup=%llums buildVars=%llums total=%llums nodes=%d syms=%d vars=%d fdes=%d\n",
+                     (unsigned long long)((tSymbols - t0) / 1000000ull),
+                     (unsigned long long)((tDwarf - tSymbols) / 1000000ull),
+                     (unsigned long long)((tFrames - tDwarf) / 1000000ull),
+                     (unsigned long long)((tLookup - tFrames) / 1000000ull),
+                     (unsigned long long)((tVars - tLookup) / 1000000ull),
+                     (unsigned long long)((tVars - t0) / 1000000ull),
+                     index->nodeCount, index->symbolCount, index->varCount, index->fdeCount);
+    }
     print_eval_defaultU32(index);
     return 1;
 }
@@ -1122,6 +1191,9 @@ print_eval_dumpValueAt(print_type_t *type, uint32_t addr, int indent, const char
             size_t size = resolved->byteSize > 0 ? resolved->byteSize : 4;
             uint64_t val = print_eval_readUnsigned(addr, size, &ok);
             if (!ok) {
+                if (print_eval_debugEnabled() && label && print_eval_debugWantsSymbol(label)) {
+                    debug_printf("print: unreadable addr=0x%08X size=%u kind=base\n", (unsigned)addr, (unsigned)size);
+                }
                 print_eval_printLine(indent, "%s: <unreadable>", label ? label : "<value>");
                 return;
             }
@@ -1160,6 +1232,9 @@ print_eval_dumpValueAt(print_type_t *type, uint32_t addr, int indent, const char
             size_t size = resolved->byteSize > 0 ? resolved->byteSize : 4;
             uint64_t ptrVal = print_eval_readUnsigned(addr, size, &ok);
             if (!ok) {
+                if (print_eval_debugEnabled() && label && print_eval_debugWantsSymbol(label)) {
+                    debug_printf("print: unreadable addr=0x%08X size=%u kind=ptr\n", (unsigned)addr, (unsigned)size);
+                }
                 print_eval_printLine(indent, "%s: <unreadable>", label ? label : "<value>");
                 return;
             }
@@ -1196,6 +1271,9 @@ print_eval_dumpValueAt(print_type_t *type, uint32_t addr, int indent, const char
             size_t size = resolved->byteSize > 0 ? resolved->byteSize : 4;
             uint64_t val = print_eval_readUnsigned(addr, size, &ok);
             if (!ok) {
+                if (print_eval_debugEnabled() && label && print_eval_debugWantsSymbol(label)) {
+                    debug_printf("print: unreadable addr=0x%08X size=%u kind=enum\n", (unsigned)addr, (unsigned)size);
+                }
                 print_eval_printLine(indent, "%s: <unreadable>", label ? label : "<value>");
                 return;
             }
@@ -1375,20 +1453,72 @@ print_eval_parsePrimary(const char **cursor, print_index_t *index, print_value_t
     if (print_eval_parseIdentifier(cursor, ident, sizeof(ident))) {
         print_variable_t *var = print_eval_findVariable(index, ident);
         if (var) {
-            print_type_t *type = print_eval_getType(index, var->typeRef);
+            print_type_t *type = NULL;
+            if (var->typeRef != 0) {
+                type = print_eval_getType(index, var->typeRef);
+            }
+            if (!type && print_eval_debugEnabled() && print_eval_debugWantsSymbol(ident) && var->typeRef != 0) {
+                debug_printf("print: var '%s' missing type die=0x%X\n", ident, (unsigned)var->typeRef);
+            }
+            if (!type && var->hasByteSize) {
+                if (var->byteSize == 1) {
+                    type = print_eval_defaultU8(index);
+                } else if (var->byteSize == 2) {
+                    type = print_eval_defaultU16(index);
+                } else if (var->byteSize == 8) {
+                    type = print_eval_defaultU64(index);
+                } else {
+                    type = print_eval_defaultU32(index);
+                }
+            }
+            if (!type) {
+                type = print_eval_defaultU32(index);
+            }
             *out = print_eval_makeAddressValue(type, var->addr);
+            if (print_eval_debugEnabled()) {
+                size_t size = 0;
+                print_type_t *resolved = print_eval_resolveType(type);
+                if (resolved && resolved->byteSize > 0) {
+                    size = resolved->byteSize;
+                }
+                if (size == 0) {
+                    size = 4;
+                }
+                debug_printf("print: resolved var '%s' -> addr=0x%08X size=%u typeRef=0x%X\n",
+                             ident, (unsigned)var->addr, (unsigned)size, (unsigned)var->typeRef);
+            }
             return 1;
         }
         print_symbol_t *sym = print_eval_findSymbol(index, ident);
         if (sym) {
             print_type_t *type = print_eval_defaultU32(index);
             *out = print_eval_makeAddressValue(type, sym->addr);
+            if (print_eval_debugEnabled()) {
+                debug_printf("print: resolved sym '%s' -> addr=0x%08X (default u32)\n", ident, (unsigned)sym->addr);
+            }
             return 1;
         }
         unsigned long regValue = 0;
         if (machine_findReg(&debugger.machine, ident, &regValue)) {
             print_type_t *type = print_eval_defaultU32(index);
             *out = print_eval_makeImmediateValue(type, (uint64_t)regValue);
+            if (print_eval_debugEnabled()) {
+                debug_printf("print: resolved reg '%s' -> 0x%08lX\n", ident, regValue);
+            }
+            return 1;
+        }
+        // Local resolution can be expensive (requires scope + CFI lookup), so only
+        // attempt it after globals/symbols/regs have failed.
+        if (print_eval_resolveLocal(ident, index, out, typeOnly)) {
+            if (print_eval_debugEnabled()) {
+                if (out->hasAddress) {
+                    debug_printf("print: resolved local '%s' -> addr=0x%08X\n", ident, (unsigned)out->address);
+                } else if (out->hasImmediate) {
+                    debug_printf("print: resolved local '%s' -> imm=0x%llX\n", ident, (unsigned long long)out->immediate);
+                } else {
+                    debug_printf("print: resolved local '%s'\n", ident);
+                }
+            }
             return 1;
         }
         return 0;
@@ -1789,11 +1919,17 @@ print_eval_resolveSymbol(const char *name, uint32_t *outAddr, size_t *outSize)
     if (!var) {
         return 0;
     }
-    print_type_t *type = print_eval_getType(&print_eval_index, var->typeRef);
+    print_type_t *type = NULL;
+    if (var->typeRef != 0) {
+        type = print_eval_getType(&print_eval_index, var->typeRef);
+    }
     print_type_t *resolved = print_eval_resolveType(type);
     size_t size = 0;
     if (resolved && resolved->byteSize > 0) {
         size = resolved->byteSize;
+    }
+    if (size == 0 && var->hasByteSize && var->byteSize > 0) {
+        size = var->byteSize;
     }
     if (size == 0) {
         size = 4;

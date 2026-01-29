@@ -56,6 +56,9 @@ typedef struct machine {
     int                  breakpoint_count;
     int                  next_breakpoint_id;
     int             running;
+    uint32_t        textBaseAddr;
+    uint32_t        dataBaseAddr;
+    uint32_t        bssBaseAddr;
 } machine_t;
 
 #define machine_getRunningState(m) (&(m).running)
@@ -100,5 +103,3 @@ machine_findReg(machine_t *m, const char *name, unsigned long *out_value);
 
 int
 machine_refresh(void);
-
-

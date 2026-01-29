@@ -16,6 +16,7 @@
 #include <errno.h>
 
 #include "e9ui.h"
+#include "config.h"
 #include "debugger.h"
 #include "source.h"
 #include "source_pane.h"
@@ -73,6 +74,9 @@ source_pane_updateSourceLocation(source_pane_state_t *st);
 
 static void
 source_pane_followCurrent(source_pane_state_t *st);
+
+static void
+source_pane_setModeInternal(e9ui_component_t *comp, source_pane_mode_t mode, int enforceElfValid);
 
 static const char *
 source_pane_basename(const char *path)
@@ -172,7 +176,12 @@ source_pane_resolveFileLine(const char *elf, const char *file, int line_no, uint
         return 0;
     }
     char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-objdump -l -d '%s'", elf);
+    char objdump[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+        debug_error("break: failed to resolve objdump");
+        return 0;
+    }
+    snprintf(cmd, sizeof(cmd), "%s -l -d '%s'", objdump, elf);
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         debug_error("break: failed to run objdump");
@@ -535,14 +544,14 @@ source_pane_persistLoad(e9ui_component_t *self, e9ui_context_t *ctx, const char 
     int m = (int)strtol(value, NULL, 10);
 
     source_pane_mode_t mode = source_pane_mode_a;
-    if (m == 0) {
-        mode = source_pane_mode_c;
-    } else if (m == 3) {
-        mode = source_pane_mode_h;
-    }
-    source_pane_setMode(self, mode);
-  }
-}
+	    if (m == 0) {
+	        mode = source_pane_mode_c;
+	    } else if (m == 3) {
+	        mode = source_pane_mode_h;
+	    }
+	    source_pane_setModeInternal(self, mode, 0);
+	  }
+	}
 
 static int
 source_pane_getAsmWindow(source_pane_state_t *st, int maxLines, uint64_t *out_curAddr,
@@ -1211,6 +1220,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
             if (!source_pane_resolveFileLine(debugger.libretro.elfPath, path, lineNo, &addr)) {
                 return 0;
             }
+            addr = (uint32_t)(((uint64_t)addr + (uint64_t)debugger.machine.textBaseAddr) & 0x00ffffffu);
             machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
             if (bp) {
                 strncpy(bp->file, path, sizeof(bp->file) - 1);
@@ -1497,11 +1507,12 @@ source_toggleMode(e9ui_context_t *ctx, void *user)
   source_pane_setMode(pane, mode);
   const char *label = source_pane_modeLabel(mode);
   if (button) {
-    e9ui_button_setLabel(button, label);
-  }
+	    e9ui_button_setLabel(button, label);
+	  }
 
-  (void)ctx;
-} 
+	  config_saveConfig();
+	  (void)ctx;
+	} 
 
 e9ui_component_t *
 source_pane_make(void)
@@ -1535,7 +1546,8 @@ source_pane_make(void)
   return c;
 }
 
-void source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
+static void
+source_pane_setModeInternal(e9ui_component_t *comp, source_pane_mode_t mode, int enforceElfValid)
 {
     if (!comp || !comp->state) {
         return;
@@ -1544,7 +1556,7 @@ void source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
     if (mode != source_pane_mode_c && mode != source_pane_mode_a && mode != source_pane_mode_h) {
         mode = source_pane_mode_a;
     }
-    if (!debugger.elfValid && mode == source_pane_mode_c) {
+    if (enforceElfValid && !debugger.elfValid && mode == source_pane_mode_c) {
         mode = source_pane_mode_a;
     }
     st->viewMode = mode;
@@ -1561,6 +1573,12 @@ void source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
             e9ui_button_setLabel(btn, source_pane_modeLabel(mode));
         }
     }
+}
+
+void
+source_pane_setMode(e9ui_component_t *comp, source_pane_mode_t mode)
+{
+    source_pane_setModeInternal(comp, mode, 1);
 }
 
 source_pane_mode_t source_pane_getMode(e9ui_component_t *comp)

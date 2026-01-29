@@ -452,6 +452,12 @@ e9ui_dispatchHotkey(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
     if (prompt_isFocused(ctx, e9ui->prompt)) {
       return 0;
     }
+    e9ui_component_t *focus = e9ui_getFocus(ctx);
+    if (focus && focus->name && strcmp(focus->name, "e9ui_textbox") == 0) {
+      if (e9ui_textbox_getCompletionMode(focus) != e9ui_textbox_completion_none) {
+        return 0;
+      }
+    }
   }
   e9k_hotkey_registry_t *hk = &e9ui->hotkeys;
   for (int i=0;i<hk->count;i++) {

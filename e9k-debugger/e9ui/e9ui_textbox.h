@@ -15,6 +15,12 @@ typedef void (*e9ui_textbox_submit_cb_t)(e9ui_context_t *ctx, void *user);
 typedef void (*e9ui_textbox_change_cb_t)(e9ui_context_t *ctx, void *user);
 typedef int (*e9ui_textbox_key_cb_t)(e9ui_context_t *ctx, SDL_Keycode key, SDL_Keymod mods, void *user);
 
+typedef enum e9ui_textbox_completion_mode {
+    e9ui_textbox_completion_none = 0,
+    e9ui_textbox_completion_filename,
+    e9ui_textbox_completion_folder,
+} e9ui_textbox_completion_mode_t;
+
 e9ui_component_t *
 e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_change_cb_t onChange,
                       void *user);
@@ -52,4 +58,8 @@ e9ui_textbox_isEditable(const e9ui_component_t *comp);
 void
 e9ui_textbox_setNumericOnly(e9ui_component_t *comp, int numeric_only);
 
+void
+e9ui_textbox_setCompletionMode(e9ui_component_t *comp, e9ui_textbox_completion_mode_t mode);
 
+e9ui_textbox_completion_mode_t
+e9ui_textbox_getCompletionMode(const e9ui_component_t *comp);

@@ -34,6 +34,7 @@ typedef struct console_cmd_entry {
 } console_cmd_entry_t;
 
 static int console_cmd_help(int argc, char **argv);
+static int console_cmd_base(int argc, char **argv);
 static int console_cmd_break(int argc, char **argv);
 static int console_cmd_completeBreak(const char *prefix, char ***out_list, int *out_count);
 static int console_cmd_continue(int argc, char **argv);
@@ -55,6 +56,7 @@ static int console_cmd_diff(int argc, char **argv);
 
 static const console_cmd_entry_t console_cmd[] = {
     { "help",  "h", "help [command]", "Show available commands or detailed help.", console_cmd_help, NULL },
+    { "base",  NULL, "base [text|data|bss] [addr|clear]", "Set or show section base addresses (subtracted from addresses passed to toolchain tools).", console_cmd_base, NULL },
     { "break", "b", "break <addr|symbol|file:line>", "Set a breakpoint at an address, symbol, or file:line.", console_cmd_break, console_cmd_completeBreak },    
     { "cls",  NULL, "cls", "Clear the console output.", console_cmd_cls, NULL },    
     { "continue", "c", "continue", "Continue execution and defocus the prompt.", console_cmd_continue, NULL },
@@ -365,13 +367,112 @@ console_cmd_symbolMatch(const char *name, const char *symbol)
 }
 
 static int
+console_cmd_parseStabStringName(const char *stabStr, char *outName, size_t cap)
+{
+    if (!stabStr || !outName || cap == 0) {
+        return 0;
+    }
+    outName[0] = '\0';
+    const char *colon = strchr(stabStr, ':');
+    if (!colon || colon == stabStr) {
+        return 0;
+    }
+    size_t len = (size_t)(colon - stabStr);
+    if (len >= cap) {
+        len = cap - 1;
+    }
+    memcpy(outName, stabStr, len);
+    outName[len] = '\0';
+    return outName[0] ? 1 : 0;
+}
+
+static int
+console_cmd_resolveSymbolStabsFun(const char *elf, const char *symbol, uint32_t *out_addr)
+{
+    if (!elf || !*elf || !symbol || !*symbol || !out_addr) {
+        return 0;
+    }
+    char objdump[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+        return 0;
+    }
+    char cmd[PATH_MAX * 2];
+    snprintf(cmd, sizeof(cmd), "%s -G '%s'", objdump, elf);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        return 0;
+    }
+    char line[2048];
+    while (fgets(line, sizeof(line), fp)) {
+        char *tokens[12];
+        int count = 0;
+        char *cursor = line;
+        while (*cursor && isspace((unsigned char)*cursor)) {
+            ++cursor;
+        }
+        if (!*cursor) {
+            continue;
+        }
+        while (count < (int)(sizeof(tokens) / sizeof(tokens[0]))) {
+            while (*cursor && isspace((unsigned char)*cursor)) {
+                ++cursor;
+            }
+            if (!*cursor) {
+                break;
+            }
+            tokens[count++] = cursor;
+            while (*cursor && !isspace((unsigned char)*cursor)) {
+                ++cursor;
+            }
+            if (*cursor) {
+                *cursor++ = '\0';
+            }
+        }
+        if (count < 7) {
+            continue;
+        }
+        const char *stabType = tokens[1];
+        if (!stabType || strcmp(stabType, "FUN") != 0) {
+            continue;
+        }
+        const char *nValueStr = tokens[4];
+        const char *stabStr = tokens[count - 1];
+        if (!nValueStr || !*nValueStr || !stabStr || !*stabStr) {
+            continue;
+        }
+        char name[256];
+        if (!console_cmd_parseStabStringName(stabStr, name, sizeof(name))) {
+            continue;
+        }
+        if (!console_cmd_symbolMatch(name, symbol)) {
+            continue;
+        }
+        errno = 0;
+        uint32_t nValue = (uint32_t)strtoul(nValueStr, NULL, 16);
+        if (errno != 0) {
+            continue;
+        }
+        *out_addr = nValue & 0x00ffffffu;
+        pclose(fp);
+        return 1;
+    }
+    pclose(fp);
+    return 0;
+}
+
+static int
 console_cmd_resolveSymbol(const char *elf, const char *symbol, uint32_t *out_addr)
 {
     if (!elf || !*elf || !symbol || !*symbol || !out_addr) {
         return 0;
     }
     char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-objdump --syms '%s'", elf);
+    char objdump[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+        debug_error("break: failed to resolve objdump");
+        return 0;
+    }
+    snprintf(cmd, sizeof(cmd), "%s --syms '%s'", objdump, elf);
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         debug_error("break: failed to run objdump");
@@ -413,7 +514,7 @@ console_cmd_resolveSymbol(const char *elf, const char *symbol, uint32_t *out_add
         return 1;
     }
     pclose(fp);
-    return 0;
+    return console_cmd_resolveSymbolStabsFun(elf, symbol, out_addr);
 }
 
 static int
@@ -423,7 +524,12 @@ console_cmd_resolveFileLine(const char *elf, const char *file, int line_no, uint
         return 0;
     }
     char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-objdump -l -d '%s'", elf);
+    char objdump[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+        debug_error("break: failed to resolve objdump");
+        return 0;
+    }
+    snprintf(cmd, sizeof(cmd), "%s -l -d '%s'", objdump, elf);
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         debug_error("break: failed to run objdump");
@@ -503,6 +609,59 @@ console_cmd_help(int argc, char **argv)
 }
 
 static int
+console_cmd_base(int argc, char **argv)
+{
+    if (argc < 2) {
+        debug_printf("base: text=0x%08X data=0x%08X bss=0x%08X\n",
+                     (unsigned)debugger.machine.textBaseAddr,
+                     (unsigned)debugger.machine.dataBaseAddr,
+                     (unsigned)debugger.machine.bssBaseAddr);
+        return 1;
+    }
+    uint32_t *dest = &debugger.machine.textBaseAddr;
+    const char *sectionName = "text";
+    int argIndex = 1;
+
+    if (strcasecmp(argv[1], "text") == 0) {
+        dest = &debugger.machine.textBaseAddr;
+        sectionName = "text";
+        argIndex = 2;
+    } else if (strcasecmp(argv[1], "data") == 0) {
+        dest = &debugger.machine.dataBaseAddr;
+        sectionName = "data";
+        argIndex = 2;
+    } else if (strcasecmp(argv[1], "bss") == 0) {
+        dest = &debugger.machine.bssBaseAddr;
+        sectionName = "bss";
+        argIndex = 2;
+    } else if (strcasecmp(argv[1], "clear") == 0) {
+        debugger.machine.textBaseAddr = 0;
+        debugger.machine.dataBaseAddr = 0;
+        debugger.machine.bssBaseAddr = 0;
+        debug_printf("base: cleared\n");
+        return 1;
+    }
+
+    if (argc <= argIndex) {
+        debug_printf("base: %s=0x%08X\n", sectionName, (unsigned)*dest);
+        return 1;
+    }
+    if (strcasecmp(argv[argIndex], "clear") == 0) {
+        *dest = 0;
+        debug_printf("base: cleared %s\n", sectionName);
+        return 1;
+    }
+    uint32_t addr = 0;
+    if (!console_cmd_parseU32Auto(argv[argIndex], &addr)) {
+        debug_error("base: invalid address '%s' (use decimal or 0x...)", argv[argIndex]);
+        return 0;
+    }
+    *dest = addr;
+    debug_printf("base: set %s to 0x%08X\n", sectionName, (unsigned)*dest);
+    return 1;
+}
+
+static int
 console_cmd_break(int argc, char **argv)
 {
     if (argc < 2) {
@@ -527,6 +686,9 @@ console_cmd_break(int argc, char **argv)
                     return 0;
                 }
                 ok = console_cmd_resolveFileLine(elf, file_buf, line_no, &addr);
+                if (ok) {
+                    addr = (uint32_t)(((uint64_t)addr + (uint64_t)debugger.machine.textBaseAddr) & 0x00ffffffu);
+                }
             }
         }
     }
@@ -556,6 +718,7 @@ console_cmd_break(int argc, char **argv)
         debug_error("break: failed to resolve '%s'", arg);
         return 0;
     }
+    addr = (uint32_t)(((uint64_t)addr + (uint64_t)debugger.machine.textBaseAddr) & 0x00ffffffu);
     machine_breakpoint_t *bp = machine_addBreakpoint(&debugger.machine, addr, 1);
     if (!bp) {
         debug_error("break: failed to add breakpoint");
@@ -1301,7 +1464,11 @@ console_cmd_completeBreak(const char *prefix, char ***out_list, int *out_count)
         return 0;
     }
     char cmd[PATH_MAX * 2];
-    snprintf(cmd, sizeof(cmd), "m68k-neogeo-elf-objdump --syms '%s'", elf);
+    char objdump[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
+        return 0;
+    }
+    snprintf(cmd, sizeof(cmd), "%s --syms '%s'", objdump, elf);
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         return 0;

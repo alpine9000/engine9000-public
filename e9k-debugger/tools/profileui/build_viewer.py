@@ -679,11 +679,25 @@ def which(cmd: str) -> Optional[str]:
     return None
 
 
+def toolchain_cmd(tool: str) -> Optional[str]:
+    """Build a cross-tool command from E9K_TOOLCHAIN_PREFIX, if set.
+
+    Accepts either "m68k-foo" or "m68k-foo-" styles.
+    """
+    prefix = (os.environ.get("E9K_TOOLCHAIN_PREFIX") or "").strip()
+    if not prefix:
+        return None
+    return f"{prefix}{tool}" if prefix.endswith("-") else f"{prefix}-{tool}"
+
+
 def build_disasm_index(elf: Path) -> (Dict[int, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]):
     """Run objdump/llvm-objdump and return a mapping of address -> instruction text.
     Keeps only addresses with instructions to enable slicing around PCs.
     """
     cmds = []
+    tc_objdump = toolchain_cmd("objdump")
+    if tc_objdump and which(tc_objdump):
+        cmds.append([tc_objdump, "-dS", "-C", "-l", str(elf)])
     # Prefer target-specific objdump first, include source (-S/-l)
     if which("m68k-neogeo-elf-objdump"):
         cmds.append(["m68k-neogeo-elf-objdump", "-dS", "-C", "-l", str(elf)])
@@ -831,6 +845,9 @@ def build_disasm_index_from_rom(rom: Path, vma_base: int) -> (Dict[int, Dict[str
     Requires objdump with m68k support. Addresses will be vma_base + offset.
     """
     cmds = []
+    tc_objdump = toolchain_cmd("objdump")
+    if tc_objdump and which(tc_objdump):
+        cmds.append([tc_objdump, "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
     if which("m68k-neogeo-elf-objdump"):
         cmds.append(["m68k-neogeo-elf-objdump", "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
     if which("m68k-elf-objdump"):

@@ -49,7 +49,7 @@ addr2line_resolve(uint64_t addr, char *out_file, size_t file_cap, int *out_line)
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define ADDR2LINE_BIN "m68k-neogeo-elf-addr2line"
+#include "debugger.h"
 
 typedef struct {
   pid_t pid;
@@ -197,8 +197,12 @@ addr2line_start(const char *elf_path)
         close(to_child[1]);
         close(from_child[0]);
         close(from_child[1]);
+        char bin[PATH_MAX];
+        if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
+            _exit(127);
+        }
         char *const argv[] = {
-            (char*)ADDR2LINE_BIN,
+            bin,
             (char*)"-e",
             (char*)elf_path,
             (char*)"-a",
@@ -206,7 +210,7 @@ addr2line_start(const char *elf_path)
             (char*)"-C",
             NULL
         };
-        execvp(ADDR2LINE_BIN, argv);
+        execvp(bin, argv);
         _exit(127);
     }
     if (pid < 0) {
@@ -271,7 +275,12 @@ addr2line_resolve(uint64_t addr, char *out_file, size_t file_cap, int *out_line)
     if (!addr2line.in || addr2line.outFD < 0) {
         return 0;
     }
-    if (fprintf(addr2line.in, "0x%llx\n", (unsigned long long)addr) < 0) {
+    uint64_t queryAddr = addr;
+    uint64_t base = (uint64_t)debugger.machine.textBaseAddr;
+    if (base != 0 && queryAddr >= base) {
+        queryAddr -= base;
+    }
+    if (fprintf(addr2line.in, "0x%llx\n", (unsigned long long)queryAddr) < 0) {
         return 0;
     }
     fflush(addr2line.in);
@@ -285,7 +294,7 @@ addr2line_resolve(uint64_t addr, char *out_file, size_t file_cap, int *out_line)
         }
         if (addr2line_isAddressLine(line)) {
             unsigned long long got = strtoull(line, NULL, 16);
-            if ((uint64_t)got == addr) {
+            if ((uint64_t)got == queryAddr) {
                 got_addr = 1;
                 addr2line.expectFunc = 1;
                 addr2line.expectFile = 0;

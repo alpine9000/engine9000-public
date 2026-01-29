@@ -53,6 +53,7 @@ typedef struct {
   char saveDir[PATH_MAX];
   char sourceDir[PATH_MAX];
   char elfPath[PATH_MAX];
+  char toolchainPrefix[PATH_MAX];
   int enabled;
   int audioBufferMs;
   int audioEnabled;  
@@ -171,3 +172,6 @@ debugger_refreshElfValid(void);
 
 void
 debugger_applyCoreOptions(void);
+
+int
+debugger_toolchainBuildBinary(char *out, size_t cap, const char *tool);

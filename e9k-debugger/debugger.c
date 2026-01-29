@@ -51,6 +51,31 @@ static void
 debugger_copyPath(char *dest, size_t cap, const char *src);
 
 static void
+debugger_onSetDebugBaseFromCore(uint32_t section, uint32_t base)
+{
+    const char *name = "unknown";
+    switch (section) {
+    case 0u:
+        debugger.machine.textBaseAddr = base;
+        name = "text";
+        break;
+    case 1u:
+        debugger.machine.dataBaseAddr = base;
+        name = "data";
+        break;
+    case 2u:
+        debugger.machine.bssBaseAddr = base;
+        name = "bss";
+        break;
+    default:
+        debugger.machine.textBaseAddr = base;
+        name = "text";
+        break;
+    }
+    debug_printf("base: set %s to 0x%08X (from core)\n", name, (unsigned)base);
+}
+
+static void
 debugger_setArgv0(void)
 {
     const char *argv0 = cli_getArgv0();
@@ -172,6 +197,7 @@ debugger_libretroSelectConfig(void)
     debugger.libretro.audioEnabled = debugger.config.neogeo.libretro.audioEnabled;
     debugger_copyPath(debugger.libretro.sourceDir, sizeof(debugger.libretro.sourceDir), debugger.config.neogeo.libretro.sourceDir);
     debugger_copyPath(debugger.libretro.elfPath, sizeof(debugger.libretro.elfPath), debugger.config.neogeo.libretro.elfPath);              
+    debugger_copyPath(debugger.libretro.toolchainPrefix, sizeof(debugger.libretro.toolchainPrefix), debugger.config.neogeo.libretro.toolchainPrefix);
     debugger_copyPath(debugger.libretro.corePath, sizeof(debugger.libretro.corePath), debugger.config.neogeo.libretro.corePath);
     debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), debugger.config.neogeo.libretro.romPath);
     debugger_copyPath(debugger.libretro.systemDir, sizeof(debugger.libretro.systemDir), debugger.config.neogeo.libretro.systemDir);
@@ -189,6 +215,7 @@ debugger_libretroSelectConfig(void)
     debugger.libretro.audioEnabled = debugger.config.amiga.libretro.audioEnabled;
     debugger_copyPath(debugger.libretro.sourceDir, sizeof(debugger.libretro.sourceDir), debugger.config.amiga.libretro.sourceDir);
     debugger_copyPath(debugger.libretro.elfPath, sizeof(debugger.libretro.elfPath), debugger.config.amiga.libretro.elfPath);              
+    debugger_copyPath(debugger.libretro.toolchainPrefix, sizeof(debugger.libretro.toolchainPrefix), debugger.config.amiga.libretro.toolchainPrefix);
     debugger_copyPath(debugger.libretro.corePath, sizeof(debugger.libretro.corePath), debugger.config.amiga.libretro.corePath);
     debugger_copyPath(debugger.libretro.romPath, sizeof(debugger.libretro.romPath), debugger.config.amiga.libretro.romPath);
     debugger_copyPath(debugger.libretro.systemDir, sizeof(debugger.libretro.systemDir), debugger.config.amiga.libretro.systemDir);
@@ -198,11 +225,50 @@ debugger_libretroSelectConfig(void)
   debugger.libretro.enabled = (debugger.libretro.corePath[0] && debugger.libretro.romPath[0]) ? 1 : 0;  
 }
 
+int
+debugger_toolchainBuildBinary(char *out, size_t cap, const char *tool)
+{
+    if (!out || cap == 0 || !tool || !*tool) {
+        return 0;
+    }
+    const char *prefix = debugger.libretro.toolchainPrefix;
+    if (!prefix || !*prefix) {
+        int written = snprintf(out, cap, "%s", tool);
+        if (written < 0 || (size_t)written >= cap) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        return 1;
+    }
+    size_t len = strlen(prefix);
+    int hasDash = (len > 0 && prefix[len - 1] == '-') ? 1 : 0;
+    int written = 0;
+    if (hasDash) {
+        written = snprintf(out, cap, "%s%s", prefix, tool);
+    } else {
+        written = snprintf(out, cap, "%s-%s", prefix, tool);
+    }
+    if (written < 0 || (size_t)written >= cap) {
+        out[cap - 1] = '\0';
+        return 0;
+    }
+    return 1;
+}
+
 void
 debugger_refreshElfValid(void)
 {
     debugger.elfValid = 0;
-    if (debugger.config.neogeo.libretro.elfPath[0] && debugger_pathExistsFile(debugger.config.neogeo.libretro.elfPath)) {
+    const char *rawElf = NULL;
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        rawElf = debugger.config.amiga.libretro.elfPath;
+    } else {
+        rawElf = debugger.config.neogeo.libretro.elfPath;
+    }
+    char elfPath[PATH_MAX];
+    elfPath[0] = '\0';
+    debugger_copyPath(elfPath, sizeof(elfPath), rawElf);
+    if (elfPath[0] && debugger_pathExistsFile(elfPath)) {
         debugger.elfValid = 1;
     }
     ui_applySourcePaneElfMode();
@@ -286,6 +352,8 @@ debugger_ctor(void)
   debugger.frameStepPending = 0;
   debugger.vblankCaptureActive = 0;  
   debugger.config.crtEnabled = 1;
+  snprintf(debugger.config.neogeo.libretro.toolchainPrefix, sizeof(debugger.config.neogeo.libretro.toolchainPrefix), "m68k-neogeo-elf");
+  snprintf(debugger.config.amiga.libretro.toolchainPrefix, sizeof(debugger.config.amiga.libretro.toolchainPrefix), "m68k-amigaos-");
   debugger.recordPath[0] = '\0';
   debugger.playbackPath[0] = '\0';
   debugger.smokeTestPath[0] = '\0';
@@ -415,6 +483,11 @@ debugger_main(int argc, char **argv)
       debug_error("libretro: failed to start core");
       debugger.libretro.enabled = 0;
     } else {
+      if (!libretro_host_setDebugBaseCallback(debugger_onSetDebugBaseFromCore)) {
+        if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+          debug_error("debug_base: core does not expose geo_set_debug_base_callback");
+        }
+      }
       snapshot_loadOnBoot();
     }
   }

@@ -83,6 +83,7 @@ typedef void (*geo_debug_profiler_stop_fn_t)(void);
 typedef int (*geo_debug_profiler_is_enabled_fn_t)(void);
 typedef size_t (*geo_debug_profiler_stream_next_fn_t)(char *out, size_t cap);
 typedef size_t (*geo_debug_text_read_fn_t)(char *out, size_t cap);
+typedef void (*geo_set_debug_base_callback_fn_t)(void (*cb)(uint32_t section, uint32_t base));
 typedef size_t (*geo_debug_neogeo_get_sprite_state_fn_t)(geo_debug_sprite_state_t *out, size_t cap);
 typedef size_t (*geo_debug_neogeo_get_p1_rom_fn_t)(geo_debug_rom_region_t *out, size_t cap);
 typedef size_t (*geo_debug_disassemble_quick_fn_t)(uint32_t pc, char *out, size_t cap);
@@ -183,6 +184,7 @@ typedef struct  {
     geo_debug_profiler_is_enabled_fn_t debugProfilerIsEnabled;
     geo_debug_profiler_stream_next_fn_t debugProfilerStreamNext;
     geo_debug_text_read_fn_t debugTextRead;
+    geo_set_debug_base_callback_fn_t setDebugBaseCallback;
     geo_debug_neogeo_get_sprite_state_fn_t debugNeoGeoGetSpriteState;
     geo_debug_neogeo_get_p1_rom_fn_t debugNeoGeoGetP1Rom;
     geo_debug_disassemble_quick_fn_t debugDisassembleQuick;
@@ -997,6 +999,7 @@ libretro_host_start(const char *corePath, const char *romPath,
     libretro_host.debugProfilerIsEnabled = (geo_debug_profiler_is_enabled_fn_t)libretro_host_loadSymbol("geo_debug_profiler_is_enabled");
     libretro_host.debugProfilerStreamNext = (geo_debug_profiler_stream_next_fn_t)libretro_host_loadSymbol("geo_debug_profiler_stream_next");
     libretro_host.debugTextRead = (geo_debug_text_read_fn_t)libretro_host_loadSymbol("geo_debug_text_read");
+    libretro_host.setDebugBaseCallback = (geo_set_debug_base_callback_fn_t)libretro_host_loadSymbol("geo_set_debug_base_callback");
     libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_neogeo_get_sprite_state");
     if (!libretro_host.debugNeoGeoGetSpriteState) {
         libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_get_sprite_state");
@@ -1843,6 +1846,16 @@ libretro_host_setVblankCallback(void (*cb)(void *), void *user)
         return false;
     }
     libretro_host.setVblankCallback(cb, user);
+    return true;
+}
+
+bool
+libretro_host_setDebugBaseCallback(void (*cb)(uint32_t section, uint32_t base))
+{
+    if (!libretro_host.setDebugBaseCallback) {
+        return false;
+    }
+    libretro_host.setDebugBaseCallback(cb);
     return true;
 }
 

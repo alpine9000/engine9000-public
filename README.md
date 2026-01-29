@@ -2,11 +2,9 @@
 
 Amiga/Neo Geo debugger/profiler - under heavy development so likely to be unstable for the time being. 
 
-Expect file format changes and other incompatibilities with new versions. 
+Expect file format changes, regressions and other incompatibilities with new versions. 
 
 The UI is custom SDL2, so expect some weird UI experiences.
-
-Amiga version does not support ELF yet, or it might if you install ngdevkit's toolchain.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=Q24F6S8J57U">
@@ -65,12 +63,23 @@ Supported platforms:
   - Force a value at an address (optionally sized)
 - Frame step
 - Frame reverse
+- Print - support for local vars is mixed depending on optimisations and toolchain
 
 ### Neo Geo Fake Peripherals
 
 - `0xFFFF0` - characters written to this address will be output in the console and terminal
 - `0xFFFEC` - writing a checkpoint slot from 0-64 for checkpoint profiling stats
 - These overlay with ROM addresses - other emulators or real neo geo might crash if you use these
+
+### Amiga Fake Peripherals
+
+- `0xFC0000` - characters written to this address will be output in the console and terminal
+- `0xFC0004` - writing a long word to this address sets this as the base address of the .text section
+- `0xFC0008` - writing a long word to this address sets this as the base address of the .data section
+- `0xFC000C` - writing a long word to this address sets this as the base address of the .bss section
+- These overlay with ROM addresses - other emulators or real Amiga might crash if you use these
+
+Checkpoints are not yet implemented on Amiga.
 
 ### Profiling Features
 
@@ -436,6 +445,39 @@ EXAMPLES
 
 ---
 
+### `base`
+	
+SYNOPSIS  
+`base [text|data|bss] [addr|clear]`
+`base clear`
+	
+DESCRIPTION  
+Shows or sets the current runtime base address for each section (`text`, `data`, `bss`). These bases are used to translate between:
+	
+ - **Runtime addresses** (what the core uses / what you read/write in memory), and
+ - **Debug/symbol addresses** (what external resolvers like `addr2line`/`readelf`/`objdump` expect)
+   
+In general:
+ - `debug_addr = runtime_addr - <sectionBase>`
+ - `runtime_addr = debug_addr + <sectionBase>`
+   
+This is required for relocatable images, and affects source/symbol resolution and operations like breakpoints and `print` that depend on debug info.
+	
+NOTES  
+  - `addr` accepts decimal or `0x...`.
+  - `base` values are per-session (not persisted).
+
+EXAMPLES  
+  `base`
+  `base text 0x00C0FE24`
+  `base data 0x00C11320`
+  `base bss 0x00C1138C`
+  `base text`
+  `base bss clear`
+  `base clear`
+  
+---
+
 ## Runtime Requirements
 
 ### Neo Geo BIOS ROMs (required)
@@ -477,17 +519,33 @@ Amiga config is specified by selecting a puae format .uae file
 - macOS default core paths: `./system/geolith_libretro.dylib` for Neo Geo and `./system/puae_libretro.dylib` for Amiga
 - Windows default core paths: `./system/geolith_libretro.dll` for Neo Geo and `./system/puae_libretro.dll` for Amiga
 
-### ELF + toolchain (required for source/symbol features) (Currently Neo Geo only)
+### Toolchain 
 
-For source-level stepping, symbol breakpoints, and rich `print` expressions, you must provide:
+For C source-level stepping, symbol breakpoints, and rich `print` expressions:
 
+Configure your toolchain for each platform in the settings screen. Currently tested:
+
+- Neo Geo - ngdevkit `m68k-neogeo-elf`
+- Amiga - bebbo's amiga-gcc `m68k-amigaos`
+
+Without these, the debugger can still run, but symbol/source-aware features degrade or become unavailable.
+
+#### Neo Geo
 - An ELF compiled with DWARF debug info (`Settings → ELF`, or `--elf PATH`)
 - The Neo Geo toolchain binaries on `PATH`:
   - `m68k-neogeo-elf-addr2line`
   - `m68k-neogeo-elf-objdump`
   - `m68k-neogeo-elf-readelf`
 
-Without these, the debugger can still run, but symbol/source-aware features degrade or become unavailable.
+#### Amiga
+- An hunk compiled with amiga-gcc debug info (`Settings → ELF`, or `--elf PATH`)
+- The amiga-os-gcc binaries on `PATH`:
+  - `m68k-amigaos-addr2line`
+  - `m68k-amigaos-objdump`
+  
+Note: Amiga debugging is complicated by relocation. If your target application is relocated you must inform the debugger of the base address of each section. This can be done with either the `base` command or using the Amiga fake perphierals such that your Amiga loader can automatically inform the debugger of the base addresses. See "Amiga Fake Peripherals" section or "base" command documentation.
+
+- An ELF image with dwarf information running on Amiga should technically work but is untested.
 
 ### Config file + environment variables
 
@@ -505,7 +563,7 @@ Useful environment variables:
 
 Run `e9k-debugger --help` for the full list. The current options include:
 
-#### Neo Geo only (not implemented in Amiga uet)
+#### Neo Geo only (not implemented in Amiga yet)
 - `--elf PATH`
 - `--libretro-core PATH`
 - `--libretro-rom PATH`

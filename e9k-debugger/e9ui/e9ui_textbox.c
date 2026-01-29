@@ -7,6 +7,15 @@
  */
 
 #include "e9ui.h"
+#include <ctype.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dirent.h>
+#endif
 
 typedef struct textbox_state {
     char               *text;
@@ -31,6 +40,14 @@ typedef struct textbox_state {
     void               *key_user;
     void               *user;
     int                frame_visible;
+    e9ui_textbox_completion_mode_t completionMode;
+    char               **completionList;
+    int                completionCount;
+    int                completionCap;
+    int                completionSel;
+    int                completionPrefixLen;
+    char               *completionPrefix;
+    char               *completionRest;
 } textbox_state_t;
 
 typedef struct textbox_snapshot {
@@ -41,6 +58,8 @@ typedef struct textbox_snapshot {
     int sel_end;
 } textbox_snapshot_t;
 
+static void
+textbox_recordUndo(textbox_state_t *st);
 
 static void
 textbox_fillScratch(textbox_state_t *st, int count)
@@ -264,6 +283,555 @@ textbox_snapshot_apply(textbox_state_t *st, const textbox_snapshot_t *snap)
     if (st->sel_end < 0) st->sel_end = 0;
     if (st->sel_start > st->len) st->sel_start = st->len;
     if (st->sel_end > st->len) st->sel_end = st->len;
+}
+
+static void
+textbox_completionClearList(textbox_state_t *st)
+{
+    if (!st) {
+        return;
+    }
+    if (st->completionList) {
+        for (int i = 0; i < st->completionCount; ++i) {
+            alloc_free(st->completionList[i]);
+        }
+        alloc_free(st->completionList);
+    }
+    st->completionList = NULL;
+    st->completionCount = 0;
+    st->completionCap = 0;
+    st->completionSel = -1;
+}
+
+static void
+textbox_completionClear(textbox_state_t *st)
+{
+    if (!st) {
+        return;
+    }
+    textbox_completionClearList(st);
+    st->completionPrefixLen = 0;
+    if (st->completionPrefix) {
+        st->completionPrefix[0] = '\0';
+    }
+    if (st->completionRest) {
+        st->completionRest[0] = '\0';
+    }
+}
+
+static int
+textbox_pathJoin(char *out, size_t cap, const char *dir, const char *name)
+{
+    if (!out || cap == 0 || !dir || !*dir || !name || !*name) {
+        return 0;
+    }
+    size_t dlen = strlen(dir);
+    size_t nlen = strlen(name);
+    int needSep = (dlen > 0 && dir[dlen - 1] != '/' && dir[dlen - 1] != '\\');
+    size_t total = dlen + (needSep ? 1 : 0) + nlen;
+    if (total + 1 > cap) {
+        return 0;
+    }
+    memcpy(out, dir, dlen);
+    size_t pos = dlen;
+    if (needSep) {
+#ifdef _WIN32
+        out[pos++] = '\\';
+#else
+        out[pos++] = '/';
+#endif
+    }
+    memcpy(out + pos, name, nlen);
+    out[pos + nlen] = '\0';
+    return 1;
+}
+
+static int
+textbox_expandTilde(const char *in, char *out, size_t cap)
+{
+    if (!in || !out || cap == 0) {
+        return 0;
+    }
+    if (in[0] != '~' || (in[1] != '\0' && in[1] != '/' && in[1] != '\\')) {
+        strncpy(out, in, cap - 1);
+        out[cap - 1] = '\0';
+        return 1;
+    }
+#ifdef _WIN32
+    const char *home = getenv("USERPROFILE");
+    if (!home || !*home) {
+        home = getenv("APPDATA");
+    }
+#else
+    const char *home = getenv("HOME");
+#endif
+    if (!home || !*home) {
+        strncpy(out, in, cap - 1);
+        out[cap - 1] = '\0';
+        return 1;
+    }
+    size_t hlen = strlen(home);
+    const char *rest = in + 1;
+    if (*rest == '/' || *rest == '\\') {
+        rest++;
+    }
+    size_t rlen = strlen(rest);
+    size_t needSep = (hlen > 0 && home[hlen - 1] != '/' && home[hlen - 1] != '\\') ? 1 : 0;
+    if (hlen + needSep + rlen + 1 > cap) {
+        return 0;
+    }
+    memcpy(out, home, hlen);
+    size_t pos = hlen;
+    if (needSep) {
+#ifdef _WIN32
+        out[pos++] = '\\';
+#else
+        out[pos++] = '/';
+#endif
+    }
+    memcpy(out + pos, rest, rlen);
+    out[pos + rlen] = '\0';
+    return 1;
+}
+
+static int
+textbox_startsWith(const char *s, const char *prefix, int caseInsensitive)
+{
+    if (!s || !prefix) {
+        return 0;
+    }
+    size_t plen = strlen(prefix);
+    if (plen == 0) {
+        return 1;
+    }
+    if (strlen(s) < plen) {
+        return 0;
+    }
+    if (!caseInsensitive) {
+        return strncmp(s, prefix, plen) == 0;
+    }
+    for (size_t i = 0; i < plen; ++i) {
+        unsigned char a = (unsigned char)s[i];
+        unsigned char b = (unsigned char)prefix[i];
+        if (tolower(a) != tolower(b)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int
+textbox_isDirPath(const char *path)
+{
+    if (!path || !*path) {
+        return 0;
+    }
+#ifdef _WIN32
+    DWORD attrs = GetFileAttributesA(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return 0;
+    }
+    return (attrs & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+#else
+    struct stat sb;
+    if (stat(path, &sb) != 0) {
+        return 0;
+    }
+    return S_ISDIR(sb.st_mode) ? 1 : 0;
+#endif
+}
+
+static size_t
+textbox_commonPrefixLen(const char * const *cands, int count, int caseInsensitive)
+{
+    if (!cands || count <= 0 || !cands[0]) {
+        return 0;
+    }
+    size_t commonLen = strlen(cands[0]);
+    for (int i = 1; i < count; ++i) {
+        const char *cand = cands[i] ? cands[i] : "";
+        size_t j = 0;
+        size_t limit = strlen(cand);
+        if (limit < commonLen) {
+            commonLen = limit;
+        }
+        while (j < commonLen) {
+            unsigned char a = (unsigned char)cands[0][j];
+            unsigned char b = (unsigned char)cand[j];
+            if (caseInsensitive) {
+                a = (unsigned char)tolower(a);
+                b = (unsigned char)tolower(b);
+            }
+            if (a != b) {
+                break;
+            }
+            ++j;
+        }
+        commonLen = j;
+        if (commonLen == 0) {
+            break;
+        }
+    }
+    return commonLen;
+}
+
+static int
+textbox_completionCompare(const void *a, const void *b)
+{
+    const char *sa = *(const char * const *)a;
+    const char *sb = *(const char * const *)b;
+    if (!sa) {
+        sa = "";
+    }
+    if (!sb) {
+        sb = "";
+    }
+#ifdef _WIN32
+    while (*sa && *sb) {
+        unsigned char ca = (unsigned char)tolower((unsigned char)*sa);
+        unsigned char cb = (unsigned char)tolower((unsigned char)*sb);
+        if (ca != cb) {
+            return (ca < cb) ? -1 : 1;
+        }
+        ++sa;
+        ++sb;
+    }
+    if (*sa == *sb) {
+        return 0;
+    }
+    return *sa ? 1 : -1;
+#else
+    return strcmp(sa, sb);
+#endif
+}
+
+static int
+textbox_buildFilenameCompletions(textbox_state_t *st, const char *dirPath, const char *fragment, int foldersOnly)
+{
+    if (!st || !dirPath) {
+        return 0;
+    }
+    textbox_completionClearList(st);
+
+    const char *dir = dirPath;
+    if (!*dir) {
+        dir = ".";
+    }
+    int caseInsensitive = 0;
+#ifdef _WIN32
+    caseInsensitive = 1;
+#endif
+
+#ifdef _WIN32
+    char pattern[PATH_MAX];
+    if (!textbox_pathJoin(pattern, sizeof(pattern), dir, "*")) {
+        return 0;
+    }
+    WIN32_FIND_DATAA data;
+    HANDLE h = FindFirstFileA(pattern, &data);
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    do {
+        const char *name = data.cFileName;
+        if (!name || !*name) {
+            continue;
+        }
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        int isDir = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        if (foldersOnly && !isDir) {
+            continue;
+        }
+        if (fragment && *fragment && !textbox_startsWith(name, fragment, caseInsensitive)) {
+            continue;
+        }
+        if (st->completionCount >= st->completionCap) {
+            int next = st->completionCap ? st->completionCap * 2 : 64;
+            char **tmp = (char**)alloc_realloc(st->completionList, (size_t)next * sizeof(char*));
+            if (!tmp) {
+                break;
+            }
+            st->completionList = tmp;
+            st->completionCap = next;
+        }
+        if (isDir) {
+            size_t nlen = strlen(name);
+            char *cand = (char*)alloc_alloc(nlen + 2);
+            if (!cand) {
+                continue;
+            }
+            memcpy(cand, name, nlen);
+            cand[nlen] = '\\';
+            cand[nlen + 1] = '\0';
+            st->completionList[st->completionCount++] = cand;
+        } else {
+            st->completionList[st->completionCount++] = alloc_strdup(name);
+        }
+    } while (FindNextFileA(h, &data));
+    FindClose(h);
+#else
+    DIR *dp = opendir(dir);
+    if (!dp) {
+        return 0;
+    }
+    struct dirent *ent;
+    while ((ent = readdir(dp)) != NULL) {
+        const char *name = ent->d_name;
+        if (!name || !*name) {
+            continue;
+        }
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        if (fragment && *fragment && !textbox_startsWith(name, fragment, caseInsensitive)) {
+            continue;
+        }
+        int isDir = 0;
+        {
+            char full[PATH_MAX];
+            if (!textbox_pathJoin(full, sizeof(full), dir, name)) {
+                continue;
+            }
+            isDir = textbox_isDirPath(full) ? 1 : 0;
+        }
+        if (foldersOnly && !isDir) {
+            continue;
+        }
+        if (st->completionCount >= st->completionCap) {
+            int next = st->completionCap ? st->completionCap * 2 : 64;
+            char **tmp = (char**)alloc_realloc(st->completionList, (size_t)next * sizeof(char*));
+            if (!tmp) {
+                break;
+            }
+            st->completionList = tmp;
+            st->completionCap = next;
+        }
+        if (isDir) {
+            size_t nlen = strlen(name);
+            char *cand = (char*)alloc_alloc(nlen + 2);
+            if (!cand) {
+                continue;
+            }
+            memcpy(cand, name, nlen);
+            cand[nlen] = '/';
+            cand[nlen + 1] = '\0';
+            st->completionList[st->completionCount++] = cand;
+        } else {
+            st->completionList[st->completionCount++] = alloc_strdup(name);
+        }
+    }
+    closedir(dp);
+#endif
+
+    if (st->completionCount <= 0) {
+        textbox_completionClear(st);
+        return 0;
+    }
+    qsort(st->completionList, (size_t)st->completionCount, sizeof(char*), textbox_completionCompare);
+    return 1;
+}
+
+static int
+textbox_applyFilenameCompletionChoice(textbox_state_t *st, e9ui_context_t *ctx, TTF_Font *font, int viewW, const char *choiceText)
+{
+    if (!st || !choiceText || !st->completionPrefix || !st->completionRest) {
+        return 0;
+    }
+    int prelen = st->completionPrefixLen;
+    if (prelen < 0) {
+        prelen = 0;
+    }
+    int maxLen = st->maxLen;
+    if (maxLen <= 0) {
+        return 0;
+    }
+    st->scratch[0] = '\0';
+    int nl = 0;
+
+    size_t prefixLen = strlen(st->completionPrefix);
+    if ((int)prefixLen > maxLen) {
+        prefixLen = (size_t)maxLen;
+    }
+    memcpy(st->scratch, st->completionPrefix, prefixLen);
+    nl = (int)prefixLen;
+    st->scratch[nl] = '\0';
+
+    size_t clen = strlen(choiceText);
+    if (nl + (int)clen > maxLen) {
+        clen = (size_t)(maxLen - nl);
+    }
+    memcpy(st->scratch + nl, choiceText, clen);
+    nl += (int)clen;
+    st->scratch[nl] = '\0';
+
+    int addSep = 0;
+    if (nl < maxLen) {
+        char full[PATH_MAX];
+        const char *dirForCheck = (st->completionPrefix[0] != '\0') ? st->completionPrefix : ".";
+        if (textbox_pathJoin(full, sizeof(full), dirForCheck, choiceText) && textbox_isDirPath(full)) {
+            char last = (nl > 0) ? st->scratch[nl - 1] : '\0';
+            if (last != '/' && last != '\\') {
+#ifdef _WIN32
+                st->scratch[nl++] = '\\';
+#else
+                st->scratch[nl++] = '/';
+#endif
+                st->scratch[nl] = '\0';
+                addSep = 1;
+            }
+        }
+    }
+
+    size_t rl = strlen(st->completionRest);
+    if (nl + (int)rl > maxLen) {
+        rl = (size_t)(maxLen - nl);
+    }
+    memcpy(st->scratch + nl, st->completionRest, rl);
+    nl += (int)rl;
+    st->scratch[nl] = '\0';
+
+    textbox_recordUndo(st);
+    memcpy(st->text, st->scratch, (size_t)nl + 1);
+    st->len = nl;
+    st->cursor = prelen + (int)strlen(choiceText) + addSep;
+    if (st->cursor > st->len) {
+        st->cursor = st->len;
+    }
+    textbox_clearSelection(st);
+    textbox_notifyChange(st, ctx);
+    textbox_updateScroll(st, font, viewW);
+    return 1;
+}
+
+static int
+textbox_filenameCompletion(textbox_state_t *st, e9ui_context_t *ctx, TTF_Font *font, int viewW, int reverse)
+{
+    if (!st || !ctx || !font) {
+        return 0;
+    }
+    if (st->completionMode == e9ui_textbox_completion_none) {
+        return 0;
+    }
+
+    if (st->completionList && st->completionCount > 0) {
+        int total = st->completionCount;
+        if (st->completionSel < 0) {
+            st->completionSel = reverse ? total - 1 : 0;
+        } else {
+            int next = st->completionSel + (reverse ? -1 : 1);
+            if (next < 0) {
+                next = total - 1;
+            }
+            if (next >= total) {
+                next = 0;
+            }
+            st->completionSel = next;
+        }
+        const char *cand = st->completionList[st->completionSel] ? st->completionList[st->completionSel] : "";
+        return textbox_applyFilenameCompletionChoice(st, ctx, font, viewW, cand);
+    }
+
+    const char *text = st->text ? st->text : "";
+    int cursor = st->cursor;
+    if (cursor < 0) {
+        cursor = 0;
+    }
+    if (cursor > st->len) {
+        cursor = st->len;
+    }
+
+    int tokenStart = cursor;
+    while (tokenStart > 0) {
+        char ch = text[tokenStart - 1];
+        if (ch == '/' || ch == '\\') {
+            break;
+        }
+        tokenStart--;
+    }
+    int fragmentLen = cursor - tokenStart;
+    if (fragmentLen < 0) {
+        fragmentLen = 0;
+    }
+    if (tokenStart < 0) {
+        tokenStart = 0;
+    }
+    if (tokenStart > st->len) {
+        tokenStart = st->len;
+    }
+
+    if (!st->completionPrefix || !st->completionRest) {
+        return 1;
+    }
+
+    char prefixRaw[PATH_MAX];
+    size_t pl = (size_t)tokenStart;
+    if (pl >= sizeof(prefixRaw)) {
+        pl = sizeof(prefixRaw) - 1;
+    }
+    memcpy(prefixRaw, text, pl);
+    prefixRaw[pl] = '\0';
+
+    strncpy(st->completionPrefix, prefixRaw, (size_t)st->maxLen);
+    st->completionPrefix[st->maxLen] = '\0';
+    st->completionPrefixLen = (int)strlen(st->completionPrefix);
+
+    const char *rest = &text[cursor];
+    strncpy(st->completionRest, rest, (size_t)st->maxLen);
+    st->completionRest[st->maxLen] = '\0';
+
+    char fragment[PATH_MAX];
+    size_t fl = (size_t)fragmentLen;
+    if (fl >= sizeof(fragment)) {
+        fl = sizeof(fragment) - 1;
+    }
+    memcpy(fragment, &text[tokenStart], fl);
+    fragment[fl] = '\0';
+
+    char dirExpanded[PATH_MAX];
+    if (!textbox_expandTilde(prefixRaw, dirExpanded, sizeof(dirExpanded))) {
+        strncpy(dirExpanded, prefixRaw, sizeof(dirExpanded) - 1);
+        dirExpanded[sizeof(dirExpanded) - 1] = '\0';
+    }
+    const char *dirToOpen = dirExpanded;
+    if (!dirToOpen || !*dirToOpen) {
+        dirToOpen = ".";
+    }
+    int foldersOnly = (st->completionMode == e9ui_textbox_completion_folder) ? 1 : 0;
+    if (!textbox_buildFilenameCompletions(st, dirToOpen, fragment, foldersOnly)) {
+        return 1;
+    }
+
+    int count = st->completionCount;
+    int caseInsensitive = 0;
+#ifdef _WIN32
+    caseInsensitive = 1;
+#endif
+    if (count == 1) {
+        const char *cand = st->completionList[0] ? st->completionList[0] : "";
+        textbox_applyFilenameCompletionChoice(st, ctx, font, viewW, cand);
+        textbox_completionClear(st);
+        return 1;
+    }
+    size_t commonLen = textbox_commonPrefixLen((const char * const *)st->completionList, count, caseInsensitive);
+    if ((int)commonLen > fragmentLen) {
+        char common[PATH_MAX];
+        size_t clen = commonLen;
+        if (clen >= sizeof(common)) {
+            clen = sizeof(common) - 1;
+        }
+        memcpy(common, st->completionList[0], clen);
+        common[clen] = '\0';
+        textbox_applyFilenameCompletionChoice(st, ctx, font, viewW, common);
+        textbox_completionClear(st);
+        return 1;
+    }
+
+    st->completionSel = reverse ? count - 1 : 0;
+    const char *cand = st->completionList[st->completionSel] ? st->completionList[st->completionSel] : "";
+    textbox_applyFilenameCompletionChoice(st, ctx, font, viewW, cand);
+    return 1;
 }
 
 static void
@@ -607,6 +1175,7 @@ textbox_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_
     TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
     int viewW = self->bounds.w - 8 * 2;
     if (ev->type == SDL_TEXTINPUT) {
+        textbox_completionClear(st);
         if (!font) {
             return 1;
         }
@@ -646,10 +1215,16 @@ textbox_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_
     }
     SDL_Keycode kc = ev->key.keysym.sym;
     SDL_Keymod mods = ev->key.keysym.mod;
+    if (kc != SDLK_TAB) {
+        textbox_completionClear(st);
+    }
     int accel = (mods & KMOD_GUI) || (mods & KMOD_CTRL);
     int shift = (mods & KMOD_SHIFT);
     if (st->key_cb && st->key_cb(ctx, kc, mods, st->key_user)) {
         return 1;
+    }
+    if (!accel && kc == SDLK_TAB && st->completionMode != e9ui_textbox_completion_none) {
+        return textbox_filenameCompletion(st, ctx, font, viewW, shift ? 1 : 0);
     }
     if (accel && kc == SDLK_z) {
         if (shift) {
@@ -891,11 +1466,14 @@ textbox_dtor(e9ui_component_t *self, e9ui_context_t *ctx)
   }
   textbox_state_t *st = (textbox_state_t*)self->state;
   if (st) {
+    textbox_completionClear(st);
     textbox_history_clear(&st->undo);
     textbox_history_clear(&st->redo);
     alloc_free(st->text);
     alloc_free(st->placeholder);
     alloc_free(st->scratch);
+    alloc_free(st->completionPrefix);
+    alloc_free(st->completionRest);
   }
 }
 
@@ -918,6 +1496,8 @@ e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_ch
     st->maxLen = maxLen;
     st->text = (char*)alloc_calloc((size_t)maxLen + 1, 1);
     st->scratch = (char*)alloc_calloc((size_t)maxLen + 1, 1);
+    st->completionPrefix = (char*)alloc_calloc((size_t)maxLen + 1, 1);
+    st->completionRest = (char*)alloc_calloc((size_t)maxLen + 1, 1);
     st->editable = 1;
     st->sel_start = 0;
     st->sel_end = 0;
@@ -928,9 +1508,17 @@ e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_ch
     st->change = onChange;
     st->user = user;
     st->frame_visible = 1;
-    if (!st->text || !st->scratch) {
+    st->completionMode = e9ui_textbox_completion_none;
+    st->completionList = NULL;
+    st->completionCount = 0;
+    st->completionCap = 0;
+    st->completionSel = -1;
+    st->completionPrefixLen = 0;
+    if (!st->text || !st->scratch || !st->completionPrefix || !st->completionRest) {
         alloc_free(st->text);
         alloc_free(st->scratch);
+        alloc_free(st->completionPrefix);
+        alloc_free(st->completionRest);
         alloc_free(st);
         alloc_free(comp);
         return NULL;
@@ -975,6 +1563,7 @@ e9ui_textbox_setText(e9ui_component_t *comp, const char *text)
     st->cursor = len;
     textbox_clearSelection(st);
     st->scrollX = 0;
+    textbox_completionClear(st);
     textbox_history_clear(&st->undo);
     textbox_history_clear(&st->redo);
 }
@@ -1105,4 +1694,25 @@ e9ui_textbox_setNumericOnly(e9ui_component_t *comp, int numeric_only)
         }
         textbox_clearSelection(st);
     }
+}
+
+void
+e9ui_textbox_setCompletionMode(e9ui_component_t *comp, e9ui_textbox_completion_mode_t mode)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)comp->state;
+    st->completionMode = mode;
+    textbox_completionClear(st);
+}
+
+e9ui_textbox_completion_mode_t
+e9ui_textbox_getCompletionMode(const e9ui_component_t *comp)
+{
+    if (!comp || !comp->state) {
+        return e9ui_textbox_completion_none;
+    }
+    const textbox_state_t *st = (const textbox_state_t*)comp->state;
+    return st->completionMode;
 }

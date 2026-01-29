@@ -50,6 +50,11 @@ typedef struct settings_coresystem_state {
     int                    allowRebuild;
 } settings_coresystem_state_t;
 
+typedef struct settings_toolchainprefix_state {
+    char                  *prefix;
+    debugger_system_type_t system;
+} settings_toolchainprefix_state_t;
+
 static void
 settings_rebuildModalBody(e9ui_context_t *ctx);
 
@@ -292,6 +297,7 @@ settings_restartNeededForNeogeo(const e9k_neogeo_config_t *before, const e9k_neo
     int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0 ||
                      strcmp(before->romFolder, after->romFolder) != 0;
     int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int toolchainChanged = strcmp(before->libretro.toolchainPrefix, after->libretro.toolchainPrefix) != 0;
     int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
     int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
     int sourceChanged = strcmp(before->libretro.sourceDir, after->libretro.sourceDir) != 0;
@@ -300,7 +306,7 @@ settings_restartNeededForNeogeo(const e9k_neogeo_config_t *before, const e9k_neo
     int audioBefore = settings_audioBufferNormalized(before->libretro.audioBufferMs);
     int audioAfter = settings_audioBufferNormalized(after->libretro.audioBufferMs);
     int audioChanged = audioBefore != audioAfter;
-    return romChanged || elfChanged || biosChanged || savesChanged || sourceChanged || coreChanged || sysChanged || audioChanged;
+    return romChanged || elfChanged || toolchainChanged || biosChanged || savesChanged || sourceChanged || coreChanged || sysChanged || audioChanged;
 }
 
 static int
@@ -311,6 +317,7 @@ settings_restartNeededForAmiga(const e9k_amiga_config_t *before, const e9k_amiga
     }
     int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0;
     int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int toolchainChanged = strcmp(before->libretro.toolchainPrefix, after->libretro.toolchainPrefix) != 0;
     int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
     int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
     int sourceChanged = strcmp(before->libretro.sourceDir, after->libretro.sourceDir) != 0;
@@ -318,7 +325,7 @@ settings_restartNeededForAmiga(const e9k_amiga_config_t *before, const e9k_amiga
     int audioBefore = settings_audioBufferNormalized(before->libretro.audioBufferMs);
     int audioAfter = settings_audioBufferNormalized(after->libretro.audioBufferMs);
     int audioChanged = audioBefore != audioAfter;
-    return romChanged || elfChanged || biosChanged || savesChanged || sourceChanged || coreChanged || audioChanged;
+    return romChanged || elfChanged || toolchainChanged || biosChanged || savesChanged || sourceChanged || coreChanged || audioChanged;
 }
 
 static int
@@ -434,10 +441,16 @@ settings_save(void)
 {
     int needsRestart = settings_needsRestart();
     if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        if (!debugger.settingsEdit.amiga.libretro.toolchainPrefix[0]) {
+            snprintf(debugger.settingsEdit.amiga.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.amiga.libretro.toolchainPrefix), "m68k-amigaos-");
+        }
         if (debugger.settingsEdit.amiga.libretro.audioBufferMs <= 0) {
             debugger.settingsEdit.amiga.libretro.audioBufferMs = 50;
         }
     } else {
+        if (!debugger.settingsEdit.neogeo.libretro.toolchainPrefix[0]) {
+            snprintf(debugger.settingsEdit.neogeo.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.neogeo.libretro.toolchainPrefix), "m68k-neogeo-elf");
+        }
         if (debugger.settingsEdit.neogeo.libretro.audioBufferMs <= 0) {
             debugger.settingsEdit.neogeo.libretro.audioBufferMs = 50;
         }
@@ -524,6 +537,38 @@ settings_defaultCorePathForSystem(debugger_system_type_t system)
     default:
         return "./system/geolith_libretro.dylib";
     }
+}
+
+static const char *
+settings_defaultToolchainPrefixForSystem(debugger_system_type_t system)
+{
+    switch (system) {
+    case DEBUGGER_SYSTEM_AMIGA:
+        return "m68k-amigaos-";
+    case DEBUGGER_SYSTEM_NEOGEO:
+    case DEBUGGER_SYSTEM_MEGADRIVE:
+    default:
+        return "m68k-neogeo-elf";
+    }
+}
+
+static void
+settings_toolchainPrefixChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *text, void *user)
+{
+    (void)ctx;
+    settings_toolchainprefix_state_t *st = (settings_toolchainprefix_state_t *)user;
+    if (!st || !st->prefix) {
+        return;
+    }
+    const char *value = text;
+    if (!value || !*value) {
+        value = settings_defaultToolchainPrefixForSystem(st->system);
+        if (comp && value && *value) {
+            e9ui_labeled_textbox_setText(comp, value);
+        }
+    }
+    settings_config_setValue(st->prefix, PATH_MAX, value);
+    settings_updateSaveLabel();
 }
 
 static int
@@ -792,6 +837,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     e9ui_component_t *fsSaves = NULL;
     e9ui_component_t *fsSource = NULL;
     e9ui_component_t *fsCore = NULL;
+    e9ui_component_t *ltToolchain = NULL;
     e9ui_component_t *ltAudio = NULL;
     e9ui_component_t *rowSystemCenter = NULL;
     e9ui_component_t *rowCoreCenter = NULL;
@@ -811,6 +857,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     if (isAmiga) {
         fsRom = e9ui_fileSelect_make("UAE CONFIG", 120, 600, "...", romExtsAmiga, 1, E9UI_FILESELECT_FILE);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, NULL, NULL);
         fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -820,6 +867,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         fsRom = e9ui_fileSelect_make("ROM", 120, 600, "...", romExtsNeogeo, 1, E9UI_FILESELECT_FILE);
         fsRomFolder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, NULL, NULL);
         fsBios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -912,6 +960,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
     int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
     int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
+    int hToolchain = ltToolchain && ltToolchain->preferredHeight ? ltToolchain->preferredHeight(ltToolchain, ctx, contentW) : 0;
     int hSource = fsSource && fsSource->preferredHeight ? fsSource->preferredHeight(fsSource, ctx, contentW) : 0;
     int hBios = fsBios && fsBios->preferredHeight ? fsBios->preferredHeight(fsBios, ctx, contentW) : 0;
     int hSaves = fsSaves && fsSaves->preferredHeight ? fsSaves->preferredHeight(fsSaves, ctx, contentW) : 0;
@@ -929,6 +978,9 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     }
     if (fsElf) {
         contentH += hGap + hElf;
+    }
+    if (ltToolchain) {
+        contentH += hGap + hToolchain;
     }
     if (fsSource) {
         contentH += hGap + hSource;
@@ -982,6 +1034,9 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     if (fsCore) {
         e9ui_childDestroy(fsCore, ctx);
     }
+    if (ltToolchain) {
+        e9ui_childDestroy(ltToolchain, ctx);
+    }
     if (ltAudio) {
         e9ui_childDestroy(ltAudio, ctx);
     }
@@ -1009,6 +1064,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
     e9ui_component_t *fsSaves = NULL;
     e9ui_component_t *fsSource = NULL;
     e9ui_component_t *fsCore = NULL;
+    e9ui_component_t *ltToolchain = NULL;
     e9ui_component_t *ltAudio = NULL;
     e9ui_component_t *rowSystemCenter = NULL;
     e9ui_component_t *rowGlobalCenter = NULL;
@@ -1035,6 +1091,12 @@ settings_buildModalBody(e9ui_context_t *ctx)
     if (isAmiga) {
         fsRom = e9ui_fileSelect_make("UAE CONFIG", 120, 600, "...", romExtsAmiga, 1, E9UI_FILESELECT_FILE);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        settings_toolchainprefix_state_t *tc = (settings_toolchainprefix_state_t *)alloc_calloc(1, sizeof(*tc));
+        if (tc) {
+            tc->prefix = debugger.settingsEdit.amiga.libretro.toolchainPrefix;
+            tc->system = DEBUGGER_SYSTEM_AMIGA;
+        }
+        ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, settings_toolchainPrefixChanged, tc);
         fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -1045,6 +1107,13 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setText(fsRom, debugger.settingsEdit.amiga.libretro.romPath);
         e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.elfPath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
+        if (ltToolchain) {
+            if (!debugger.settingsEdit.amiga.libretro.toolchainPrefix[0]) {
+                snprintf(debugger.settingsEdit.amiga.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.amiga.libretro.toolchainPrefix), "%s",
+                         settings_defaultToolchainPrefixForSystem(DEBUGGER_SYSTEM_AMIGA));
+            }
+            e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.amiga.libretro.toolchainPrefix);
+        }
         e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.amiga.libretro.systemDir);
         e9ui_fileSelect_setText(fsSaves, debugger.settingsEdit.amiga.libretro.saveDir);
         e9ui_fileSelect_setText(fsSource, debugger.settingsEdit.amiga.libretro.sourceDir);
@@ -1053,6 +1122,12 @@ settings_buildModalBody(e9ui_context_t *ctx)
         fsRom = e9ui_fileSelect_make("ROM", 120, 600, "...", romExtsNeogeo, 1, E9UI_FILESELECT_FILE);
         fsRomFolder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        settings_toolchainprefix_state_t *tc = (settings_toolchainprefix_state_t *)alloc_calloc(1, sizeof(*tc));
+        if (tc) {
+            tc->prefix = debugger.settingsEdit.neogeo.libretro.toolchainPrefix;
+            tc->system = DEBUGGER_SYSTEM_NEOGEO;
+        }
+        ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, settings_toolchainPrefixChanged, tc);
         fsBios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSource = e9ui_fileSelect_make("SOURCE FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -1075,6 +1150,13 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setText(fsRomFolder, debugger.settingsEdit.neogeo.romFolder);
         e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.neogeo.libretro.elfPath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
+        if (ltToolchain) {
+            if (!debugger.settingsEdit.neogeo.libretro.toolchainPrefix[0]) {
+                snprintf(debugger.settingsEdit.neogeo.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.neogeo.libretro.toolchainPrefix), "%s",
+                         settings_defaultToolchainPrefixForSystem(DEBUGGER_SYSTEM_NEOGEO));
+            }
+            e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.neogeo.libretro.toolchainPrefix);
+        }
         e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.neogeo.libretro.systemDir);
         e9ui_fileSelect_setText(fsSaves, debugger.settingsEdit.neogeo.libretro.saveDir);
         e9ui_fileSelect_setText(fsSource, debugger.settingsEdit.neogeo.libretro.sourceDir);
@@ -1263,6 +1345,10 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
         e9ui_stack_addFixed(stack, fsElf);
     }
+    if (ltToolchain) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, ltToolchain);
+    }
     if (fsSource) {
         e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
         e9ui_stack_addFixed(stack, fsSource);
@@ -1316,6 +1402,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
     int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
     int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
+    int hToolchain = ltToolchain && ltToolchain->preferredHeight ? ltToolchain->preferredHeight(ltToolchain, ctx, contentW) : 0;
     int hSource = fsSource && fsSource->preferredHeight ? fsSource->preferredHeight(fsSource, ctx, contentW) : 0;
     int hBios = fsBios && fsBios->preferredHeight ? fsBios->preferredHeight(fsBios, ctx, contentW) : 0;
     int hSaves = fsSaves && fsSaves->preferredHeight ? fsSaves->preferredHeight(fsSaves, ctx, contentW) : 0;
@@ -1333,6 +1420,9 @@ settings_buildModalBody(e9ui_context_t *ctx)
     }
     if (fsElf) {
         contentH += hGap + hElf;
+    }
+    if (ltToolchain) {
+        contentH += hGap + hToolchain;
     }
     if (fsSource) {
         contentH += hGap + hSource;

@@ -11,11 +11,38 @@
 #include <readline/history.h>
 #include <ctype.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "e9ui.h" 
 #include "prompt.h"
 #include "debugger.h"
 #include "console_cmd.h"
+
+#define PROMPT_HISTORY_MAX 10000
+
+static int
+prompt_appendHistoryLine(const char *path, const char *line)
+{
+    if (!path || !*path || !line) {
+        return 0;
+    }
+    FILE *fp = fopen(path, "a");
+    if (!fp) {
+        return 0;
+    }
+    // History expects one command per line.
+    // Strip newlines defensively so we don't corrupt the file format.
+    for (const char *p = line; *p; ++p) {
+        if (*p == '\n' || *p == '\r') {
+            fputc(' ', fp);
+        } else {
+            fputc(*p, fp);
+        }
+    }
+    fputc('\n', fp);
+    fclose(fp);
+    return 1;
+}
 
 static int font_line_height_local(TTF_Font *font) {
     if (font) {
@@ -457,7 +484,11 @@ prompt_onSubmit(e9ui_context_t *ctx, void *user)
     if (run && *run && run == text) {
         add_history(run);
         if (st->historyPath[0]) {
-            write_history(st->historyPath);
+            // Avoid rewriting potentially huge history files on every command.
+            // Prefer appending the latest entry; fall back to write_history if needed.
+            if (!prompt_appendHistoryLine(st->historyPath, run)) {
+                write_history(st->historyPath);
+            }
         }
     }
     if (ctx && ctx->sendLine) {
@@ -721,18 +752,31 @@ prompt_keyHandler(e9ui_context_t *ctx, SDL_Keycode kc, SDL_Keymod km, void *user
 }
 
 e9ui_component_t *
-prompt_makeComponent(void)
-{
-    e9ui_component_t *c = (e9ui_component_t*)alloc_calloc(1, sizeof(*c));
-    c->name = "prompt";
-    prompt_state_t *st = (prompt_state_t*)alloc_calloc(1, sizeof(prompt_state_t));
-    st->killBuf[0] = '\0'; st->histNavActive = 0; st->histNavIndex = -1; st->histSavedLen = 0; st->histSavedCursor = 0; st->historyPath[0] = '\0';
-    st->cmpl = NULL; st->cmplCount = 0; st->cmplCap = 0; st->cmplVisible = 0; st->cmplSel = -1; st->cmplPageStart = 0; st->cmplPageCycleDone = 0;
-    using_history(); const char *home = getenv("HOME"); if (home && *home) { snprintf(st->historyPath, sizeof(st->historyPath), "%s/.e9k_history", home); read_history(st->historyPath); }
-    st->textbox = e9ui_textbox_make(PROMPT_MAX - 1, prompt_onSubmit, prompt_onChange, st);
-    if (st->textbox) {
-        e9ui_textbox_setFrameVisible(st->textbox, 0);
-        e9ui_textbox_setKeyHandler(st->textbox, prompt_keyHandler, st);
+	prompt_makeComponent(void)
+	{
+	    e9ui_component_t *c = (e9ui_component_t*)alloc_calloc(1, sizeof(*c));
+	    c->name = "prompt";
+	    prompt_state_t *st = (prompt_state_t*)alloc_calloc(1, sizeof(prompt_state_t));
+	    st->killBuf[0] = '\0'; st->histNavActive = 0; st->histNavIndex = -1; st->histSavedLen = 0; st->histSavedCursor = 0; st->historyPath[0] = '\0';
+	    st->cmpl = NULL; st->cmplCount = 0; st->cmplCap = 0; st->cmplVisible = 0; st->cmplSel = -1; st->cmplPageStart = 0; st->cmplPageCycleDone = 0;
+	    using_history(); const char *home = getenv("HOME"); if (home && *home) {
+	        snprintf(st->historyPath, sizeof(st->historyPath), "%s/.e9k_history", home);
+
+	        // Cap in-memory history to avoid unbounded growth, and truncate the file
+	        // before reading it so we don't load multi-million line histories.
+	        stifle_history(PROMPT_HISTORY_MAX);
+	        struct stat stbuf;
+	        if (stat(st->historyPath, &stbuf) == 0) {
+	            if (stbuf.st_size > (off_t)(8 * 1024 * 1024)) {
+	                (void)history_truncate_file(st->historyPath, PROMPT_HISTORY_MAX);
+	            }
+	        }
+	        read_history(st->historyPath);
+	    }
+	    st->textbox = e9ui_textbox_make(PROMPT_MAX - 1, prompt_onSubmit, prompt_onChange, st);
+	    if (st->textbox) {
+	        e9ui_textbox_setFrameVisible(st->textbox, 0);
+	        e9ui_textbox_setKeyHandler(st->textbox, prompt_keyHandler, st);
         e9ui_child_add(c, st->textbox, NULL);
         e9ui_setDisableVariable(st->textbox, &c->disabled, 1);
     }

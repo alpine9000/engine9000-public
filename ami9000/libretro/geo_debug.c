@@ -23,6 +23,9 @@ extern bool libretro_frame_end;
 
 #define GEO_DEBUG_EXPORT RETRO_API
 
+// Fake debug output register support (written by target code, consumed by e9k-debugger)
+#define GEO_DEBUG_TEXT_CAP 8192
+
 static int geo_debug_paused = 0;
 static uint32_t geo_debug_callstack[GEO_DEBUG_CALLSTACK_MAX];
 static size_t geo_debug_callstackDepth = 0;
@@ -34,6 +37,9 @@ static int geo_debug_stepNext = 0;
 static size_t geo_debug_stepNextDepth = 0;
 static uint32_t geo_debug_stepStartPc = 0;
 static int geo_debug_stepNextSkipOnce = 0;
+
+static int geo_debug_skipBreakpointOnce = 0;
+static uint32_t geo_debug_skipBreakpointPc = 0;
 
 static uint32_t geo_debug_breakpoints[GEO_DEBUG_BREAKPOINT_MAX];
 static size_t geo_debug_breakpointCount = 0;
@@ -61,7 +67,34 @@ static geo_debug_checkpoint_t geo_debug_checkpoints[GEO_CHECKPOINT_COUNT];
 
 static int geo_debug_profilerEnabled = 0;
 
+static void (*geo_debug_setDebugBaseCb)(uint32_t section, uint32_t base) = NULL;
+
+static char geo_debug_textBuf[GEO_DEBUG_TEXT_CAP];
+static size_t geo_debug_textHead = 0;
+static size_t geo_debug_textTail = 0;
+static size_t geo_debug_textCount = 0;
+
 static void geo_debug_requestBreak(void);
+
+void
+geo_debug_text_write(uae_u8 byte)
+{
+	if (geo_debug_textCount == GEO_DEBUG_TEXT_CAP) {
+		geo_debug_textTail = (geo_debug_textTail + 1) % GEO_DEBUG_TEXT_CAP;
+		geo_debug_textCount--;
+	}
+	geo_debug_textBuf[geo_debug_textHead] = (char)byte;
+	geo_debug_textHead = (geo_debug_textHead + 1) % GEO_DEBUG_TEXT_CAP;
+	geo_debug_textCount++;
+}
+
+void
+geo_debug_set_debug_base(uint32_t section, uae_u32 base)
+{
+	if (geo_debug_setDebugBaseCb) {
+		geo_debug_setDebugBaseCb(section, (uint32_t)base);
+	}
+}
 
 static uint32_t
 geo_debug_maskAddr(uaecptr addr)
@@ -224,6 +257,7 @@ geo_debug_pause(void)
 	geo_debug_stepInstr = 0;
 	geo_debug_stepInstrAfter = 0;
 	geo_debug_stepNext = 0;
+	geo_debug_skipBreakpointOnce = 0;
 }
 
 GEO_DEBUG_EXPORT void
@@ -233,6 +267,12 @@ geo_debug_resume(void)
 	geo_debug_stepInstr = 0;
 	geo_debug_stepInstrAfter = 0;
 	geo_debug_stepNext = 0;
+
+	uint32_t pc24 = geo_debug_maskAddr(m68k_getpc());
+	if (geo_debug_hasBreakpoint(pc24)) {
+		geo_debug_skipBreakpointOnce = 1;
+		geo_debug_skipBreakpointPc = pc24;
+	}
 }
 
 GEO_DEBUG_EXPORT int
@@ -426,6 +466,12 @@ geo_set_vblank_callback(void (*cb)(void *), void *user)
 {
 	geo_debug_vblankCb = cb;
 	geo_debug_vblankUser = user;
+}
+
+GEO_DEBUG_EXPORT void
+geo_set_debug_base_callback(void (*cb)(uint32_t section, uint32_t base))
+{
+	geo_debug_setDebugBaseCb = cb;
 }
 
 GEO_DEBUG_EXPORT void
@@ -653,6 +699,13 @@ geo_debug_instructionHook(uaecptr pc, uae_u16 opcode)
 		}
 	}
 
+	if (geo_debug_skipBreakpointOnce) {
+		geo_debug_skipBreakpointOnce = 0;
+		if (pc24 == geo_debug_skipBreakpointPc) {
+			return 0;
+		}
+	}
+
 	if (geo_debug_consumeTempBreakpoint(pc24) || geo_debug_hasBreakpoint(pc24)) {
 		geo_debug_requestBreak();
 		return 1;
@@ -871,9 +924,16 @@ geo_debug_profiler_stream_next(char *out, size_t cap)
 GEO_DEBUG_EXPORT size_t
 geo_debug_text_read(char *out, size_t cap)
 {
-	(void)out;
-	(void)cap;
-	return 0;
+	if (!out || cap == 0 || geo_debug_textCount == 0) {
+		return 0;
+	}
+	size_t n = geo_debug_textCount < cap ? geo_debug_textCount : cap;
+	for (size_t i = 0; i < n; ++i) {
+		out[i] = geo_debug_textBuf[geo_debug_textTail];
+		geo_debug_textTail = (geo_debug_textTail + 1) % GEO_DEBUG_TEXT_CAP;
+	}
+	geo_debug_textCount -= n;
+	return n;
 }
 
 GEO_DEBUG_EXPORT size_t

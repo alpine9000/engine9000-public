@@ -22,7 +22,6 @@
 #include "debug.h"
 #include "debugger.h"
 
-#define ADDR2LINE_BIN "m68k-neogeo-elf-addr2line"
 #define ANALYSE_MAP_INITIAL_CAP 1024
 
 typedef struct {
@@ -93,6 +92,16 @@ static void
 analyse_locationSetFallback(analyse_location_entry *entry, unsigned int pc);
 static void
 analyse_locationSetFromResolved(analyse_location_entry *entry, const analyse_resolved_entry *resolved, unsigned int pc);
+
+static unsigned int
+analyse_adjustToolchainPc(unsigned int pc)
+{
+    uint32_t base = debugger.machine.textBaseAddr;
+    if (base != 0 && pc >= base) {
+        return pc - base;
+    }
+    return pc;
+}
 
 static analyse_profile_entry *analyse_profileMap = NULL;
 static size_t analyse_profileCapacity = 0;
@@ -458,8 +467,12 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
         close(to_child[1]);
         close(from_child[0]);
         close(from_child[1]);
+        char bin[PATH_MAX];
+        if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
+            _exit(127);
+        }
         char *const argv[] = {
-            (char*)ADDR2LINE_BIN,
+            bin,
             (char*)"-e",
             (char*)elf,
             (char*)"-a",
@@ -468,7 +481,7 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
             (char*)"-i",
             NULL
         };
-        execvp(ADDR2LINE_BIN, argv);
+        execvp(bin, argv);
         _exit(127);
     }
     if (pid < 0) {
@@ -845,7 +858,8 @@ analyse_resolveLocations(const unsigned int *pcs, size_t count)
         resolved = (analyse_resolved_entry*)alloc_calloc(count, sizeof(analyse_resolved_entry));
         if (resolved) {
             for (size_t i = 0; i < count; ++i) {
-                snprintf(resolved[i].address, sizeof(resolved[i].address), "0x%06X", pcs[i]);
+                unsigned int adjusted = analyse_adjustToolchainPc(pcs[i]);
+                snprintf(resolved[i].address, sizeof(resolved[i].address), "0x%06X", adjusted);
             }
             if (analyse_resolveFramesBatch(elfPath, resolved, count)) {
                 didResolve = 1;
@@ -1147,7 +1161,8 @@ analyse_writeFinalJson(const char *jsonPath)
         analyse_resolved_entry *entry = &entries[resolvedCount++];
         entry->samples = slot->samples;
         entry->cycles = slot->cycles;
-        snprintf(entry->address, sizeof(entry->address), "0x%06X", slot->pc);
+        unsigned int adjusted = analyse_adjustToolchainPc(slot->pc);
+        snprintf(entry->address, sizeof(entry->address), "0x%06X", adjusted);
     }
     analyse_line_entry *lines = NULL;
     size_t lineCount = 0;

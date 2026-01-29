@@ -1046,6 +1046,51 @@ MEMORY_LGETI(debugmem);
 
 uae_u16 kickstart_version;
 
+#ifdef __LIBRETRO__
+#define AMI_DBG_TEXT_ADDR 0x00FC0000u // Fake debug output register
+#define AMI_DBG_SETBASE_TEXT_ADDR 0x00FC0004u // Fake debug base register: text section base (long write)
+#define AMI_DBG_SETBASE_DATA_ADDR 0x00FC0008u // Fake debug base register: data section base (long write)
+#define AMI_DBG_SETBASE_BSS_ADDR  0x00FC000Cu // Fake debug base register: bss section base (long write)
+#define AMI_DBG_SETBASE_FIRST_ADDR AMI_DBG_SETBASE_TEXT_ADDR
+#define AMI_DBG_SETBASE_LAST_ADDR  (AMI_DBG_SETBASE_BSS_ADDR + 3u)
+#define AMI_DBG_SETBASE_SECTION_TEXT 0u
+#define AMI_DBG_SETBASE_SECTION_DATA 1u
+#define AMI_DBG_SETBASE_SECTION_BSS  2u
+void geo_debug_text_write(uae_u8 byte);
+void geo_debug_set_debug_base(uae_u32 section, uae_u32 base);
+static uae_u8 ami_dbg_setbase_bytes[12];
+static uae_u16 ami_dbg_setbase_mask;
+
+static void
+ami_dbg_setbase_write_byte(uaecptr addr24, uae_u8 byte)
+{
+	if (addr24 < AMI_DBG_SETBASE_FIRST_ADDR || addr24 > AMI_DBG_SETBASE_LAST_ADDR) {
+		return;
+	}
+	uaecptr idx = addr24 - AMI_DBG_SETBASE_FIRST_ADDR;
+	uaecptr reg = idx / 4u;
+	uaecptr reg_off = reg * 4u;
+	uae_u16 reg_mask = (uae_u16)(0x0Fu << reg_off);
+	ami_dbg_setbase_bytes[idx] = byte;
+	ami_dbg_setbase_mask |= (uae_u16)(1u << idx);
+	if ((ami_dbg_setbase_mask & reg_mask) == reg_mask) {
+		uae_u8 *p = &ami_dbg_setbase_bytes[reg_off];
+		uae_u32 base = ((uae_u32)p[0] << 24) |
+		               ((uae_u32)p[1] << 16) |
+		               ((uae_u32)p[2] << 8) |
+		               (uae_u32)p[3];
+		uae_u32 section = AMI_DBG_SETBASE_SECTION_TEXT;
+		if (reg == 1u) {
+			section = AMI_DBG_SETBASE_SECTION_DATA;
+		} else if (reg == 2u) {
+			section = AMI_DBG_SETBASE_SECTION_BSS;
+		}
+		geo_debug_set_debug_base(section, base);
+		ami_dbg_setbase_mask &= (uae_u16)~reg_mask;
+	}
+}
+#endif
+
 /*
 * A1000 kickstart RAM handling
 *
@@ -1090,6 +1135,31 @@ MEMORY_XLATE(kickmem);
 
 static void REGPARAM2 kickmem_lput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)((b >> 24) & 0xffu));
+		geo_debug_text_write((uae_u8)((b >> 16) & 0xffu));
+		geo_debug_text_write((uae_u8)((b >> 8) & 0xffu));
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+	if (addr24 == AMI_DBG_SETBASE_TEXT_ADDR) {
+		ami_dbg_setbase_mask &= (uae_u16)~0x000Fu;
+		geo_debug_set_debug_base(AMI_DBG_SETBASE_SECTION_TEXT, b);
+		return;
+	}
+	if (addr24 == AMI_DBG_SETBASE_DATA_ADDR) {
+		ami_dbg_setbase_mask &= (uae_u16)~0x00F0u;
+		geo_debug_set_debug_base(AMI_DBG_SETBASE_SECTION_DATA, b);
+		return;
+	}
+	if (addr24 == AMI_DBG_SETBASE_BSS_ADDR) {
+		ami_dbg_setbase_mask &= (uae_u16)~0x0F00u;
+		geo_debug_set_debug_base(AMI_DBG_SETBASE_SECTION_BSS, b);
+		return;
+	}
+#endif
 	uae_u32 *m;
 	if (currprefs.rom_readwrite && rom_write_enabled) {
 		addr &= kickmem_bank.mask;
@@ -1116,6 +1186,16 @@ static void REGPARAM2 kickmem_lput (uaecptr addr, uae_u32 b)
 
 static void REGPARAM2 kickmem_wput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)((b >> 8) & 0xffu));
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+	ami_dbg_setbase_write_byte(addr24, (uae_u8)((b >> 8) & 0xffu));
+	ami_dbg_setbase_write_byte(addr24 + 1, (uae_u8)(b & 0xffu));
+#endif
 	uae_u16 *m;
 	if (currprefs.rom_readwrite && rom_write_enabled) {
 		addr &= kickmem_bank.mask;
@@ -1136,6 +1216,14 @@ static void REGPARAM2 kickmem_wput (uaecptr addr, uae_u32 b)
 
 static void REGPARAM2 kickmem_bput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+	ami_dbg_setbase_write_byte(addr24, (uae_u8)(b & 0xffu));
+#endif
 	if (currprefs.rom_readwrite && rom_write_enabled) {
 		addr &= kickmem_bank.mask;
 		kickmem_bank.baseaddr[addr] = b;
@@ -1195,16 +1283,44 @@ MEMORY_XLATE(extendedkickmem);
 
 static void REGPARAM2 extendedkickmem_lput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)((b >> 24) & 0xffu));
+		geo_debug_text_write((uae_u8)((b >> 16) & 0xffu));
+		geo_debug_text_write((uae_u8)((b >> 8) & 0xffu));
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+#endif
 	if (currprefs.illegal_mem)
 		write_log (_T("Illegal extendedkickmem lput at %08x\n"), addr);
 }
 static void REGPARAM2 extendedkickmem_wput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)((b >> 8) & 0xffu));
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+	ami_dbg_setbase_write_byte(addr24, (uae_u8)((b >> 8) & 0xffu));
+	ami_dbg_setbase_write_byte(addr24 + 1, (uae_u8)(b & 0xffu));
+#endif
 	if (currprefs.illegal_mem)
 		write_log (_T("Illegal extendedkickmem wput at %08x\n"), addr);
 }
 static void REGPARAM2 extendedkickmem_bput (uaecptr addr, uae_u32 b)
 {
+#ifdef __LIBRETRO__
+	uaecptr addr24 = addr & 0x00ffffffu;
+	if (addr24 == AMI_DBG_TEXT_ADDR) {
+		geo_debug_text_write((uae_u8)(b & 0xffu));
+		return;
+	}
+	ami_dbg_setbase_write_byte(addr24, (uae_u8)(b & 0xffu));
+#endif
 	if (currprefs.illegal_mem)
 		write_log (_T("Illegal extendedkickmem lput at %08x\n"), addr);
 }

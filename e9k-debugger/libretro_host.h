@@ -207,6 +207,9 @@ libretro_host_getRomPath(void);
 bool
 libretro_host_setVblankCallback(void (*cb)(void *), void *user);
 
+bool
+libretro_host_setDebugBaseCallback(void (*cb)(uint32_t section, uint32_t base));
+
 void
 libretro_host_setCoreOption(const char *key, const char *value);
 

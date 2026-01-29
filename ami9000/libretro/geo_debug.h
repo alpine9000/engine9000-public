@@ -6,6 +6,11 @@
 
 #include "uae/types.h"
 
+// Debug base register sections (passed to geo_set_debug_base_callback()).
+#define GEO_DEBUG_BASE_SECTION_TEXT 0u
+#define GEO_DEBUG_BASE_SECTION_DATA 1u
+#define GEO_DEBUG_BASE_SECTION_BSS  2u
+
 int
 geo_debug_instructionHook(uaecptr pc, uae_u16 opcode);
 
@@ -63,3 +68,7 @@ geo_set_vblank_callback(void (*cb)(void *), void *user);
 
 void
 geo_vblank_notify(void);
+
+// Optional host callback invoked when the target writes a new relocatable base.
+void
+geo_set_debug_base_callback(void (*cb)(uint32_t section, uint32_t base));

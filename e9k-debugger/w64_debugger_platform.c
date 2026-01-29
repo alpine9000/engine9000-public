@@ -96,6 +96,7 @@ debugger_platform_setDefaults(e9k_neogeo_config_t *config)
     snprintf(config->libretro.systemDir, sizeof(config->libretro.systemDir), "./system");
     snprintf(config->libretro.saveDir, sizeof(config->libretro.saveDir), "./saves");
     snprintf(config->libretro.sourceDir, sizeof(config->libretro.sourceDir), ".");
+    snprintf(config->libretro.toolchainPrefix, sizeof(config->libretro.toolchainPrefix), "m68k-neogeo-elf");
     config->libretro.audioBufferMs = 250;
     config->skipBiosLogo = 0;
     strncpy(config->systemType, "aes", sizeof(config->systemType) - 1);
@@ -113,6 +114,7 @@ debugger_platform_setDefaultsAmiga(e9k_amiga_config_t *config)
     snprintf(config->libretro.systemDir, sizeof(config->libretro.systemDir), "./system");
     snprintf(config->libretro.saveDir, sizeof(config->libretro.saveDir), "./saves");
     snprintf(config->libretro.sourceDir, sizeof(config->libretro.sourceDir), ".");
+    snprintf(config->libretro.toolchainPrefix, sizeof(config->libretro.toolchainPrefix), "m68k-amigaos-");
     config->libretro.audioBufferMs = 250;
     config->libretro.elfPath[0] = '\0';
 }
