@@ -27,3 +27,12 @@ settings_applyToolbarMode(void);
 
 void
 settings_pollRebuild(e9ui_context_t *ctx);
+
+void
+settings_refreshSaveLabel(void);
+
+void
+settings_markCoreOptionsDirty(void);
+
+void
+settings_clearCoreOptionsDirty(void);

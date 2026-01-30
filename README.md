@@ -501,12 +501,13 @@ In this repo, the default `./system` directory corresponds to `e9k-debugger/syst
 
 ### Amiga UAE File
 
-Amiga config is specified by selecting a puae format .uae file
+Amiga config is specified by selecting a .uae file. A new (empty) UAE file can be created and configured via the core options dialog + DF0/DF1 inputs. PUAE core options are persisted in the .uae fille. HDF can probably be configured via the .uae file but is currently untested.
 
 ### Amiga Kickstart ROMs (required)
 
-- Kickstart ROMS are not included. Kickstart rom paths should be set in the .uae file 
-- Please still set the system folder
+- Kickstart ROMS are not included.
+- A complete set of WHDLoad kickstart roms in your system folder is the best option.
+- Otherwise manually settting kickstart roms in the .uae file is required.
 
 ### Amiga Disks/Configs
 
@@ -538,7 +539,8 @@ Without these, the debugger can still run, but symbol/source-aware features degr
   - `m68k-neogeo-elf-readelf`
 
 #### Amiga
-- An hunk compiled with amiga-gcc debug info (`Settings → ELF`, or `--elf PATH`)
+- To use bebbo's toolchain please use https://github.com/AmigaPorts/m68k-amigaos-gcc - it contains important fixes to addr2line
+- An hunk compiled with amiga-gcc debug info 
 - The amiga-os-gcc binaries on `PATH`:
   - `m68k-amigaos-addr2line`
   - `m68k-amigaos-objdump`

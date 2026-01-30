@@ -180,11 +180,15 @@ runtime_runLoop(void)
             debugger.frameTimeCounter = now;
 
             int running = machine_getRunning(debugger.machine);
+            int modalOpen = (e9ui && (e9ui->settingsModal || e9ui->coreOptionsModal || e9ui->helpModal)) ? 1 : 0;
+            if (modalOpen) {
+                running = 0;
+            }
             if (debugger_isSeeking() || debugger.frameStepMode || !running) {
                 debugger.frameTimeAccum = 0.0;
             }
 
-            if (!debugger_isSeeking()) {
+            if (!debugger_isSeeking() && !modalOpen) {
                 if (debugger.frameStepMode) {
                     if (debugger.frameStepPending) {
                         if (debugger.frameStepPending > 0) {

@@ -74,7 +74,6 @@ typedef struct {
     debugger_system_type_t coreSystem;
     e9k_neogeo_config_t neogeo;
     e9k_amiga_config_t amiga;
-    int audioEnabled;
     int crtEnabled;
 } e9k_system_config_t;
 
@@ -175,3 +174,9 @@ debugger_applyCoreOptions(void);
 
 int
 debugger_toolchainBuildBinary(char *out, size_t cap, const char *tool);
+
+int
+debugger_getAudioEnabled(void);
+
+void
+debugger_setAudioEnabled(int enabled);

@@ -13,6 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "libretro.h"
+
 #include "geo_debug_sprite.h"
 #include "geo_debug_rom.h"
 #include "geo_checkpoint.h"
@@ -204,6 +206,9 @@ libretro_host_getFrameCount(void);
 const char *
 libretro_host_getRomPath(void);
 
+const char *
+libretro_host_getCorePath(void);
+
 bool
 libretro_host_setVblankCallback(void (*cb)(void *), void *user);
 
@@ -212,6 +217,24 @@ libretro_host_setDebugBaseCallback(void (*cb)(uint32_t section, uint32_t base));
 
 void
 libretro_host_setCoreOption(const char *key, const char *value);
+
+const char *
+libretro_host_getCoreOptionOverrideValue(const char *key);
+
+bool
+libretro_host_hasCoreOptionsV2(void);
+
+const struct retro_core_option_v2_category *
+libretro_host_getCoreOptionCategories(size_t *out_count);
+
+const struct retro_core_option_v2_definition *
+libretro_host_getCoreOptionDefinitions(size_t *out_count);
+
+const char *
+libretro_host_getCoreOptionValue(const char *key);
+
+const char *
+libretro_host_getCoreOptionDefaultValue(const char *key);
 
 bool
 libretro_host_setAudioEnabled(int enabled);

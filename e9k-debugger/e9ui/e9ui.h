@@ -21,6 +21,7 @@
 #include "e9ui_hstack.h"
 #include "e9ui_button.h"
 #include "e9ui_flow.h"
+#include "e9ui_header_flow.h"
 #include "e9ui_spacer.h"
 #include "e9ui_vspacer.h"
 #include "e9ui_textbox.h"
@@ -30,6 +31,7 @@
 #include "e9ui_fileselect.h"
 #include "e9ui_labeled_textbox.h"
 #include "e9ui_labeled_checkbox.h"
+#include "e9ui_labeled_select.h"
 #include "e9ui_modal.h"
 #include "e9ui_event.h"
 #include "e9ui_text_cache.h"
@@ -135,6 +137,7 @@ typedef struct {
   e9ui_component_t *settingsButton;
   e9ui_component_t *settingsModal; 
   e9ui_component_t *settingsSaveButton;
+  e9ui_component_t *coreOptionsModal;
   e9ui_component_t *helpModal; 
   e9ui_component_t *prompt; 
   e9ui_component_t *pendingRemove; 
@@ -246,6 +249,9 @@ e9ui_child_add(e9ui_component_t *comp, e9ui_component_t *child, void *meta);
 
 void
 e9ui_setTooltip(e9ui_component_t *comp, const char *tooltip);
+
+void
+e9ui_updateStateTree(e9ui_component_t *root);
 
 e9ui_child_iterator*
 e9ui_child_interateNext(e9ui_child_iterator* iter);

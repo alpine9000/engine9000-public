@@ -34,6 +34,7 @@
 #include "ui.h"
 #include "config.h"
 #include "help.h"
+#include "core_options.h"
 #include "file.h"
 #include "debug_font.h"
 #include "e9ui_theme.h"
@@ -516,6 +517,12 @@ e9ui_updateState(e9ui_component_t *comp, e9ui_context_t *ctx)
       e9ui_updateState(it->child, ctx);
     }
   }
+}
+
+void
+e9ui_updateStateTree(e9ui_component_t *root)
+{
+  e9ui_updateState(root, &e9ui->ctx);
 }
 
 void
@@ -1679,6 +1686,10 @@ e9ui_processEvents(void)
                 }
                 if (e9ui->helpModal) {
                     help_cancelModal();
+                    continue;
+                }
+                if (e9ui->coreOptionsModal) {
+                    core_options_cancelModal();
                     continue;
                 }
                 if (e9ui->settingsModal) {

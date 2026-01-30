@@ -23,11 +23,14 @@ typedef struct e9ui_fileselect_state {
     int allowEmpty;
     e9ui_component_t *textbox;
     e9ui_component_t *button;
+    e9ui_component_t *newButton;
     char **extensions;
     int extensionCount;
     e9ui_fileselect_mode_t mode;
     e9ui_fileselect_change_cb_t onChange;
     void *onChangeUser;
+    e9ui_fileselect_validate_cb_t validate;
+    void *validateUser;
     e9ui_component_t *self;
 } e9ui_fileselect_state_t;
 
@@ -49,6 +52,19 @@ e9ui_fileselect_pathValid(const e9ui_fileselect_state_t *st)
         return S_ISDIR(sb.st_mode) ? 1 : 0;
     }
     return S_ISREG(sb.st_mode) ? 1 : 0;
+}
+
+static int
+e9ui_fileselect_isValid(e9ui_context_t *ctx, const e9ui_fileselect_state_t *st)
+{
+    if (!st || !st->textbox) {
+        return 0;
+    }
+    const char *text = e9ui_textbox_getText(st->textbox);
+    if (st->validate) {
+        return st->validate(ctx, st->self, text ? text : "", st->validateUser) ? 1 : 0;
+    }
+    return e9ui_fileselect_pathValid(st);
 }
 
 static void
@@ -169,6 +185,50 @@ e9ui_fileselect_openDialog(e9ui_context_t *ctx, void *user)
     }
 }
 
+static void
+e9ui_fileselect_newFileDialog(e9ui_context_t *ctx, void *user)
+{
+    (void)ctx;
+    e9ui_fileselect_state_t *st = (e9ui_fileselect_state_t*)user;
+    if (!st || !st->textbox) {
+        return;
+    }
+    if (st->mode != E9UI_FILESELECT_FILE) {
+        return;
+    }
+    const char *title = st->label ? st->label : "New File";
+    char *result = NULL;
+    char initial[PATH_MAX];
+    char dirWithSlash[PATH_MAX + 2];
+    const char *start = NULL;
+
+    if (e9ui_fileselect_getInitialDir(st, initial, sizeof(initial))) {
+        start = initial;
+    } else if (getcwd(initial, sizeof(initial))) {
+        start = initial;
+    }
+
+    if (start && *start) {
+        size_t len = strlen(start);
+        if (len + 2 <= sizeof(dirWithSlash)) {
+            if (start[len - 1] != '/') {
+                snprintf(dirWithSlash, sizeof(dirWithSlash), "%s/", start);
+                start = dirWithSlash;
+            }
+        }
+    }
+
+    result = tinyfd_saveFileDialog(title,
+                                   start,
+                                   st->extensionCount,
+                                   (const char * const *)st->extensions,
+                                   NULL);
+    if (result && *result) {
+        e9ui_textbox_setText(st->textbox, result);
+        e9ui_fileselect_notifyChange(ctx, st);
+    }
+}
+
 static int
 e9ui_fileselect_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
 {
@@ -183,6 +243,11 @@ e9ui_fileselect_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int
     if (st->button) {
         e9ui_button_measure(st->button, ctx, &buttonW, &buttonH);
     }
+    int newButtonW = 0;
+    int newButtonH = 0;
+    if (st->newButton) {
+        e9ui_button_measure(st->newButton, ctx, &newButtonW, &newButtonH);
+    }
     int totalW = availW;
     if (st->totalWidth_px > 0) {
         int scaled = e9ui_scale_px(ctx, st->totalWidth_px);
@@ -190,7 +255,8 @@ e9ui_fileselect_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int
             totalW = scaled;
         }
     }
-    int textboxW = totalW - labelW - gap - buttonW - gap;
+    int gapCount = st->newButton ? 3 : 2;
+    int textboxW = totalW - labelW - buttonW - newButtonW - gap * gapCount;
     if (textboxW < 0) {
         textboxW = 0;
     }
@@ -199,6 +265,9 @@ e9ui_fileselect_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int
         textboxH = st->textbox->preferredHeight(st->textbox, ctx, textboxW);
     }
     int h = textboxH > buttonH ? textboxH : buttonH;
+    if (newButtonH > h) {
+        h = newButtonH;
+    }
     return h;
 }
 
@@ -223,6 +292,11 @@ e9ui_fileselect_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
     int buttonW = 0;
     int buttonH = 0;
     e9ui_button_measure(st->button, ctx, &buttonW, &buttonH);
+    int newButtonW = 0;
+    int newButtonH = 0;
+    if (st->newButton) {
+        e9ui_button_measure(st->newButton, ctx, &newButtonW, &newButtonH);
+    }
     int totalW = bounds.w;
     if (st->totalWidth_px > 0) {
         int scaled = e9ui_scale_px(ctx, st->totalWidth_px);
@@ -230,12 +304,16 @@ e9ui_fileselect_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
             totalW = scaled;
         }
     }
-    int textboxW = totalW - labelW - gap - buttonW - gap;
+    int gapCount = st->newButton ? 3 : 2;
+    int textboxW = totalW - labelW - buttonW - newButtonW - gap * gapCount;
     if (textboxW < 0) {
         textboxW = 0;
     }
     int textboxH = st->textbox->preferredHeight ? st->textbox->preferredHeight(st->textbox, ctx, textboxW) : 0;
     int rowH = textboxH > buttonH ? textboxH : buttonH;
+    if (newButtonH > rowH) {
+        rowH = newButtonH;
+    }
     if (rowH < 0) {
         rowH = 0;
     }
@@ -245,6 +323,10 @@ e9ui_fileselect_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t 
     e9ui_rect_t buttonRect = { rowX + labelW + gap + textboxW + gap, rowY, buttonW, rowH };
     st->textbox->layout(st->textbox, ctx, textboxRect);
     st->button->layout(st->button, ctx, buttonRect);
+    if (st->newButton && st->newButton->layout) {
+        e9ui_rect_t newButtonRect = { buttonRect.x + buttonW + gap, rowY, newButtonW, rowH };
+        st->newButton->layout(st->newButton, ctx, newButtonRect);
+    }
 }
 
 static void
@@ -260,7 +342,7 @@ e9ui_fileselect_render(e9ui_component_t *self, e9ui_context_t *ctx)
     if (st->textbox) {
         const char *text = e9ui_textbox_getText(st->textbox);
         if (!st->allowEmpty || (text && *text)) {
-            e9ui_fileselect_drawStatusBorder(st->textbox, ctx, e9ui_fileselect_pathValid(st));
+            e9ui_fileselect_drawStatusBorder(st->textbox, ctx, e9ui_fileselect_isValid(ctx, st));
         }
     }
     if (st->label && *st->label) {
@@ -293,6 +375,9 @@ e9ui_fileselect_render(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     if (st->button && st->button->render) {
         st->button->render(st->button, ctx);
+    }
+    if (st->newButton && st->newButton->render) {
+        st->newButton->render(st->newButton, ctx);
     }
 }
 
@@ -432,4 +517,38 @@ e9ui_fileSelect_setOnChange(e9ui_component_t *comp, e9ui_fileselect_change_cb_t 
     e9ui_fileselect_state_t *st = (e9ui_fileselect_state_t*)comp->state;
     st->onChange = cb;
     st->onChangeUser = user;
+}
+
+void
+e9ui_fileSelect_enableNewButton(e9ui_component_t *comp, const char *buttonText)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    if (!buttonText || !*buttonText) {
+        return;
+    }
+    e9ui_fileselect_state_t *st = (e9ui_fileselect_state_t*)comp->state;
+    if (!st || st->mode != E9UI_FILESELECT_FILE) {
+        return;
+    }
+    if (st->newButton) {
+        e9ui_button_setLabel(st->newButton, buttonText);
+        return;
+    }
+    st->newButton = e9ui_button_make(buttonText, e9ui_fileselect_newFileDialog, st);
+    if (st->newButton) {
+        e9ui_child_add(comp, st->newButton, 0);
+    }
+}
+
+void
+e9ui_fileSelect_setValidate(e9ui_component_t *comp, e9ui_fileselect_validate_cb_t cb, void *user)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    e9ui_fileselect_state_t *st = (e9ui_fileselect_state_t*)comp->state;
+    st->validate = cb;
+    st->validateUser = user;
 }

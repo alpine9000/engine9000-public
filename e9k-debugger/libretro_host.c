@@ -204,6 +204,12 @@ typedef struct  {
     retro_keyboard_event_t keyboardCb;
     libretro_option_t *options;
     size_t optionCount;
+    const struct retro_core_option_v2_category *optionCatsV2;
+    const struct retro_core_option_v2_definition *optionDefsV2;
+    size_t optionCatCountV2;
+    size_t optionDefCountV2;
+    int coreOptionsV2HasCategories;
+    int coreOptionsDirty;
     unsigned videoFrameCount;
 } libretro_host_t;
 
@@ -216,6 +222,9 @@ libretro_host_setOptionValue(const char *key, const char *value);
 
 static void
 libretro_host_applyOptionOverrides(void);
+
+static bool
+libretro_host_setOptionsV2(const struct retro_core_options_v2 *opts);
 
 static void
 libretro_host_configureControllerPorts(void)
@@ -269,6 +278,17 @@ libretro_host_clearOptions(void)
     libretro_host.optionCount = 0;
 }
 
+static void
+libretro_host_clearOptionsV2(void)
+{
+    libretro_host.optionCatsV2 = NULL;
+    libretro_host.optionDefsV2 = NULL;
+    libretro_host.optionCatCountV2 = 0;
+    libretro_host.optionDefCountV2 = 0;
+    libretro_host.coreOptionsV2HasCategories = 0;
+    libretro_host.coreOptionsDirty = 0;
+}
+
 static libretro_option_t *
 libretro_host_findOption(const char *key)
 {
@@ -302,14 +322,17 @@ libretro_host_setCoreOption(const char *key, const char *value)
                     free(libretro_optionOverrides);
                     libretro_optionOverrides = NULL;
                 }
+                libretro_host_setOptionValue(key, NULL);
                 return;
             }
             free(libretro_optionOverrides[i].value);
             libretro_optionOverrides[i].value = strdup(value);
+            libretro_host_setOptionValue(key, value);
             return;
         }
     }
     if (!value || !*value) {
+        libretro_host_setOptionValue(key, NULL);
         return;
     }
     libretro_option_override_t *next = realloc(libretro_optionOverrides,
@@ -321,6 +344,70 @@ libretro_host_setCoreOption(const char *key, const char *value)
     libretro_optionOverrides[libretro_optionOverrideCount].key = strdup(key);
     libretro_optionOverrides[libretro_optionOverrideCount].value = strdup(value);
     libretro_optionOverrideCount++;
+    libretro_host_setOptionValue(key, value);
+}
+
+const char *
+libretro_host_getCoreOptionOverrideValue(const char *key)
+{
+    if (!key || !*key) {
+        return NULL;
+    }
+    for (size_t i = 0; i < libretro_optionOverrideCount; ++i) {
+        const char *k = libretro_optionOverrides[i].key;
+        const char *v = libretro_optionOverrides[i].value;
+        if (!k || !v) {
+            continue;
+        }
+        if (strcmp(k, key) == 0) {
+            return v;
+        }
+    }
+    return NULL;
+}
+
+bool
+libretro_host_hasCoreOptionsV2(void)
+{
+    return libretro_host.optionDefsV2 && libretro_host.optionDefCountV2 > 0;
+}
+
+const struct retro_core_option_v2_category *
+libretro_host_getCoreOptionCategories(size_t *out_count)
+{
+    if (out_count) {
+        *out_count = libretro_host.optionCatCountV2;
+    }
+    return libretro_host.optionCatsV2;
+}
+
+const struct retro_core_option_v2_definition *
+libretro_host_getCoreOptionDefinitions(size_t *out_count)
+{
+    if (out_count) {
+        *out_count = libretro_host.optionDefCountV2;
+    }
+    return libretro_host.optionDefsV2;
+}
+
+const char *
+libretro_host_getCoreOptionValue(const char *key)
+{
+    libretro_option_t *opt = libretro_host_findOption(key);
+    if (!opt) {
+        return NULL;
+    }
+    if (opt->value) {
+        return opt->value;
+    }
+    return opt->default_value;
+}
+
+const char *
+libretro_host_getCoreOptionDefaultValue(const char *key)
+{
+    libretro_option_t *opt = libretro_host_findOption(key);
+    return opt ? opt->default_value : NULL;
 }
 
 static bool
@@ -347,7 +434,62 @@ libretro_host_setOptions(const struct retro_core_option_definition *defs)
         libretro_host.options[i].default_value = defs[i].default_value;
         libretro_host.options[i].value = NULL;
     }
+    libretro_host_applyOptionOverrides();
     return true;
+}
+
+static bool
+libretro_host_setOptionsFromV2Definitions(const struct retro_core_option_v2_definition *defs)
+{
+    if (!defs) {
+        return false;
+    }
+    size_t count = 0;
+    while (defs[count].key) {
+        ++count;
+    }
+    libretro_host_clearOptions();
+    if (!count) {
+        return true;
+    }
+    libretro_host.options = (libretro_option_t *)calloc(count, sizeof(*libretro_host.options));
+    if (!libretro_host.options) {
+        return false;
+    }
+    libretro_host.optionCount = count;
+    for (size_t i = 0; i < count; ++i) {
+        libretro_host.options[i].key = defs[i].key;
+        libretro_host.options[i].default_value = defs[i].default_value;
+        libretro_host.options[i].value = NULL;
+    }
+    libretro_host_applyOptionOverrides();
+    return true;
+}
+
+static bool
+libretro_host_setOptionsV2(const struct retro_core_options_v2 *opts)
+{
+    if (!opts || !opts->definitions) {
+        return false;
+    }
+    libretro_host.optionDefsV2 = opts->definitions;
+    libretro_host.optionDefCountV2 = 0;
+    while (libretro_host.optionDefsV2[libretro_host.optionDefCountV2].key) {
+        libretro_host.optionDefCountV2++;
+    }
+
+    libretro_host.optionCatsV2 = NULL;
+    libretro_host.optionCatCountV2 = 0;
+    if (opts->categories) {
+        libretro_host.optionCatsV2 = opts->categories;
+        while (libretro_host.optionCatsV2[libretro_host.optionCatCountV2].key) {
+            libretro_host.optionCatCountV2++;
+        }
+    }
+
+    libretro_host.coreOptionsV2HasCategories = libretro_host.optionCatsV2 ? 1 : 0;
+
+    return libretro_host_setOptionsFromV2Definitions(opts->definitions);
 }
 
 static void
@@ -365,6 +507,7 @@ libretro_host_setOptionValue(const char *key, const char *value)
     if (value) {
         opt->value = strdup(value);
     }
+    libretro_host.coreOptionsDirty = 1;
 }
 
 static void
@@ -813,13 +956,30 @@ libretro_host_environment(unsigned cmd, void *data)
         if (!data) {
             return false;
         }
-        *(unsigned *)data = 1;
+        *(unsigned *)data = 2;
         return true;
     case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
         if (!data) {
             return false;
         }
-        *(bool *)data = false;
+        *(bool *)data = (libretro_host.coreOptionsDirty != 0);
+        libretro_host.coreOptionsDirty = 0;
+        return true;
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
+        if (!data) {
+            return false;
+        }
+        libretro_host_setOptionsV2((const struct retro_core_options_v2 *)data);
+        return true;
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL:
+        if (!data) {
+            return false;
+        }
+        {
+            const struct retro_core_options_v2_intl *intl = (const struct retro_core_options_v2_intl *)data;
+            const struct retro_core_options_v2 *opts = (intl && intl->local) ? intl->local : (intl ? intl->us : NULL);
+            libretro_host_setOptionsV2(opts);
+        }
         return true;
     default:
         return false;
@@ -893,6 +1053,7 @@ libretro_host_clearState(void)
     }
     libretro_host_clearOptions();
     libretro_host_clearOptionOverrides();
+    libretro_host_clearOptionsV2();
     memset(&libretro_host, 0, sizeof(libretro_host));
 }
 
@@ -1055,7 +1216,7 @@ libretro_host_start(const char *corePath, const char *romPath,
     }
     libretro_host.gameLoaded = true;
     libretro_host.getSystemAvInfo(&libretro_host.avInfo);
-    libretro_host.audioEnabled = debugger.config.audioEnabled ? 1 : 0;
+    libretro_host.audioEnabled = debugger_getAudioEnabled();
     libretro_host_openAudio();
     if (libretro_host.avInfo.geometry.base_width && libretro_host.avInfo.geometry.base_height) {
         libretro_host_destroyTexture();
@@ -1837,6 +1998,12 @@ const char *
 libretro_host_getRomPath(void)
 {
     return libretro_host.romPath[0] ? libretro_host.romPath : NULL;
+}
+
+const char *
+libretro_host_getCorePath(void)
+{
+    return libretro_host.corePath[0] ? libretro_host.corePath : NULL;
 }
 
 bool

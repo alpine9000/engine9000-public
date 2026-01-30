@@ -78,9 +78,7 @@ config_persistConfig(FILE *f)
     if (debugger.config.amiga.libretro.audioBufferMs > 0) {
         fprintf(f, "comp.config.amiga.audio_ms=%d\n", debugger.config.amiga.libretro.audioBufferMs);
     }
-    if (!debugger.config.amiga.libretro.audioEnabled) {
-        fprintf(f, "comp.config.amiga.audio_enabled=0\n");
-    }
+    fprintf(f, "comp.config.amiga.audio_enabled=%d\n", debugger.config.amiga.libretro.audioEnabled);
     if (debugger.config.neogeo.libretro.corePath[0]) {
         fprintf(f, "comp.config.neogeo.core=%s\n", debugger.config.neogeo.libretro.corePath);
     }
@@ -111,9 +109,7 @@ config_persistConfig(FILE *f)
     if (debugger.config.neogeo.libretro.audioBufferMs > 0) {
         fprintf(f, "comp.config.neogeo.audio_ms=%d\n", debugger.config.neogeo.libretro.audioBufferMs);
     }
-    if (!debugger.config.neogeo.libretro.audioEnabled) {
-        fprintf(f, "comp.config.neogeo.audio_enabled=0\n");
-    }
+    fprintf(f, "comp.config.neogeo.audio_enabled=%d\n", debugger.config.neogeo.libretro.audioEnabled );
     if (debugger.config.neogeo.skipBiosLogo) {
         fprintf(f, "comp.config.neogeo.skip_bios=1\n");
     }

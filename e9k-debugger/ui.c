@@ -290,7 +290,7 @@ ui_audioRefreshButton(void)
     if (!e9ui->audioButton) {
         return;
     }
-    const char *icon = debugger.config.audioEnabled ? "assets/icons/audio.png"
+    const char *icon = debugger_getAudioEnabled() ? "assets/icons/audio.png"
                                                     : "assets/icons/mute.png";
     e9ui_button_setIconAsset(e9ui->audioButton, icon);
 }
@@ -300,8 +300,8 @@ ui_audioToggle(e9ui_context_t *ctx, void *user)
 {
     (void)ctx;
     (void)user;
-    debugger.config.audioEnabled = debugger.config.audioEnabled ? 0 : 1;
-    libretro_host_setAudioEnabled(debugger.config.audioEnabled);
+    debugger_setAudioEnabled(!debugger_getAudioEnabled());
+    libretro_host_setAudioEnabled(debugger_getAudioEnabled());
     ui_audioRefreshButton();
     config_saveConfig();
 }
@@ -444,7 +444,7 @@ ui_build(void)
         e9ui->ctx.registerHotkey(&e9ui->ctx, SDLK_TAB, 0, 0, ui_promptFocusHotkey, comp_prompt);
     }
 
-    // Build top row: [ image 240x48 ] [ toolbar grows ]
+    // Build top row: [ left image 240x48 ] [ toolbar buttons ] [ right image 139x48 ]
     SDL_Texture *logoTex = NULL; int logoW = 0, logoH = 0;
     {
         char exedir[PATH_MAX];
@@ -475,29 +475,60 @@ ui_build(void)
     e9ui_component_t *comp_logo = NULL;
     if (logoTex) {
         comp_logo = e9ui_image_makeFromTexture(logoTex, logoW, logoH);
-        // Inner box constrains image to 240x48
         e9ui_component_t *logo_box = e9ui_box_make(comp_logo);
         e9ui_box_setWidth(logo_box, e9ui_dim_fixed, 240);
         e9ui_box_setHeight(logo_box, e9ui_dim_fixed, 48);
-        // Outer box provides 10px margin on all sides (no fixed size here to avoid double-counting padding)
-        e9ui_component_t *logo_margin = e9ui_box_make(logo_box);
-        e9ui_box_setPadding(logo_margin, 10);
-        comp_logo = logo_margin;
+        comp_logo = logo_box;
     }
-    // Build toolbar via flow of buttons
-    e9ui_component_t *flow = e9ui_flow_make();
-    e9ui->toolbar = flow;
-    // Keep toolbar height tight to button height (no extra vertical padding)
-    e9ui_flow_setPadding(flow, 0);
-    e9ui_flow_setSpacing(flow, 8);
-    e9ui_flow_setWrap(flow, 1);
+
+    SDL_Texture *systemTex = NULL; int systemW = 0, systemH = 0;
+    {
+        char exedir[PATH_MAX];
+        if (file_getExeDir(exedir, sizeof(exedir))) {
+            char p[PATH_MAX]; size_t n = strlen(exedir);
+            if (n < sizeof(p)) {
+                memcpy(p, exedir, n);
+                if (n > 0 && p[n-1] != '/') {
+                    p[n++] = '/';
+                }
+                const char *rel = debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA ? "assets/amiga.png" : "assets/neogeo.png";
+                size_t rl = strlen(rel);
+                if (n + rl < sizeof(p)) {
+                    memcpy(p + n, rel, rl + 1);
+                    SDL_Surface *s = IMG_Load(p);
+                    if (s) {
+                        systemTex = SDL_CreateTextureFromSurface(e9ui->ctx.renderer, s);
+                        systemW = s->w;
+                        systemH = s->h;
+                        SDL_FreeSurface(s);
+                    } else {
+                        debug_error("e9k: IMG_Load failed for %s: %s", p, IMG_GetError());
+                    }
+                }
+            }
+        }
+    }
+    e9ui_component_t *comp_system = NULL;
+    if (systemTex) {
+        comp_system = e9ui_image_makeFromTexture(systemTex, systemW, systemH);
+        e9ui_component_t *system_box = e9ui_box_make(comp_system);
+        e9ui_box_setWidth(system_box, e9ui_dim_fixed, 139);
+        e9ui_box_setHeight(system_box, e9ui_dim_fixed, 48);
+        comp_system = system_box;
+    }
+
+    e9ui_component_t *toolbar = e9ui_header_flow_make(comp_logo, 240, comp_system, 139, 48);
+    e9ui->toolbar = toolbar;
+    e9ui_header_flow_setPadding(toolbar, 10);
+    e9ui_header_flow_setSpacing(toolbar, 8);
+    e9ui_header_flow_setWrap(toolbar, 1);
     // Build buttons and bind hotkeys at creation
     e9ui_component_t *btn_continue = e9ui_button_make("Continue", ui_continue, NULL);
     e9ui_button_setIconAsset(btn_continue, "assets/icons/continue.png");
     e9ui_setTooltip(btn_continue, "Continue - c");
     e9ui_button_registerHotkey(btn_continue, &e9ui->ctx, SDLK_c, (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI), 0);
     e9ui_setHiddenVariable(btn_continue, machine_getRunningState(debugger.machine), 1);
-    e9ui_flow_add(flow, btn_continue);
+    e9ui_header_flow_add(toolbar, btn_continue);
 
     e9ui_component_t *btn_pause = e9ui_button_make("Pause", ui_pause, NULL);
     e9ui_button_setIconAsset(btn_pause, "assets/icons/pause.png");
@@ -505,7 +536,7 @@ ui_build(void)
     e9ui_button_setLargestLabel(btn_pause, "Continue");
     e9ui_button_registerHotkey(btn_pause, &e9ui->ctx, SDLK_p, 0, 0);
     e9ui_setHiddenVariable(btn_pause, machine_getRunningState(debugger.machine), 0);
-    e9ui_flow_add(flow, btn_pause);
+    e9ui_header_flow_add(toolbar, btn_pause);
 
     e9ui_component_t *btn_step = e9ui_button_make("Step", ui_step, NULL);
     e9ui_button_setIconAsset(btn_step, "assets/icons/step.png");
@@ -513,7 +544,7 @@ ui_build(void)
     e9ui_button_registerHotkey(btn_step, &e9ui->ctx, SDLK_s, 0, 0);
     e9ui_setDisableVariable(btn_step, machine_getRunningState(debugger.machine), 1);
     e9ui_setHiddenVariable(btn_step, &debugger.elfValid, 0);
-    e9ui_flow_add(flow, btn_step);
+    e9ui_header_flow_add(toolbar, btn_step);
 
     e9ui_component_t *btn_next = e9ui_button_make("Next", ui_next, NULL);
     e9ui_button_setIconAsset(btn_next, "assets/icons/next.png");
@@ -521,7 +552,7 @@ ui_build(void)
     e9ui_button_registerHotkey(btn_next, &e9ui->ctx, SDLK_n, 0, 0);
     e9ui_setDisableVariable(btn_next, machine_getRunningState(debugger.machine), 1);
     e9ui_setHiddenVariable(btn_next, &debugger.elfValid, 0);
-    e9ui_flow_add(flow, btn_next);
+    e9ui_header_flow_add(toolbar, btn_next);
 
     // Instruction step (si) with global hotkey 'i'
     e9ui_component_t *btn_stepi = e9ui_button_make("Inst", ui_stepi, NULL);
@@ -529,17 +560,17 @@ ui_build(void)
     e9ui_setTooltip(btn_stepi, "Step Inst - i");
     e9ui_button_registerHotkey(btn_stepi, &e9ui->ctx, SDLK_i, 0, 0);
     e9ui_setDisableVariable(btn_stepi, machine_getRunningState(debugger.machine), 1);
-    e9ui_flow_add(flow, btn_stepi);
+    e9ui_header_flow_add(toolbar, btn_stepi);
 
     e9ui_component_t *btn_finish = e9ui_button_make("Out", ui_finish, NULL);
     e9ui_button_setIconAsset(btn_finish, "assets/icons/step_out.png");
     e9ui_setTooltip(btn_finish, "Step Out");
     e9ui_setDisableVariable(btn_finish, machine_getRunningState(debugger.machine), 1);
     e9ui_setHiddenVariable(btn_finish, &debugger.elfValid, 0);
-    e9ui_flow_add(flow, btn_finish);
+    e9ui_header_flow_add(toolbar, btn_finish);
 
     e9ui_component_t *sep_step_speed = e9ui_separator_make(9);
-    e9ui_flow_add(flow, sep_step_speed);
+    e9ui_header_flow_add(toolbar, sep_step_speed);
 
     e9ui_component_t *btn_speed = e9ui_button_make("", ui_speedToggle, NULL);
     e9ui_button_setIconAsset(btn_speed, "assets/icons/speed_normal.png");
@@ -552,54 +583,44 @@ ui_build(void)
     e9ui_button_setIconAsset(btn_frame_stepBack, "assets/icons/back.png");
     e9ui_setTooltip(btn_frame_stepBack, "Frame step back - b");
     e9ui_button_registerHotkey(btn_frame_stepBack, &e9ui->ctx, SDLK_b, 0, 0);
-    e9ui_flow_add(flow, btn_frame_stepBack);
+    e9ui_header_flow_add(toolbar, btn_frame_stepBack);
 
     e9ui_component_t *btn_frame_step = e9ui_button_make("Frame", ui_frameStep, NULL);
     e9ui_button_setIconAsset(btn_frame_step, "assets/icons/step.png");
     e9ui_setTooltip(btn_frame_step, "Frame step - f");
     e9ui_button_registerHotkey(btn_frame_step, &e9ui->ctx, SDLK_f, 0, 0);
-    e9ui_flow_add(flow, btn_frame_step);
+    e9ui_header_flow_add(toolbar, btn_frame_step);
 
     e9ui_component_t *btn_frame_continue = e9ui_button_make("Continue", ui_frameContinue, NULL);
     e9ui_setTooltip(btn_frame_continue, "Frame continue - g");
     e9ui_button_registerHotkey(btn_frame_continue, &e9ui->ctx, SDLK_g, 0, 0);
     e9ui_setDisableVariable(btn_frame_continue, &debugger.frameStepMode, 0);
-    e9ui_flow_add(flow, btn_frame_continue);
+    e9ui_header_flow_add(toolbar, btn_frame_continue);
 
     e9ui_component_t *sep_frame_save = e9ui_separator_make(9);
-    e9ui_flow_add(flow, sep_frame_save);
+    e9ui_header_flow_add(toolbar, sep_frame_save);
 
     e9ui_component_t *btn_save = e9ui_button_make("Save", ui_saveState, NULL);
     e9ui_setTooltip(btn_save, "Save state - F7");
     e9ui_button_registerHotkey(btn_save, &e9ui->ctx, SDLK_F7, 0, 0);
-    e9ui_flow_add(flow, btn_save);
+    e9ui_header_flow_add(toolbar, btn_save);
 
     e9ui_component_t *btn_restore = e9ui_button_make("Restore", ui_restoreState, NULL);
     e9ui_setTooltip(btn_restore, "Restore state - F8");
     e9ui_button_registerHotkey(btn_restore, &e9ui->ctx, SDLK_F8, 0, 0);
     e9ui_setDisableVariable(btn_restore, &debugger.hasStateSnapshot, 0);
-    e9ui_flow_add(flow, btn_restore);
+    e9ui_header_flow_add(toolbar, btn_restore);
 
     e9ui_component_t *sep_restore_reset = e9ui_separator_make(9);
-    e9ui_flow_add(flow, sep_restore_reset);
-
-    e9ui_component_t *toolbar_box = e9ui_box_make(flow);
-    // No extra padding; fix height to flow's preferred height and center vertically
-    e9ui_box_setPadding(toolbar_box, 0);
-    e9ui_box_setVAlign(toolbar_box, e9ui_valign_center);
-    e9ui_component_t *top_row = e9ui_hstack_make();
-    if (comp_logo) {
-        int logoSlotW = e9ui_scale_px(&e9ui->ctx, 240 + 20);
-        e9ui_hstack_addFixed(top_row, comp_logo, logoSlotW);
-    }
+    e9ui_header_flow_add(toolbar, sep_restore_reset);
 
     e9ui_component_t *btn_settings = e9ui_button_make("Settings", settings_uiOpen, NULL);
     e9ui_setTooltip(btn_settings, "Settings");
     e9ui->settingsButton = btn_settings;
-    e9ui_flow_add(flow, btn_settings);
+    e9ui_header_flow_add(toolbar, btn_settings);
 
     if (btn_speed) {
-        e9ui_flow_add(flow, btn_speed);
+        e9ui_header_flow_add(toolbar, btn_speed);
     }
 
     e9ui_component_t *btn_audio = e9ui_button_make("", ui_audioToggle, NULL);
@@ -607,37 +628,25 @@ ui_build(void)
     e9ui_button_registerHotkey(btn_audio, &e9ui->ctx, SDLK_F6, 0, 0);
     e9ui->audioButton = btn_audio;
     ui_audioRefreshButton();
-    e9ui_flow_add(flow, btn_audio);
+    e9ui_header_flow_add(toolbar, btn_audio);
 
     e9ui_component_t *btn_reset = e9ui_button_make("", ui_reset, NULL);
     e9ui_setTooltip(btn_reset, "Reset core");
     e9ui_button_setIconAsset(btn_reset, "assets/icons/reset.png");
     e9ui_button_setTheme(btn_reset, e9ui_theme_button_preset_profile_active());
     e9ui->resetButton = btn_reset;
-    e9ui_flow_add(flow, btn_reset);
+    e9ui_header_flow_add(toolbar, btn_reset);
 
     e9ui_component_t *btn_restart = e9ui_button_make("", ui_restart, NULL);
     e9ui_setTooltip(btn_restart, "Restart");
     e9ui_button_setIconAsset(btn_restart, "assets/icons/reset.png");
     e9ui_button_setTheme(btn_restart, e9ui_theme_button_preset_red());
     e9ui->restartButton = btn_restart;
-    e9ui_flow_add(flow, btn_restart);
-
-    if (comp_logo && flow->preferredHeight) {
-        int logo_h = comp_logo->preferredHeight(comp_logo, &e9ui->ctx, 10000);
-        int flow_h = flow->preferredHeight(flow, &e9ui->ctx, 10000);
-        int margin = 0;
-        if (logo_h > flow_h) {
-            margin = (logo_h - flow_h) / 2;
-        }
-        e9ui_flow_setBaseMargin(flow, margin);
-    }
-
-    e9ui_hstack_addFlex(top_row, toolbar_box);
+    e9ui_header_flow_add(toolbar, btn_restart);
 
     e9ui_component_t *comp_stack = e9ui_stack_makeVertical();
     // Add bottom border under the top logo/title row
-    e9ui_component_t *top_row_box = e9ui_box_make(top_row);
+    e9ui_component_t *top_row_box = e9ui_box_make(toolbar);
     e9ui_box_setBorder(top_row_box, E9UI_BORDER_BOTTOM, (SDL_Color){70,70,70,255}, 1);
     e9ui_stack_addFixed(comp_stack, top_row_box);
     // Insert registers panel and make it resizable vs source/console (left pane)

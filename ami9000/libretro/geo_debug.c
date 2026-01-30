@@ -67,6 +67,24 @@ static geo_debug_checkpoint_t geo_debug_checkpoints[GEO_CHECKPOINT_COUNT];
 
 static int geo_debug_profilerEnabled = 0;
 
+// Minimal PC-sampling profiler used by e9k-debugger. The debugger resolves PCs to symbols/lines.
+// We stream aggregated PC hits as JSON in geo_debug_profiler_stream_next(), matching geo9000.
+#define GEO_DEBUG_PROF_EMPTY_PC 0xffffffffu
+#define GEO_DEBUG_PROF_TABLE_CAP 4096u
+#define GEO_DEBUG_PROF_SAMPLE_DIV 64u
+static uint32_t geo_debug_prof_pcs[GEO_DEBUG_PROF_TABLE_CAP];
+static uint64_t geo_debug_prof_samples[GEO_DEBUG_PROF_TABLE_CAP];
+static uint64_t geo_debug_prof_cycles[GEO_DEBUG_PROF_TABLE_CAP];
+static uint32_t geo_debug_prof_entryEpoch[GEO_DEBUG_PROF_TABLE_CAP];
+static uint32_t geo_debug_prof_dirtyIdx[GEO_DEBUG_PROF_TABLE_CAP];
+static uint32_t geo_debug_prof_dirtyCount = 0;
+static uint32_t geo_debug_prof_epoch = 1;
+static uint32_t geo_debug_prof_tick = 0;
+static int geo_debug_prof_streamEnabled = 0;
+static int geo_debug_prof_lastValid = 0;
+static uint32_t geo_debug_prof_lastPc = 0;
+static evt_t geo_debug_prof_lastCycle = 0;
+
 static void (*geo_debug_setDebugBaseCb)(uint32_t section, uint32_t base) = NULL;
 
 static char geo_debug_textBuf[GEO_DEBUG_TEXT_CAP];
@@ -76,11 +94,135 @@ static size_t geo_debug_textCount = 0;
 
 static void geo_debug_requestBreak(void);
 
+static void
+geo_debug_profiler_reset(void)
+{
+	memset(geo_debug_prof_pcs, 0xff, sizeof(geo_debug_prof_pcs));
+	memset(geo_debug_prof_samples, 0, sizeof(geo_debug_prof_samples));
+	memset(geo_debug_prof_cycles, 0, sizeof(geo_debug_prof_cycles));
+	memset(geo_debug_prof_entryEpoch, 0, sizeof(geo_debug_prof_entryEpoch));
+	geo_debug_prof_dirtyCount = 0;
+	geo_debug_prof_epoch = 1;
+	geo_debug_prof_tick = 0;
+	geo_debug_prof_lastValid = 0;
+	geo_debug_prof_lastPc = 0;
+	geo_debug_prof_lastCycle = 0;
+}
+
+static void
+geo_debug_profiler_markDirtySlot(uint32_t slot)
+{
+	if (slot >= GEO_DEBUG_PROF_TABLE_CAP) {
+		return;
+	}
+	if (geo_debug_prof_entryEpoch[slot] == geo_debug_prof_epoch) {
+		return;
+	}
+	geo_debug_prof_entryEpoch[slot] = geo_debug_prof_epoch;
+	if (geo_debug_prof_dirtyCount < GEO_DEBUG_PROF_TABLE_CAP) {
+		geo_debug_prof_dirtyIdx[geo_debug_prof_dirtyCount++] = slot;
+	}
+}
+
+static int
+geo_debug_profiler_findSlot(uint32_t pc24, int create, uint32_t *out_slot)
+{
+	if (out_slot) {
+		*out_slot = 0;
+	}
+	pc24 &= 0x00ffffffu;
+	uint32_t mask = GEO_DEBUG_PROF_TABLE_CAP - 1u;
+	uint32_t idx = (pc24 * 2654435761u) & mask;
+	for (uint32_t probe = 0; probe < GEO_DEBUG_PROF_TABLE_CAP; ++probe) {
+		uint32_t slot = (idx + probe) & mask;
+		uint32_t cur = geo_debug_prof_pcs[slot];
+		if (cur == pc24) {
+			if (out_slot) {
+				*out_slot = slot;
+			}
+			return 1;
+		}
+		if (cur == GEO_DEBUG_PROF_EMPTY_PC) {
+			if (!create) {
+				return 0;
+			}
+			geo_debug_prof_pcs[slot] = pc24 & 0x00ffffffu;
+			geo_debug_prof_samples[slot] = 0;
+			geo_debug_prof_cycles[slot] = 0;
+			if (out_slot) {
+				*out_slot = slot;
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void
+geo_debug_profiler_accountCycles(uint32_t pc24, uint64_t cycles)
+{
+	if (cycles == 0) {
+		return;
+	}
+	uint32_t slot = 0;
+	if (!geo_debug_profiler_findSlot(pc24, 1, &slot)) {
+		return;
+	}
+	geo_debug_prof_cycles[slot] += cycles;
+	geo_debug_profiler_markDirtySlot(slot);
+}
+
+static void
+geo_debug_profiler_samplePc(uint32_t pc24)
+{
+	uint32_t slot = 0;
+	if (!geo_debug_profiler_findSlot(pc24, 1, &slot)) {
+		return;
+	}
+	geo_debug_prof_samples[slot] += 1;
+	geo_debug_profiler_markDirtySlot(slot);
+}
+
+static void
+geo_debug_profiler_instrHook(uint32_t pc24)
+{
+	if (!geo_debug_profilerEnabled) {
+		return;
+	}
+	if (geo_debug_paused) {
+		return;
+	}
+
+	evt_t now = get_cycles();
+	if (geo_debug_prof_lastValid) {
+		evt_t deltaUnits = now - geo_debug_prof_lastCycle;
+		if (deltaUnits > 0) {
+			uint64_t deltaCycles = 0;
+			if (CYCLE_UNIT > 0) {
+				deltaCycles = (uint64_t)(deltaUnits / (evt_t)CYCLE_UNIT);
+			} else {
+				deltaCycles = (uint64_t)deltaUnits;
+			}
+			if (deltaCycles) {
+				geo_debug_profiler_accountCycles(geo_debug_prof_lastPc, deltaCycles);
+			}
+		}
+	}
+	geo_debug_prof_lastCycle = now;
+	geo_debug_prof_lastPc = pc24 & 0x00ffffffu;
+	geo_debug_prof_lastValid = 1;
+
+	geo_debug_prof_tick++;
+	if ((geo_debug_prof_tick % GEO_DEBUG_PROF_SAMPLE_DIV) == 0u) {
+		geo_debug_profiler_samplePc(pc24);
+	}
+}
+
 void
 geo_debug_text_write(uae_u8 byte)
 {
-	if (geo_debug_textCount == GEO_DEBUG_TEXT_CAP) {
-		geo_debug_textTail = (geo_debug_textTail + 1) % GEO_DEBUG_TEXT_CAP;
+		if (geo_debug_textCount == GEO_DEBUG_TEXT_CAP) {
+			geo_debug_textTail = (geo_debug_textTail + 1) % GEO_DEBUG_TEXT_CAP;
 		geo_debug_textCount--;
 	}
 	geo_debug_textBuf[geo_debug_textHead] = (char)byte;
@@ -253,11 +395,9 @@ geo_debug_consumeTempBreakpoint(uint32_t addr)
 GEO_DEBUG_EXPORT void
 geo_debug_pause(void)
 {
-	geo_debug_paused = 1;
-	geo_debug_stepInstr = 0;
-	geo_debug_stepInstrAfter = 0;
-	geo_debug_stepNext = 0;
-	geo_debug_skipBreakpointOnce = 0;
+	// Use the same break mechanism as instruction/watch breaks so execution halts immediately
+	// (important when running with threaded CPU/event loops).
+	geo_debug_requestBreak();
 }
 
 GEO_DEBUG_EXPORT void
@@ -407,7 +547,13 @@ geo_debug_disassemble_quick(uint32_t pc, char *out, size_t cap)
 GEO_DEBUG_EXPORT uint64_t
 geo_debug_read_cycle_count(void)
 {
-	return (uint64_t)get_cycles();
+	// get_cycles() returns UAE internal "cycle units" (CYCLE_UNIT = 512), not raw CPU cycles.
+	// Convert to a more intuitive cycle count for the debugger UI.
+	evt_t c = get_cycles();
+	if (CYCLE_UNIT > 0) {
+		return (uint64_t)(c / (evt_t)CYCLE_UNIT);
+	}
+	return (uint64_t)c;
 }
 
 GEO_DEBUG_EXPORT void
@@ -644,6 +790,9 @@ GEO_DEBUG_EXPORT int
 geo_debug_instructionHook(uaecptr pc, uae_u16 opcode)
 {
 	uint32_t pc24 = geo_debug_maskAddr(pc);
+
+	geo_debug_profiler_instrHook(pc24);
+
 	if (geo_debug_stepInstrAfter) {
 		geo_debug_requestBreak();
 		return 1;
@@ -897,7 +1046,8 @@ geo_debug_set_protect_enabled_mask(uint64_t mask)
 GEO_DEBUG_EXPORT void
 geo_debug_profiler_start(int stream)
 {
-	(void)stream;
+	geo_debug_profiler_reset();
+	geo_debug_prof_streamEnabled = stream ? 1 : 0;
 	geo_debug_profilerEnabled = 1;
 }
 
@@ -905,6 +1055,7 @@ GEO_DEBUG_EXPORT void
 geo_debug_profiler_stop(void)
 {
 	geo_debug_profilerEnabled = 0;
+	geo_debug_prof_streamEnabled = 0;
 }
 
 GEO_DEBUG_EXPORT int
@@ -916,9 +1067,83 @@ geo_debug_profiler_is_enabled(void)
 GEO_DEBUG_EXPORT size_t
 geo_debug_profiler_stream_next(char *out, size_t cap)
 {
-	(void)out;
-	(void)cap;
-	return 0;
+	if (!out || cap == 0) {
+		return 0;
+	}
+
+	if (!geo_debug_prof_streamEnabled) {
+		return 0;
+	}
+	if (geo_debug_prof_dirtyCount == 0) {
+		return 0;
+	}
+
+	const char *enabled = geo_debug_profilerEnabled ? "enabled" : "disabled";
+	size_t pos = 0;
+	int written = snprintf(out, cap, "{\"stream\":\"profiler\",\"enabled\":\"%s\",\"hits\":[", enabled);
+	if (written <= 0 || (size_t)written >= cap) {
+		return 0;
+	}
+	pos = (size_t)written;
+
+	int first = 1;
+	uint32_t newDirtyCount = 0;
+	for (uint32_t i = 0; i < geo_debug_prof_dirtyCount; ++i) {
+		uint32_t slot = geo_debug_prof_dirtyIdx[i];
+		if (slot >= GEO_DEBUG_PROF_TABLE_CAP) {
+			continue;
+		}
+		uint32_t pc24 = geo_debug_prof_pcs[slot];
+		if (pc24 == GEO_DEBUG_PROF_EMPTY_PC) {
+			geo_debug_prof_entryEpoch[slot] = 0;
+			continue;
+		}
+		unsigned long long samples = (unsigned long long)geo_debug_prof_samples[slot];
+		unsigned long long cycles = (unsigned long long)geo_debug_prof_cycles[slot];
+		if (samples == 0 && cycles == 0) {
+			geo_debug_prof_entryEpoch[slot] = 0;
+			continue;
+		}
+
+		char entry[96];
+		if (first) {
+			written = snprintf(entry, sizeof(entry), "{\"pc\":\"0x%06X\",\"samples\":%llu,\"cycles\":%llu}",
+			                   (unsigned)(pc24 & 0x00ffffffu), samples, cycles);
+			first = 0;
+		} else {
+			written = snprintf(entry, sizeof(entry), ",{\"pc\":\"0x%06X\",\"samples\":%llu,\"cycles\":%llu}",
+			                   (unsigned)(pc24 & 0x00ffffffu), samples, cycles);
+		}
+		if (written <= 0) {
+			geo_debug_prof_entryEpoch[slot] = 0;
+			continue;
+		}
+		size_t need = (size_t)written;
+		if (pos + need + 2 >= cap) {
+			geo_debug_prof_dirtyIdx[newDirtyCount++] = slot;
+			continue;
+		}
+		memcpy(out + pos, entry, need);
+		pos += need;
+		geo_debug_prof_entryEpoch[slot] = 0;
+	}
+	geo_debug_prof_dirtyCount = newDirtyCount;
+
+	if (pos + 2 >= cap) {
+		return 0;
+	}
+	out[pos++] = ']';
+	out[pos++] = '}';
+	out[pos] = '\0';
+
+	if (geo_debug_prof_dirtyCount == 0) {
+		geo_debug_prof_epoch++;
+		if (geo_debug_prof_epoch == 0) {
+			memset(geo_debug_prof_entryEpoch, 0, sizeof(geo_debug_prof_entryEpoch));
+			geo_debug_prof_epoch = 1;
+		}
+	}
+	return pos;
 }
 
 GEO_DEBUG_EXPORT size_t

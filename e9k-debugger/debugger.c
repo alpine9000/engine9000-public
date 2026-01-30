@@ -38,6 +38,8 @@
 #include "ui.h"
 #include "emu_geo.h"
 #include "emu_ami.h"
+#include "amiga_uae_options.h"
+#include "neogeo_core_options.h"
 
 e9ui_global_t _e9ui;
 e9k_debugger_t debugger;
@@ -281,6 +283,19 @@ debugger_applyCoreOptions(void)
         libretro_host_setCoreOption("geolith_system_type", debugger.config.neogeo.systemType);
     } else {
         libretro_host_setCoreOption("geolith_system_type", NULL);
+    }
+
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        const char *uaePath = debugger.libretro.romPath[0] ? debugger.libretro.romPath : debugger.config.amiga.libretro.romPath;
+        if (uaePath && *uaePath) {
+            amiga_uaeApplyPuaeOptionsToHost(uaePath);
+        }
+    } else if (debugger.config.coreSystem == DEBUGGER_SYSTEM_NEOGEO) {
+        const char *romPath = debugger.libretro.romPath[0] ? debugger.libretro.romPath : debugger.config.neogeo.libretro.romPath;
+        const char *saveDir = debugger.libretro.saveDir[0] ? debugger.libretro.saveDir : debugger.config.neogeo.libretro.saveDir;
+        if (romPath && *romPath && saveDir && *saveDir) {
+            neogeo_coreOptionsApplyFileToHost(saveDir, romPath);
+        }
     }
 }
 
@@ -529,4 +544,24 @@ debugger_main(int argc, char **argv)
     return 2;
   }
   return 0;
+}
+
+int
+debugger_getAudioEnabled(void)
+{
+  if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+    return debugger.config.amiga.libretro.audioEnabled;
+  } else {
+    return debugger.config.neogeo.libretro.audioEnabled;
+  }
+}
+
+void
+debugger_setAudioEnabled(int enabled)
+{
+  if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+    debugger.config.amiga.libretro.audioEnabled = enabled;
+  } else {
+    debugger.config.neogeo.libretro.audioEnabled = enabled;
+  }
 }

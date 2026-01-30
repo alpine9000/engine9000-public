@@ -18,6 +18,9 @@ typedef enum {
 typedef void (*e9ui_fileselect_change_cb_t)(e9ui_context_t *ctx, e9ui_component_t *comp,
                                             const char *text, void *user);
 
+typedef int (*e9ui_fileselect_validate_cb_t)(e9ui_context_t *ctx, e9ui_component_t *comp,
+                                             const char *text, void *user);
+
 e9ui_component_t *
 e9ui_fileSelect_make(const char *label, int labelWidth_px, int totalWidth_px,
                      const char *buttonText,
@@ -42,4 +45,8 @@ e9ui_fileSelect_getText(const e9ui_component_t *comp);
 void
 e9ui_fileSelect_setOnChange(e9ui_component_t *comp, e9ui_fileselect_change_cb_t cb, void *user);
 
+void
+e9ui_fileSelect_enableNewButton(e9ui_component_t *comp, const char *buttonText);
 
+void
+e9ui_fileSelect_setValidate(e9ui_component_t *comp, e9ui_fileselect_validate_cb_t cb, void *user);

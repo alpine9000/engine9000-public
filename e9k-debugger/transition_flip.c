@@ -31,6 +31,7 @@ transition_flip_renderToTexture(e9ui_component_t *comp, SDL_Texture *target,
     e9ui_component_t *prevFullscreen = e9ui->fullscreen;
     e9ui->fullscreen = fullscreenComp;
     e9ui->root = comp;
+    e9ui_updateStateTree(comp);
     if (comp->layout) {
         e9ui_rect_t full = (e9ui_rect_t){0, 0, w, h};
         comp->layout(comp, &e9ui->ctx, full);
