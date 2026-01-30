@@ -81,6 +81,7 @@ typedef struct shader_ui_action_row_state {
 typedef struct e9k_shader_ui {
     int open;
     int closeRequested;
+    int dirty;
     SDL_Window *window;
     SDL_Renderer *renderer;
     uint32_t windowId;
@@ -1157,7 +1158,7 @@ shader_ui_init(void)
         debug_error("shader ui: SDL_CreateWindow failed: %s", SDL_GetError());
         return 0;
     }
-    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) {
         SDL_DestroyWindow(win);
         debug_error("shader ui: SDL_CreateRenderer failed: %s", SDL_GetError());
@@ -1173,6 +1174,7 @@ shader_ui_init(void)
     ui->ctx.dpiScale = shader_ui_computeDpiScale(&ui->ctx);
     shader_ui_snapshot(ui);
     ui->closeRequested = 0;
+    ui->dirty = 1;
 
     ui->root = shader_ui_buildRoot(ui);
     if (!ui->root) {
@@ -1219,6 +1221,7 @@ shader_ui_shutdown(void)
     ui->open = 0;
     ui->closeRequested = 0;
     ui->windowId = 0;
+    ui->dirty = 0;
     memset(&ui->ctx, 0, sizeof(ui->ctx));
     shader_ui_refocusMain();
 }
@@ -1245,6 +1248,7 @@ shader_ui_handleEvent(SDL_Event *ev)
     if (ui->closeRequested) {
         return;
     }
+    ui->dirty = 1;
     e9ui_component_t *root = ui->fullscreen ? ui->fullscreen : ui->root;
     ui->ctx.focusClickHandled = 0;
     ui->ctx.cursorOverride = 0;
@@ -1326,6 +1330,9 @@ shader_ui_render(void)
         shader_ui_shutdown();
         return;
     }
+    if (!ui->dirty) {
+        return;
+    }
     ui->ctx.font = e9ui->ctx.font;
     ui->ctx.window = ui->window;
     ui->ctx.renderer = ui->renderer;
@@ -1348,4 +1355,5 @@ shader_ui_render(void)
         root->render(root, &ui->ctx);
     }
     SDL_RenderPresent(ui->renderer);
+    ui->dirty = 0;
 }
