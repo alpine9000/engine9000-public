@@ -189,7 +189,7 @@ help_showModal(e9ui_context_t *ctx)
     e9ui_text_setFontSize(titleShortcuts, headingSize);
     e9ui_text_setColor(titleShortcuts, headingColor);
 
-    const char *shortcutKeys[] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "ESC", "TAB", "C", "P", "S", "N", "I", "F", "G", "B", ",", ".", "/" };
+    const char *shortcutKeys[] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F11", "F12", "ESC", "TAB", "C", "P", "S", "N", "I", "F", "G", "B", ",", ".", "/" };
     const char *shortcutVals[] = { "Help",
                                    "Screenshot to clipboard",
                                    "Toggle CRT mode",
@@ -198,6 +198,8 @@ help_showModal(e9ui_context_t *ctx)
                                    "Toggle audio",
                                    "Save state",
                                    "Restore state",
+				   "Toggle rolling state record",
+				   "Amiga <-> Neo Geo",
                                    "Toggle fullscreen",
 				   "Activate console",
                                    "Continue",

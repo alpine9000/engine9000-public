@@ -121,6 +121,8 @@ typedef struct e9k_debugger {
     int cliWindowOverride;
     int cliWindowW;
     int cliWindowH;
+    int cliDisableRollingRecord;
+    int cliStartFullscreen;
     int settingsOk;
     int elfValid;
     int restartRequested;

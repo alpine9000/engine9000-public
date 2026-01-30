@@ -93,7 +93,7 @@ status_bar_render(e9ui_component_t *self, e9ui_context_t *ctx)
             st->core_last_tick = now;
         }
     }
-    int recording = state_buffer_isPaused() ? 0 : 1;
+    int recording = (state_buffer_isPaused() || state_buffer_isRollingPaused()) ? 0 : 1;
     size_t used = state_buffer_getUsedBytes();
     size_t max = state_buffer_getMaxBytes();
     float pct = (max > 0) ? (100.0f * (float)used / (float)max) : 0.0f;
@@ -112,6 +112,8 @@ status_bar_render(e9ui_component_t *self, e9ui_context_t *ctx)
     char record[64] = "";
     if (recording) {
         snprintf(record, sizeof(record), " RECORDING:%.1f%%", pct);
+    } else if (state_buffer_isRollingPaused()) {
+        snprintf(record, sizeof(record), " RECORDING:PAUSED");
     }
     const char *glLabel = gl_composite_isActive() ? " OPENGL" : "";
     snprintf(label, sizeof(label), " %s FRAME:%llu%s FPS:%d/%d CYCLES:%llu%s%s %s",

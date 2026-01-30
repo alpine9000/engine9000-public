@@ -38,6 +38,7 @@
 #include "file.h"
 #include "debug_font.h"
 #include "e9ui_theme.h"
+#include "state_buffer.h"
 #include "debug.h"
 #include "smoke_test.h"
 #include "sprite_debug.h"
@@ -1488,7 +1489,7 @@ e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cl
       SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
     }
     #endif
-    SDL_Window *win = SDL_CreateWindow("ENGINE9000 DEBUGGER/PROFILER NEOGEO 68K", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, wantW, wantH,
+    SDL_Window *win = SDL_CreateWindow("ENGINE9000 DEBUGGER/PROFILER 68K", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, wantW, wantH,
                                        SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL);
     if (!win) {
         debug_error("SDL_CreateWindow failed: %s", SDL_GetError());
@@ -1735,6 +1736,13 @@ e9ui_processEvents(void)
                 e9ui_fpsEnabled = !e9ui_fpsEnabled;
                 e9ui_setFocus(&e9ui->ctx, NULL);
                 e9ui_showTransientMessage(e9ui_fpsEnabled ? "FPS ON" : "FPS OFF");
+                continue;
+            }
+            if (ev.key.keysym.sym == SDLK_F11 && ev.key.repeat == 0) {
+                int paused = state_buffer_isRollingPaused() ? 0 : 1;
+                state_buffer_setRollingPaused(paused);
+                e9ui_setFocus(&e9ui->ctx, NULL);
+                e9ui_showTransientMessage(paused ? "ROLLING SAVE PAUSED" : "ROLLING SAVE RESUMED");
                 continue;
             }
             if (ev.key.keysym.sym == SDLK_F12 && ev.key.repeat == 0) {

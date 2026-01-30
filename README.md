@@ -159,6 +159,8 @@ Global debugger hotkeys
 | `F6` | Toggle audio |
 | `F7` | Save state |
 | `F8` | Restore state |
+| `F11` | Toggle rolling record |
+| `F12` | Amiga <-> Neo Geo |
 | `ESC` | Toggle fullscreen |
 | `TAB` | Focus the console prompt |
 | `c` | Continue |
@@ -579,6 +581,8 @@ Run `e9k-debugger --help` for the full list. The current options include:
 - `--window-size WxH`
 - `--record PATH`, `--playback PATH`
 - `--make-smoke PATH`, `--smoke-test PATH`, `--smoke-open`
+- `--fullscreen` (alias: `--start-fullscreen`) - start in UI fullscreen mode (ESC toggle)
+- `--no-rolling-record` - start with rolling state recording paused (can be toggled with `F11`)
 - `--no-gl-composite`
 
 ---

@@ -27,6 +27,8 @@ size_t state_buffer_getUsedBytes(void);
 size_t state_buffer_getCount(void);
 void state_buffer_setPaused(int paused);
 int state_buffer_isPaused(void);
+void state_buffer_setRollingPaused(int paused);
+int state_buffer_isRollingPaused(void);
 int state_buffer_trimAfterPercent(float percent);
 int state_buffer_hasFrameNo(uint64_t frame_no);
 int state_buffer_restoreFrameNo(uint64_t frame_no);

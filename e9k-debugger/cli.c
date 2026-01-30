@@ -249,9 +249,29 @@ cli_parseArgs(int argc, char **argv)
             debugger.smokeTestOpenOnFail = 1;
             continue;
         }
+        if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "--start-fullscreen") == 0) {
+            debugger.cliStartFullscreen = 1;
+            continue;
+        }
+        if (strcmp(argv[i], "--no-rolling-record") == 0) {
+            debugger.cliDisableRollingRecord = 1;
+            continue;
+        }
         if (strcmp(argv[i], "--no-gl-composite") == 0) {
             e9ui->glCompositeEnabled = 0;
             continue;
+        }
+
+        {
+            char msg[256];
+            if (argv[i] && argv[i][0] == '-') {
+                snprintf(msg, sizeof(msg), "unknown option: %s", argv[i]);
+            } else {
+                snprintf(msg, sizeof(msg), "unexpected argument: %s", argv[i] ? argv[i] : "(null)");
+            }
+            msg[sizeof(msg) - 1] = '\0';
+            cli_setError(msg);
+            return;
         }
     }
 }
@@ -290,6 +310,8 @@ cli_printUsage(const char *argv0)
     printf("  --make-smoke PATH           Save frames and inputs to a folder\n");
     printf("  --smoke-test PATH           Replay inputs and compare frames\n");
     printf("  --smoke-open                Open montage on smoke-test failure\n");
+    printf("  --fullscreen                Start in UI fullscreen mode (ESC toggle)\n");
+    printf("  --no-rolling-record         Disable rolling state recording\n");
     printf("  --no-gl-composite           Disable OpenGL composite path\n");
     printf("\n");
     printf("You can also use --option=VALUE forms for the PATH/MS options.\n");

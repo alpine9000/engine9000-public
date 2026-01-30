@@ -380,6 +380,8 @@ debugger_ctor(void)
   debugger.cliWindowOverride = 0;
   debugger.cliWindowW = 0;
   debugger.cliWindowH = 0;
+  debugger.cliDisableRollingRecord = 0;
+  debugger.cliStartFullscreen = 0;
   e9ui->glCompositeEnabled = 1;
   e9ui->transition.mode = e9k_transition_random;
   e9ui->transition.fullscreenMode = e9k_transition_none;
@@ -417,6 +419,9 @@ debugger_main(int argc, char **argv)
   if (cli_hasError()) {
     cli_printUsage(argv && argv[0] ? argv[0] : NULL);
     return 1;
+  }
+  if (debugger.cliDisableRollingRecord) {
+    state_buffer_setRollingPaused(1);
   }
   if (debugger.smokeTestMode != SMOKE_TEST_MODE_NONE) {
     if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
@@ -471,6 +476,15 @@ debugger_main(int argc, char **argv)
 
   ui_build();
   cli_applyOverrides();
+  if (debugger.cliStartFullscreen) {
+    e9ui_component_t *target = e9ui_findById(e9ui->root, "libretro_box");
+    if (!target) {
+      target = e9ui_findById(e9ui->root, "geo_view");
+    }
+    if (target && e9ui->fullscreen != target) {
+      e9ui_setFullscreenComponent(target);
+    }
+  }  
   debugger_libretroSelectConfig();
   debugger_refreshElfValid();
   if (debugger.elfValid && debugger_analyseInitFailed) {

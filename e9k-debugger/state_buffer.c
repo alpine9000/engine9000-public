@@ -55,6 +55,7 @@ typedef struct {
     uint8_t *recon_b;
     size_t recon_size;
     int paused;
+    int rollingPaused;
     uint64_t current_frame_no;
 } state_buffer_t;
 
@@ -114,6 +115,7 @@ state_buffer_reset(state_buffer_t *buf)
     buf->recon_b = NULL;
     buf->recon_size = 0;
     buf->paused = 0;
+    buf->rollingPaused = 0;
     buf->current_frame_no = 0;
 }
 
@@ -781,7 +783,7 @@ state_buffer_capture(void)
     if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
         // return;
     }
-    if (state_buffer.current.paused) {
+    if (state_buffer.current.paused || state_buffer.current.rollingPaused) {
         return;
     }
     if (state_buffer.current.max_bytes == 0) {
@@ -822,6 +824,18 @@ int
 state_buffer_isPaused(void)
 {
     return state_buffer.current.paused ? 1 : 0;
+}
+
+void
+state_buffer_setRollingPaused(int paused)
+{
+    state_buffer.current.rollingPaused = paused ? 1 : 0;
+}
+
+int
+state_buffer_isRollingPaused(void)
+{
+    return state_buffer.current.rollingPaused ? 1 : 0;
 }
 
 size_t
