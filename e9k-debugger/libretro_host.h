@@ -21,6 +21,8 @@
 #include "geo_watchpoint.h"
 #include "geo_protect.h"
 
+#define LIBRETRO_HOST_MAX_PORTS 4
+
 bool
 libretro_host_init(SDL_Renderer *renderer);
 
@@ -51,6 +53,15 @@ libretro_host_setJoypadState(unsigned port, unsigned id, int pressed);
 
 void
 libretro_host_clearJoypadState(void);
+
+void
+libretro_host_addMouseMotion(unsigned port, int dx, int dy);
+
+void
+libretro_host_setMouseButton(unsigned port, unsigned id, int pressed);
+
+unsigned
+libretro_host_getMousePort(void);
 
 void
 libretro_host_sendKeyEvent(unsigned keycode, uint32_t character,

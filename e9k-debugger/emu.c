@@ -263,6 +263,16 @@ emu_joypadPort(void)
 }
 
 static int
+emu_pointInBounds(const e9ui_component_t *comp, int x, int y)
+{
+    if (!comp) {
+        return 0;
+    }
+    return x >= comp->bounds.x && x < comp->bounds.x + comp->bounds.w &&
+           y >= comp->bounds.y && y < comp->bounds.y + comp->bounds.h;
+}
+
+static int
 emu_handleEvent(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_event_t *ev)
 {
     (void)ctx;
@@ -274,6 +284,39 @@ emu_handleEvent(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_event_t 
         if (state && state->seekBarMeta) {
             e9ui_component_t *seek = e9ui_child_find(self, state->seekBarMeta);
             if (seek && seek->handleEvent && seek->handleEvent(seek, ctx, ev)) {
+                return 1;
+            }
+        }
+        if (state && state->buttonStackMeta) {
+            e9ui_component_t *stack = e9ui_child_find(self, state->buttonStackMeta);
+            int mx = (ev->type == SDL_MOUSEMOTION) ? ev->motion.x : ev->button.x;
+            int my = (ev->type == SDL_MOUSEMOTION) ? ev->motion.y : ev->button.y;
+            if (stack && emu_pointInBounds(stack, mx, my)) {
+                return 0;
+            }
+        }
+        int mx = (ev->type == SDL_MOUSEMOTION) ? ev->motion.x : ev->button.x;
+        int my = (ev->type == SDL_MOUSEMOTION) ? ev->motion.y : ev->button.y;
+        if (!emu_pointInBounds(self, mx, my)) {
+            return 0;
+        }
+        unsigned port = libretro_host_getMousePort();
+        if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+            port = LIBRETRO_HOST_MAX_PORTS;
+        }
+        if (port < LIBRETRO_HOST_MAX_PORTS || port == LIBRETRO_HOST_MAX_PORTS) {
+            if (ev->type == SDL_MOUSEMOTION) {
+                libretro_host_addMouseMotion(port, ev->motion.xrel, ev->motion.yrel);
+                return 1;
+            }
+            if (ev->button.button == SDL_BUTTON_LEFT) {
+                int pressed = (ev->type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
+                libretro_host_setMouseButton(port, RETRO_DEVICE_ID_MOUSE_LEFT, pressed);
+                return 1;
+            }
+            if (ev->button.button == SDL_BUTTON_RIGHT) {
+                int pressed = (ev->type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
+                libretro_host_setMouseButton(port, RETRO_DEVICE_ID_MOUSE_RIGHT, pressed);
                 return 1;
             }
         }

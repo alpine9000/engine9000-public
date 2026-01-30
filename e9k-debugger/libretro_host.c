@@ -95,8 +95,6 @@ typedef uint64_t (*geo_debug_read_cycle_count_fn_t)(void);
 typedef void (*geo_set_vblank_callback_fn_t)(void (*cb)(void *), void *user);
 typedef int *(*geo_debug_amiga_get_debug_dma_addr_fn_t)(void);
 
-#define LIBRETRO_HOST_MAX_PORTS 4
-
 typedef struct libretro_option {
     const char *key;
     const char *default_value;
@@ -200,6 +198,12 @@ typedef struct  {
     size_t stateSize;
     uint32_t inputMask[LIBRETRO_HOST_MAX_PORTS];
     uint32_t autoInputMask[LIBRETRO_HOST_MAX_PORTS];
+    unsigned controllerPortDevice[LIBRETRO_HOST_MAX_PORTS];
+    int mousePendingX[LIBRETRO_HOST_MAX_PORTS];
+    int mousePendingY[LIBRETRO_HOST_MAX_PORTS];
+    int mouseFrameX[LIBRETRO_HOST_MAX_PORTS];
+    int mouseFrameY[LIBRETRO_HOST_MAX_PORTS];
+    uint32_t mouseButtonMask[LIBRETRO_HOST_MAX_PORTS];
     int autoPressDelayFrames;
     int autoPressHoldFrames;
     uint8_t keyboardState[RETROK_LAST];
@@ -229,14 +233,23 @@ static bool
 libretro_host_setOptionsV2(const struct retro_core_options_v2 *opts);
 
 static void
-libretro_host_configureControllerPorts(void)
+libretro_host_setControllerPortDevice(unsigned port, unsigned device)
 {
-    if (!libretro_host.setControllerPortDevice) {
+    if (port >= LIBRETRO_HOST_MAX_PORTS) {
         return;
     }
+    libretro_host.controllerPortDevice[port] = device & RETRO_DEVICE_MASK;
+    if (libretro_host.setControllerPortDevice) {
+        libretro_host.setControllerPortDevice(port, device);
+    }
+}
+
+static void
+libretro_host_configureControllerPorts(void)
+{
     if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
-        libretro_host.setControllerPortDevice(0, RETRO_DEVICE_JOYPAD);
-        libretro_host.setControllerPortDevice(1, RETRO_DEVICE_MOUSE);
+        libretro_host_setControllerPortDevice(0, RETRO_DEVICE_JOYPAD);
+        libretro_host_setControllerPortDevice(1, RETRO_DEVICE_MOUSE);
     }
 }
 
@@ -767,6 +780,12 @@ libretro_host_audioSampleBatch(const int16_t *data, size_t frames)
 static void
 libretro_host_inputPoll(void)
 {
+    for (unsigned port = 0; port < LIBRETRO_HOST_MAX_PORTS; ++port) {
+        libretro_host.mouseFrameX[port] = libretro_host.mousePendingX[port];
+        libretro_host.mouseFrameY[port] = libretro_host.mousePendingY[port];
+        libretro_host.mousePendingX[port] = 0;
+        libretro_host.mousePendingY[port] = 0;
+    }
     if (libretro_host.autoPressDelayFrames > 0) {
         libretro_host.autoPressDelayFrames--;
         return;
@@ -782,16 +801,44 @@ libretro_host_inputPoll(void)
 }
 
 static int16_t
+libretro_host_clampToInt16(int value)
+{
+    if (value > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (value < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)value;
+}
+
+static int16_t
 libretro_host_inputState(unsigned port, unsigned device, unsigned index, unsigned id)
 {
-    if (device == RETRO_DEVICE_KEYBOARD) {
+    unsigned baseDevice = device & RETRO_DEVICE_MASK;
+    if (baseDevice == RETRO_DEVICE_MOUSE) {
+        if (index != 0 || port >= LIBRETRO_HOST_MAX_PORTS) {
+            return 0;
+        }
+        if (id == RETRO_DEVICE_ID_MOUSE_X) {
+            return libretro_host_clampToInt16(libretro_host.mouseFrameX[port]);
+        }
+        if (id == RETRO_DEVICE_ID_MOUSE_Y) {
+            return libretro_host_clampToInt16(libretro_host.mouseFrameY[port]);
+        }
+        if (id <= RETRO_DEVICE_ID_MOUSE_BUTTON_5) {
+            return (libretro_host.mouseButtonMask[port] & (1u << id)) ? 1 : 0;
+        }
+        return 0;
+    }
+    if (baseDevice == RETRO_DEVICE_KEYBOARD) {
         if (id >= RETROK_LAST) {
             return 0;
         }
         uint8_t down = libretro_host.keyboardState[id];
         return down ? 1 : 0;
     }
-    if (device != RETRO_DEVICE_JOYPAD || index != 0) {
+    if (baseDevice != RETRO_DEVICE_JOYPAD || index != 0) {
         return 0;
     }
     if (port >= LIBRETRO_HOST_MAX_PORTS || id >= 32) {
@@ -1381,6 +1428,70 @@ libretro_host_clearJoypadState(void)
     }
     memset(libretro_host.inputMask, 0, sizeof(libretro_host.inputMask));
     input_record_recordClear(debugger.frameCounter + 1);
+}
+
+void
+libretro_host_addMouseMotion(unsigned port, int dx, int dy)
+{
+    if (input_record_isPlayback() && !input_record_isInjecting()) {
+        return;
+    }
+    if (dx == 0 && dy == 0) {
+        return;
+    }
+    if (port == LIBRETRO_HOST_MAX_PORTS) {
+        for (unsigned idx = 0; idx < LIBRETRO_HOST_MAX_PORTS; ++idx) {
+            libretro_host.mousePendingX[idx] += dx;
+            libretro_host.mousePendingY[idx] += dy;
+        }
+        return;
+    }
+    if (port >= LIBRETRO_HOST_MAX_PORTS) {
+        return;
+    }
+    libretro_host.mousePendingX[port] += dx;
+    libretro_host.mousePendingY[port] += dy;
+}
+
+void
+libretro_host_setMouseButton(unsigned port, unsigned id, int pressed)
+{
+    if (input_record_isPlayback() && !input_record_isInjecting()) {
+        return;
+    }
+    if (id > RETRO_DEVICE_ID_MOUSE_BUTTON_5) {
+        return;
+    }
+    uint32_t bit = 1u << id;
+    if (port == LIBRETRO_HOST_MAX_PORTS) {
+        for (unsigned idx = 0; idx < LIBRETRO_HOST_MAX_PORTS; ++idx) {
+            if (pressed) {
+                libretro_host.mouseButtonMask[idx] |= bit;
+            } else {
+                libretro_host.mouseButtonMask[idx] &= ~bit;
+            }
+        }
+        return;
+    }
+    if (port >= LIBRETRO_HOST_MAX_PORTS) {
+        return;
+    }
+    if (pressed) {
+        libretro_host.mouseButtonMask[port] |= bit;
+    } else {
+        libretro_host.mouseButtonMask[port] &= ~bit;
+    }
+}
+
+unsigned
+libretro_host_getMousePort(void)
+{
+    for (unsigned port = 0; port < LIBRETRO_HOST_MAX_PORTS; ++port) {
+        if (libretro_host.controllerPortDevice[port] == RETRO_DEVICE_MOUSE) {
+            return port;
+        }
+    }
+    return LIBRETRO_HOST_MAX_PORTS;
 }
 
 void
