@@ -221,7 +221,7 @@ int
 e9ui_isFullscreenComponent(const e9ui_component_t *comp);
 
 int
-e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cliWinH);
+e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cliWinH, int startHidden);
 
 void
 e9ui_shutdown(void);

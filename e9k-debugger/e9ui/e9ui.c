@@ -1452,7 +1452,7 @@ e9ui_loadWindowConfig(const char* configPath)
 }
 
 int
-e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cliWinH)
+e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cliWinH, int startHidden)
 {
   e9ui_theme_ctor();
   e9ui_loadWindowConfig(configPath);
@@ -1489,8 +1489,12 @@ e9ui_ctor(const char* configPath, int cliOverrideWindowSize, int cliWinW, int cl
       SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
     }
     #endif
+    Uint32 winFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL;
+    if (startHidden) {
+      winFlags |= SDL_WINDOW_HIDDEN;
+    }
     SDL_Window *win = SDL_CreateWindow("ENGINE9000 DEBUGGER/PROFILER 68K", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, wantW, wantH,
-                                       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL);
+                                       winFlags);
     if (!win) {
         debug_error("SDL_CreateWindow failed: %s", SDL_GetError());
         return 0;

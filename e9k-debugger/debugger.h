@@ -123,6 +123,8 @@ typedef struct e9k_debugger {
     int cliWindowH;
     int cliDisableRollingRecord;
     int cliStartFullscreen;
+    int cliHeadless;
+    int cliWarp;
     int settingsOk;
     int elfValid;
     int restartRequested;

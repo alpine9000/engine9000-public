@@ -581,6 +581,8 @@ Run `e9k-debugger --help` for the full list. The current options include:
 - `--window-size WxH`
 - `--record PATH`, `--playback PATH`
 - `--make-smoke PATH`, `--smoke-test PATH`, `--smoke-open`
+- `--headless` - hide the main window (useful for smoke tests)
+- `--warp` - start in speed multiplier mode
 - `--fullscreen` (alias: `--start-fullscreen`) - start in UI fullscreen mode (ESC toggle)
 - `--no-rolling-record` - start with rolling state recording paused (can be toggled with `F11`)
 - `--no-gl-composite`

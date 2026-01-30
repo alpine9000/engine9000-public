@@ -223,10 +223,19 @@ runtime_runLoop(void)
                 char buf[256];
                 size_t n = 0;
                 while ((n = libretro_host_debugTextRead(buf, sizeof(buf))) > 0) {
+                    int stdoutNeedsFlush = 0;
                     for (size_t i = 0; i < n; ++i) {
                         char c = buf[i];
                         if (c == '\r') {
                             continue;
+                        }
+                        if (debugger.opts.redirectStdout) {
+                            fputc(c, stdout);
+                            stdoutNeedsFlush = 1;
+                            if (c == '\n') {
+                                fflush(stdout);
+                                stdoutNeedsFlush = 0;
+                            }
                         }
                         if (c == '\n') {
                             dbg_line[dbg_line_len] = '\0';
@@ -238,7 +247,16 @@ runtime_runLoop(void)
                         }
                         if (dbg_line_len + 1 < sizeof(dbg_line)) {
                             dbg_line[dbg_line_len++] = c;
+                        } else {
+                            dbg_line[dbg_line_len] = '\0';
+                            if (dbg_line_len > 0) {
+                                linebuf_push(&debugger.console, dbg_line);
+                            }
+                            dbg_line_len = 0;
                         }
+                    }
+                    if (stdoutNeedsFlush) {
+                        fflush(stdout);
                     }
                 }
             }

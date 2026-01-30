@@ -382,6 +382,8 @@ debugger_ctor(void)
   debugger.cliWindowH = 0;
   debugger.cliDisableRollingRecord = 0;
   debugger.cliStartFullscreen = 0;
+  debugger.cliHeadless = 0;
+  debugger.cliWarp = 0;
   e9ui->glCompositeEnabled = 1;
   e9ui->transition.mode = e9k_transition_random;
   e9ui->transition.fullscreenMode = e9k_transition_none;
@@ -420,8 +422,11 @@ debugger_main(int argc, char **argv)
     cli_printUsage(argv && argv[0] ? argv[0] : NULL);
     return 1;
   }
-  if (debugger.cliDisableRollingRecord) {
+  if (debugger.smokeTestMode != SMOKE_TEST_MODE_NONE || debugger.cliHeadless || debugger.cliDisableRollingRecord) {
     state_buffer_setRollingPaused(1);
+  }
+  if (debugger.cliWarp) {
+    debugger.speedMultiplier = 10;
   }
   if (debugger.smokeTestMode != SMOKE_TEST_MODE_NONE) {
     if (debugger.smokeTestMode == SMOKE_TEST_MODE_COMPARE) {
@@ -464,7 +469,7 @@ debugger_main(int argc, char **argv)
     return 1;
   }
 
-  if (!e9ui_ctor(debugger_configPath(), debugger.cliWindowOverride, debugger.cliWindowW, debugger.cliWindowW)) {
+  if (!e9ui_ctor(debugger_configPath(), debugger.cliWindowOverride, debugger.cliWindowW, debugger.cliWindowH, debugger.cliHeadless)) {
     input_record_shutdown();
     smoke_test_shutdown();
     {
@@ -476,7 +481,7 @@ debugger_main(int argc, char **argv)
 
   ui_build();
   cli_applyOverrides();
-  if (debugger.cliStartFullscreen) {
+  if (debugger.cliStartFullscreen && !debugger.cliHeadless) {
     e9ui_component_t *target = e9ui_findById(e9ui->root, "libretro_box");
     if (!target) {
       target = e9ui_findById(e9ui->root, "geo_view");

@@ -249,6 +249,14 @@ cli_parseArgs(int argc, char **argv)
             debugger.smokeTestOpenOnFail = 1;
             continue;
         }
+        if (strcmp(argv[i], "--headless") == 0) {
+            debugger.cliHeadless = 1;
+            continue;
+        }
+        if (strcmp(argv[i], "--warp") == 0) {
+            debugger.cliWarp = 1;
+            continue;
+        }
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "--start-fullscreen") == 0) {
             debugger.cliStartFullscreen = 1;
             continue;
@@ -310,6 +318,8 @@ cli_printUsage(const char *argv0)
     printf("  --make-smoke PATH           Save frames and inputs to a folder\n");
     printf("  --smoke-test PATH           Replay inputs and compare frames\n");
     printf("  --smoke-open                Open montage on smoke-test failure\n");
+    printf("  --headless                  Hide main window (useful for --smoke-test)\n");
+    printf("  --warp                      Start in speed multiplier mode\n");
     printf("  --fullscreen                Start in UI fullscreen mode (ESC toggle)\n");
     printf("  --no-rolling-record         Disable rolling state recording\n");
     printf("  --no-gl-composite           Disable OpenGL composite path\n");
