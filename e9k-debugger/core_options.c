@@ -793,7 +793,7 @@ core_options_makeBody(core_options_modal_state_t *st, e9ui_context_t *ctx)
         content = cols;
     }
 
-    e9ui_component_t *btnSave = e9ui_button_make("OK", core_options_saveClicked, st);
+    e9ui_component_t *btnSave = e9ui_button_make("Apply", core_options_saveClicked, st);
     e9ui_component_t *btnDefaults = e9ui_button_make("Defaults", core_options_defaultsClicked, st);
     e9ui_component_t *btnCancel = e9ui_button_make("Cancel", core_options_cancelClicked, st);
     st->btnSave = btnSave;
@@ -811,12 +811,12 @@ core_options_makeBody(core_options_modal_state_t *st, e9ui_context_t *ctx)
     e9ui_flow_setPadding(footer, 0);
     e9ui_flow_setSpacing(footer, 8);
     e9ui_flow_setWrap(footer, 0);
-    if (btnDefaults) {
-        e9ui_flow_add(footer, btnDefaults);
-    }
     if (btnSave) {
         e9ui_flow_add(footer, btnSave);
     }
+    if (btnDefaults) {
+        e9ui_flow_add(footer, btnDefaults);
+    }    
     if (btnCancel) {
         e9ui_flow_add(footer, btnCancel);
     }

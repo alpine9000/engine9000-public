@@ -1791,16 +1791,14 @@ settings_buildModalBody(e9ui_context_t *ctx)
     e9ui_flow_setPadding(buttons, 0);
     e9ui_flow_setSpacing(buttons, 8);
     e9ui_flow_setWrap(buttons, 0);
-    if (btnDefaults) {
-        e9ui_button_setTheme(btnDefaults, e9ui_theme_button_preset_profile_active());
-        e9ui_button_setGlowPulse(btnDefaults, 1);
-        e9ui_flow_add(buttons, btnDefaults);
-    }
     if (btnSave) {
         e9ui_button_setTheme(btnSave, e9ui_theme_button_preset_green());
         e9ui_button_setGlowPulse(btnSave, 1);
         e9ui_flow_add(buttons, btnSave);
     }
+    if (btnDefaults) {
+        e9ui_flow_add(buttons, btnDefaults);
+    }    
     if (btnCancel) {
         e9ui_button_setTheme(btnCancel, e9ui_theme_button_preset_red());
         e9ui_button_setGlowPulse(btnCancel, 1);
