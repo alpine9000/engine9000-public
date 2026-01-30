@@ -97,6 +97,33 @@ amiga_uaeKeyIsFloppy(const char *key, int *out_drive)
 }
 
 static int
+amiga_uaeKeyIsFloppyType(const char *key, int *out_drive)
+{
+    if (out_drive) {
+        *out_drive = -1;
+    }
+    if (!key || !*key) {
+        return 0;
+    }
+    if (strncmp(key, "floppy", 6) != 0) {
+        return 0;
+    }
+    const char *p = key + 6;
+    if (*p < '0' || *p > '9') {
+        return 0;
+    }
+    int drive = *p - '0';
+    p++;
+    if (strcmp(p, "type") != 0) {
+        return 0;
+    }
+    if (out_drive) {
+        *out_drive = drive;
+    }
+    return 1;
+}
+
+static int
 amiga_uaeParseKeyValue(const char *line, char *outKey, size_t keyCap, char *outValue, size_t valueCap)
 {
     if (!line || !outKey || keyCap == 0 || !outValue || valueCap == 0) {
@@ -383,16 +410,20 @@ amiga_uaeWriteUaeOptionsToFile(const char *uaePath)
         while (fgets(line, sizeof(line), in)) {
             char key[1024];
             char value[7168];
-            int isPuae = 0;
+            int isManaged = 0;
             if (amiga_uaeParseKeyValue(line, key, sizeof(key), value, sizeof(value))) {
                 int drive = -1;
                 if (amiga_uaeKeyIsPuae(key)) {
-                    isPuae = 1;
+                    isManaged = 1;
                 } else if (amiga_uaeKeyIsFloppy(key, &drive)) {
-                    isPuae = 1;
+                    isManaged = 1;
+                } else if (amiga_uaeKeyIsFloppyType(key, &drive)) {
+                    isManaged = 1;
+                } else if (strcmp(key, "nr_floppies") == 0) {
+                    isManaged = 1;
                 }
             }
-            if (isPuae) {
+            if (isManaged) {
                 continue;
             }
             fputs(line, out);
@@ -406,11 +437,20 @@ amiga_uaeWriteUaeOptionsToFile(const char *uaePath)
         fputc('\n', out);
     }
 
+    int nrFloppies = 1;
+    if (amiga_uae_floppy1[0]) {
+        nrFloppies = 2;
+    } else if (amiga_uae_floppy0[0]) {
+        nrFloppies = 1;
+    }
+    fprintf(out, "nr_floppies=%d\n", nrFloppies);
+
     if (amiga_uae_floppy0[0]) {
         fprintf(out, "floppy0=%s\n", amiga_uae_floppy0);
     }
     if (amiga_uae_floppy1[0]) {
         fprintf(out, "floppy1=%s\n", amiga_uae_floppy1);
+        fprintf(out, "floppy1type=0\n");
     }
 
     if (amiga_uae_entryCount > 1) {
