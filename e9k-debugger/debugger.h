@@ -125,6 +125,9 @@ typedef struct e9k_debugger {
     int cliStartFullscreen;
     int cliHeadless;
     int cliWarp;
+    int cliResetCfg;
+    int cliCoreSystemOverride;
+    debugger_system_type_t cliCoreSystem;
     int settingsOk;
     int elfValid;
     int restartRequested;

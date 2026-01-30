@@ -8,6 +8,8 @@
 
 #include <sys/stat.h>
 #include <time.h>
+#include <errno.h>
+#include <string.h>
 
 #include "e9ui.h"
 #include "libretro_host.h"
@@ -384,6 +386,9 @@ debugger_ctor(void)
   debugger.cliStartFullscreen = 0;
   debugger.cliHeadless = 0;
   debugger.cliWarp = 0;
+  debugger.cliResetCfg = 0;
+  debugger.cliCoreSystemOverride = 0;
+  debugger.cliCoreSystem = DEBUGGER_SYSTEM_AMIGA;
   e9ui->glCompositeEnabled = 1;
   e9ui->transition.mode = e9k_transition_random;
   e9ui->transition.fullscreenMode = e9k_transition_none;
@@ -421,6 +426,21 @@ debugger_main(int argc, char **argv)
   if (cli_hasError()) {
     cli_printUsage(argv && argv[0] ? argv[0] : NULL);
     return 1;
+  }
+  if (debugger.cliResetCfg) {
+    const char *path = debugger_configPath();
+    if (path && *path) {
+      errno = 0;
+      if (remove(path) != 0 && errno != ENOENT) {
+        debug_error("reset-cfg: failed to delete '%s': %s", path, strerror(errno));
+        return 1;
+      }
+      debug_printf("reset-cfg: deleted '%s'", path);
+    }
+    return 2;
+  }
+  if (debugger.cliCoreSystemOverride) {
+    debugger_setCoreSystem(debugger.cliCoreSystem);
   }
   if (debugger.smokeTestMode != SMOKE_TEST_MODE_NONE || debugger.cliHeadless || debugger.cliDisableRollingRecord) {
     state_buffer_setRollingPaused(1);

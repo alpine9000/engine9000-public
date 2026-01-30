@@ -488,7 +488,7 @@ BIOS files are not included. You must supply a valid Neo Geo BIOS set in the **s
 
 - Default system directory: `./system`
 - Set via Settings UI: `BIOS FOLDER`
-- Or via CLI: `--libretro-system-dir PATH`
+- Or via CLI: `--system-dir PATH` (use `--neogeo` to force Neo Geo mode)
 
 In this repo, the default `./system` directory corresponds to `e9k-debugger/system` when running from the `e9k-debugger` directory. In practice this is typically a BIOS archive such as `neogeo.zip` (MVS / UniBIOS) or `aes.zip` (AES), placed inside the system directory.
 
@@ -567,25 +567,31 @@ Useful environment variables:
 
 Run `e9k-debugger --help` for the full list. The current options include:
 
-#### Neo Geo only (not implemented in Amiga yet)
-- `--elf PATH`
-- `--libretro-core PATH`
-- `--libretro-rom PATH`
-- `--rom-folder PATH` (generates a `.neo`)
-- `--libretro-system-dir PATH`
-- `--libretro-save-dir PATH`
-- `--source-dir PATH`
-- `--audio-buffer-ms MS`
-
-#### Shared options
+#### Global options
+- `--help`, `-h`
+- `--reset-cfg` (deletes the saved config file and restarts)
+- `--amiga`, `--neogeo` (sets the active system; affects which config options apply)
+- `--core PATH` (applies to the active system)
+- `--system-dir PATH` (applies to the active system)
+- `--save-dir PATH` (applies to the active system)
+- `--source-dir PATH` (applies to the active system)
+- `--audio-buffer-ms MS` (currently Neo Geo only)
 - `--window-size WxH`
 - `--record PATH`, `--playback PATH`
 - `--make-smoke PATH`, `--smoke-test PATH`, `--smoke-open`
-- `--headless` - hide the main window (useful for smoke tests)
+- `--headless` - hide the main window (also disables rolling state recording by default)
 - `--warp` - start in speed multiplier mode
 - `--fullscreen` (alias: `--start-fullscreen`) - start in UI fullscreen mode (ESC toggle)
-- `--no-rolling-record` - start with rolling state recording paused (can be toggled with `F11`)
-- `--no-gl-composite`
+- `--no-rolling-record` - start with rolling state recording paused (can be toggled with `F11`; smoke/headless also pause by default)
+
+#### Neo Geo options (use with `--neogeo`)
+- `--elf PATH`
+- `--rom PATH` (Neo Geo `.neo` file)
+- `--rom-folder PATH` (generates a `.neo`)
+
+#### Amiga options (use with `--amiga`)
+- `--hunk PATH` (Amiga debug binary path)
+- `--uae PATH` (Amiga UAE config `.uae` path)
 
 ---
 

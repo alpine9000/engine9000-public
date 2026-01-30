@@ -15,6 +15,7 @@
 static int cli_helpRequestedFlag = 0;
 static int cli_errorFlag = 0;
 static char cli_savedArgv0[PATH_MAX];
+static int cli_resetCfgConsumed = 0;
 
 static void
 cli_copyPath(char *dest, size_t capacity, const char *src)
@@ -49,6 +50,29 @@ cli_setError(const char *message)
     cli_errorFlag = 1;
 }
 
+static debugger_system_type_t
+cli_getTargetCoreSystem(int argc, char **argv)
+{
+    debugger_system_type_t system = debugger.config.coreSystem;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--amiga") == 0) {
+            system = DEBUGGER_SYSTEM_AMIGA;
+        } else if (strcmp(argv[i], "--neogeo") == 0) {
+            system = DEBUGGER_SYSTEM_NEOGEO;
+        }
+    }
+    return system;
+}
+
+static e9k_libretro_config_t *
+cli_targetLibretroConfig(debugger_system_type_t system)
+{
+    if (system == DEBUGGER_SYSTEM_AMIGA) {
+        return &debugger.cliConfig.amiga.libretro;
+    }
+    return &debugger.cliConfig.neogeo.libretro;
+}
+
 void
 cli_setArgv0(const char *argv0)
 {
@@ -69,61 +93,151 @@ cli_getArgv0(void)
 void
 cli_parseArgs(int argc, char **argv)
 {
+    debugger_system_type_t targetSystem = cli_getTargetCoreSystem(argc, argv);
+    e9k_libretro_config_t *targetLibretro = cli_targetLibretroConfig(targetSystem);
+
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             cli_helpRequestedFlag = 1;
             return;
         }
-        if (strcmp(argv[i], "--rom-folder") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--reset-cfg") == 0) {
+            if (!cli_resetCfgConsumed) {
+                debugger.cliResetCfg = 1;
+                cli_resetCfgConsumed = 1;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--rom-folder") == 0) {
+            if (targetSystem == DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("rom-folder: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            if (i + 1 >= argc) {
+                cli_setError("rom-folder: missing folder path");
+                return;
+            }
             cli_copyPath(debugger.cliConfig.neogeo.romFolder, sizeof(debugger.cliConfig.neogeo.romFolder), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--rom-folder=", sizeof("--rom-folder=") - 1) == 0) {
+            if (targetSystem == DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("rom-folder: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
             cli_copyPath(debugger.cliConfig.neogeo.romFolder, sizeof(debugger.cliConfig.neogeo.romFolder), argv[i] + sizeof("--rom-folder=") - 1);
             continue;
         }
-        if (strcmp(argv[i], "--elf") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--elf") == 0) {
+            if (targetSystem == DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("elf: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            if (i + 1 >= argc) {
+                cli_setError("elf: missing file path");
+                return;
+            }
             cli_copyPath(debugger.cliConfig.neogeo.libretro.elfPath, sizeof(debugger.cliConfig.neogeo.libretro.elfPath), argv[++i]);
             continue;
         }
-        if (strcmp(argv[i], "--libretro-core") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.corePath, sizeof(debugger.cliConfig.neogeo.libretro.corePath), argv[++i]);
+        if (strcmp(argv[i], "--hunk") == 0) {
+            if (targetSystem != DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("hunk: only supported for Amiga (use --amiga)");
+                return;
+            }
+            if (i + 1 >= argc) {
+                cli_setError("hunk: missing file path");
+                return;
+            }
+            cli_copyPath(debugger.cliConfig.amiga.libretro.elfPath, sizeof(debugger.cliConfig.amiga.libretro.elfPath), argv[++i]);
             continue;
         }
-        if (strncmp(argv[i], "--libretro-core=", sizeof("--libretro-core=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.corePath, sizeof(debugger.cliConfig.neogeo.libretro.corePath), argv[i] + sizeof("--libretro-core=") - 1);
+        if (strncmp(argv[i], "--hunk=", sizeof("--hunk=") - 1) == 0) {
+            if (targetSystem != DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("hunk: only supported for Amiga (use --amiga)");
+                return;
+            }
+            if (argv[i][sizeof("--hunk=") - 1] == '\0') {
+                cli_setError("hunk: missing file path");
+                return;
+            }
+            cli_copyPath(debugger.cliConfig.amiga.libretro.elfPath, sizeof(debugger.cliConfig.amiga.libretro.elfPath), argv[i] + sizeof("--hunk=") - 1);
             continue;
         }
-        if (strcmp(argv[i], "--libretro-rom") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--core") == 0 && i + 1 < argc) {
+            cli_copyPath(targetLibretro->corePath, sizeof(targetLibretro->corePath), argv[++i]);
+            continue;
+        }
+        if (strncmp(argv[i], "--core=", sizeof("--core=") - 1) == 0) {
+            cli_copyPath(targetLibretro->corePath, sizeof(targetLibretro->corePath), argv[i] + sizeof("--core=") - 1);
+            continue;
+        }
+        if (strcmp(argv[i], "--rom") == 0) {
+            if (targetSystem == DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("rom: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            if (i + 1 >= argc) {
+                cli_setError("rom: missing rom path");
+                return;
+            }
             cli_copyPath(debugger.cliConfig.neogeo.libretro.romPath, sizeof(debugger.cliConfig.neogeo.libretro.romPath), argv[++i]);
             continue;
         }
-        if (strncmp(argv[i], "--libretro-rom=", sizeof("--libretro-rom=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.romPath, sizeof(debugger.cliConfig.neogeo.libretro.romPath), argv[i] + sizeof("--libretro-rom=") - 1);
+        if (strncmp(argv[i], "--rom=", sizeof("--rom=") - 1) == 0) {
+            if (targetSystem == DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("rom: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.romPath, sizeof(debugger.cliConfig.neogeo.libretro.romPath), argv[i] + sizeof("--rom=") - 1);
             continue;
         }
-        if (strcmp(argv[i], "--libretro-system-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.systemDir, sizeof(debugger.cliConfig.neogeo.libretro.systemDir), argv[++i]);
+        if (strcmp(argv[i], "--uae") == 0) {
+            if (targetSystem != DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("uae: only supported for Amiga (use --amiga)");
+                return;
+            }
+            if (i + 1 >= argc) {
+                cli_setError("uae: missing file path");
+                return;
+            }
+            cli_copyPath(debugger.cliConfig.amiga.libretro.romPath, sizeof(debugger.cliConfig.amiga.libretro.romPath), argv[++i]);
             continue;
         }
-        if (strncmp(argv[i], "--libretro-system-dir=", sizeof("--libretro-system-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.systemDir, sizeof(debugger.cliConfig.neogeo.libretro.systemDir), argv[i] + sizeof("--libretro-system-dir=") - 1);
+        if (strncmp(argv[i], "--uae=", sizeof("--uae=") - 1) == 0) {
+            if (targetSystem != DEBUGGER_SYSTEM_AMIGA) {
+                cli_setError("uae: only supported for Amiga (use --amiga)");
+                return;
+            }
+            if (argv[i][sizeof("--uae=") - 1] == '\0') {
+                cli_setError("uae: missing file path");
+                return;
+            }
+            cli_copyPath(debugger.cliConfig.amiga.libretro.romPath, sizeof(debugger.cliConfig.amiga.libretro.romPath), argv[i] + sizeof("--uae=") - 1);
             continue;
         }
-        if (strcmp(argv[i], "--libretro-save-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.saveDir, sizeof(debugger.cliConfig.neogeo.libretro.saveDir), argv[++i]);
+        if (strcmp(argv[i], "--system-dir") == 0 && i + 1 < argc) {
+            cli_copyPath(targetLibretro->systemDir, sizeof(targetLibretro->systemDir), argv[++i]);
             continue;
         }
-        if (strncmp(argv[i], "--libretro-save-dir=", sizeof("--libretro-save-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.saveDir, sizeof(debugger.cliConfig.neogeo.libretro.saveDir), argv[i] + sizeof("--libretro-save-dir=") - 1);
+        if (strncmp(argv[i], "--system-dir=", sizeof("--system-dir=") - 1) == 0) {
+            cli_copyPath(targetLibretro->systemDir, sizeof(targetLibretro->systemDir), argv[i] + sizeof("--system-dir=") - 1);
+            continue;
+        }
+        if (strcmp(argv[i], "--save-dir") == 0 && i + 1 < argc) {
+            cli_copyPath(targetLibretro->saveDir, sizeof(targetLibretro->saveDir), argv[++i]);
+            continue;
+        }
+        if (strncmp(argv[i], "--save-dir=", sizeof("--save-dir=") - 1) == 0) {
+            cli_copyPath(targetLibretro->saveDir, sizeof(targetLibretro->saveDir), argv[i] + sizeof("--save-dir=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--source-dir") == 0 && i + 1 < argc) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.sourceDir, sizeof(debugger.cliConfig.neogeo.libretro.sourceDir), argv[++i]);
+            cli_copyPath(targetLibretro->sourceDir, sizeof(targetLibretro->sourceDir), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--source-dir=", sizeof("--source-dir=") - 1) == 0) {
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.sourceDir, sizeof(debugger.cliConfig.neogeo.libretro.sourceDir), argv[i] + sizeof("--source-dir=") - 1);
+            cli_copyPath(targetLibretro->sourceDir, sizeof(targetLibretro->sourceDir), argv[i] + sizeof("--source-dir=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--audio-buffer-ms") == 0 && i + 1 < argc) {
@@ -249,6 +363,16 @@ cli_parseArgs(int argc, char **argv)
             debugger.smokeTestOpenOnFail = 1;
             continue;
         }
+        if (strcmp(argv[i], "--amiga") == 0) {
+            debugger.cliCoreSystemOverride = 1;
+            debugger.cliCoreSystem = DEBUGGER_SYSTEM_AMIGA;
+            continue;
+        }
+        if (strcmp(argv[i], "--neogeo") == 0) {
+            debugger.cliCoreSystemOverride = 1;
+            debugger.cliCoreSystem = DEBUGGER_SYSTEM_NEOGEO;
+            continue;
+        }
         if (strcmp(argv[i], "--headless") == 0) {
             debugger.cliHeadless = 1;
             continue;
@@ -265,11 +389,6 @@ cli_parseArgs(int argc, char **argv)
             debugger.cliDisableRollingRecord = 1;
             continue;
         }
-        if (strcmp(argv[i], "--no-gl-composite") == 0) {
-            e9ui->glCompositeEnabled = 0;
-            continue;
-        }
-
         {
             char msg[256];
             if (argv[i] && argv[i][0] == '-') {
@@ -302,27 +421,35 @@ cli_printUsage(const char *argv0)
     const char *prog = argv0 && *argv0 ? argv0 : "e9k-debugger";
     printf("Usage: %s [options]\n", prog);
     printf("\n");
-    printf("Options:\n");
-    printf("  --help, -h                 Show this help and exit\n");
-    printf("  --elf PATH                 ELF file path\n");
-    printf("  --libretro-core PATH        Libretro core path\n");
-    printf("  --libretro-rom PATH         Libretro ROM (.neo) path\n");
-    printf("  --rom-folder PATH           ROM folder (generates .neo)\n");
-    printf("  --libretro-system-dir PATH  Libretro system/BIOS directory\n");
-    printf("  --libretro-save-dir PATH    Libretro saves directory\n");
-    printf("  --source-dir PATH           Source directory\n");
-    printf("  --audio-buffer-ms MS        Audio buffer in milliseconds\n");
-    printf("  --window-size WxH           Initial window size override\n");
-    printf("  --record PATH               Record input events to a file\n");
-    printf("  --playback PATH             Replay input events from a file\n");
-    printf("  --make-smoke PATH           Save frames and inputs to a folder\n");
-    printf("  --smoke-test PATH           Replay inputs and compare frames\n");
-    printf("  --smoke-open                Open montage on smoke-test failure\n");
-    printf("  --headless                  Hide main window (useful for --smoke-test)\n");
-    printf("  --warp                      Start in speed multiplier mode\n");
-    printf("  --fullscreen                Start in UI fullscreen mode (ESC toggle)\n");
-    printf("  --no-rolling-record         Disable rolling state recording\n");
-    printf("  --no-gl-composite           Disable OpenGL composite path\n");
+    printf("Global options:\n");
+    printf("  --help, -h                   Show this help and exit\n");
+    printf("  --reset-cfg                  Delete saved config file and restart\n");
+    printf("  --core PATH                  Core path (applies to current system)\n");
+    printf("  --system-dir PATH            System/BIOS directory (applies to current system)\n");
+    printf("  --save-dir PATH              Saves directory (applies to current system)\n");
+    printf("  --source-dir PATH            Source directory (applies to current system)\n");
+    printf("  --audio-buffer-ms MS         Audio buffer in milliseconds\n");
+    printf("  --window-size WxH            Initial window size override\n");
+    printf("  --record PATH                Record input events to a file\n");
+    printf("  --playback PATH              Replay input events from a file\n");
+    printf("  --make-smoke PATH            Save frames and inputs to a folder\n");
+    printf("  --smoke-test PATH            Replay inputs and compare frames\n");
+    printf("  --smoke-open                 Open montage on smoke-test failure\n");
+    printf("  --headless                   Hide main window (useful for --smoke-test)\n");
+    printf("  --warp                       Start in speed multiplier mode\n");
+    printf("  --fullscreen                 Start in UI fullscreen mode (ESC toggle)\n");
+    printf("  --no-rolling-record          Disable rolling state recording\n");
+    printf("\n");
+    printf("Neo Geo options (use with --neogeo):\n");
+    printf("  --neogeo                     Start in Neo Geo system mode\n");    
+    printf("  --elf PATH                   ELF file path\n");
+    printf("  --rom PATH                   Neo Geo ROM (.neo) path\n");
+    printf("  --rom-folder PATH            ROM folder (generates a .neo)\n");
+    printf("\n");
+    printf("Amiga options (use with --amiga):\n");
+    printf("  --amiga                      Start in Amiga system mode\n");    
+    printf("  --hunk PATH                  Amiga debug binary (hunk) path\n");
+    printf("  --uae PATH                   Amiga UAE config (.uae) path\n");
     printf("\n");
     printf("You can also use --option=VALUE forms for the PATH/MS options.\n");
 }
@@ -330,6 +457,25 @@ cli_printUsage(const char *argv0)
 void
 cli_applyOverrides(void)
 {
+    if (debugger.cliConfig.amiga.libretro.corePath[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.corePath, sizeof(debugger.config.amiga.libretro.corePath), debugger.cliConfig.amiga.libretro.corePath);
+    }
+    if (debugger.cliConfig.amiga.libretro.romPath[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.romPath, sizeof(debugger.config.amiga.libretro.romPath), debugger.cliConfig.amiga.libretro.romPath);
+    }
+    if (debugger.cliConfig.amiga.libretro.elfPath[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.elfPath, sizeof(debugger.config.amiga.libretro.elfPath), debugger.cliConfig.amiga.libretro.elfPath);
+    }
+    if (debugger.cliConfig.amiga.libretro.systemDir[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.systemDir, sizeof(debugger.config.amiga.libretro.systemDir), debugger.cliConfig.amiga.libretro.systemDir);
+    }
+    if (debugger.cliConfig.amiga.libretro.saveDir[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.saveDir, sizeof(debugger.config.amiga.libretro.saveDir), debugger.cliConfig.amiga.libretro.saveDir);
+    }
+    if (debugger.cliConfig.amiga.libretro.sourceDir[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.sourceDir, sizeof(debugger.config.amiga.libretro.sourceDir), debugger.cliConfig.amiga.libretro.sourceDir);
+    }
+
     if (debugger.cliConfig.neogeo.libretro.corePath[0]) {
         cli_copyPath(debugger.config.neogeo.libretro.corePath, sizeof(debugger.config.neogeo.libretro.corePath), debugger.cliConfig.neogeo.libretro.corePath);
     }
