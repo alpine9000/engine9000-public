@@ -1564,7 +1564,7 @@ e9ui_eventWindowId(const SDL_Event *ev)
         return 0;
     }
 }
-
+ 
 int
 e9ui_processEvents(void)
 {
@@ -1799,19 +1799,13 @@ e9ui_processEvents(void)
         }
         // For mouse and other events, bubble through tree for hit-testing and focus updates
         e9ui_component_t *root = e9ui->fullscreen ? e9ui->fullscreen : e9ui->root;
-        int suppressMotion = 0;
-        if (ev.type == SDL_MOUSEMOTION) {
-            if ((ev.motion.state & SDL_BUTTON_LMASK) != 0 && e9ui_text_select_hasSelection()) {
-                suppressMotion = 1;
-            }
-        }
-        if (root && !suppressMotion) {
-            e9ui_event_process(root, &e9ui->ctx, &ev);
-        }
-        if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT && !e9ui->ctx.focusClickHandled) {
-            if (!sprite_debug_is_window_id(ev.button.windowID)) {
-                e9ui_setFocus(&e9ui->ctx, NULL);
-            }
+	if (root) {
+	  e9ui_event_process(root, &e9ui->ctx, &ev);
+	}
+	if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT && !e9ui->ctx.focusClickHandled) {
+	  if (!sprite_debug_is_window_id(ev.button.windowID)) {
+	    e9ui_setFocus(&e9ui->ctx, NULL);
+	  }
         }
     }
     return 0;
