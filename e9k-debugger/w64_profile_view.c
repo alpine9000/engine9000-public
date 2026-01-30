@@ -16,6 +16,7 @@
 
 #include "profile_view.h"
 #include "debug.h"
+#include "debugger.h"
 #include "file.h"
 
 #define PROFILE_VIEWER_PYTHON_ENV "E9K_PROFILE_VIEWER_PYTHON"
@@ -119,9 +120,63 @@ profile_viewer_build_cmd(char *out, size_t cap, const char *python, const char *
     if (!out || cap == 0) {
         return 0;
     }
+    size_t used = 0;
     int n = snprintf(out, cap, "\"%s\" \"%s\" --input \"%s\" --out \"%s\"",
                      python, script, json_path, out_dir);
-    return (n > 0 && (size_t)n < cap) ? 1 : 0;
+    if (n <= 0 || (size_t)n >= cap) {
+        out[cap - 1] = '\0';
+        return 0;
+    }
+    used = (size_t)n;
+    if (debugger.libretro.toolchainPrefix[0]) {
+        n = snprintf(out + used, cap - used, " --toolchain-prefix \"%s\"", debugger.libretro.toolchainPrefix);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    if (debugger.libretro.elfPath[0]) {
+        n = snprintf(out + used, cap - used, " --elf \"%s\"", debugger.libretro.elfPath);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    if (debugger.libretro.sourceDir[0]) {
+        n = snprintf(out + used, cap - used, " --src-base \"%s\"", debugger.libretro.sourceDir);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    if (debugger.machine.textBaseAddr) {
+        n = snprintf(out + used, cap - used, " --text-base 0x%08X", (unsigned)debugger.machine.textBaseAddr);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    if (debugger.machine.dataBaseAddr) {
+        n = snprintf(out + used, cap - used, " --data-base 0x%08X", (unsigned)debugger.machine.dataBaseAddr);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    if (debugger.machine.bssBaseAddr) {
+        n = snprintf(out + used, cap - used, " --bss-base 0x%08X", (unsigned)debugger.machine.bssBaseAddr);
+        if (n <= 0 || (size_t)n >= cap - used) {
+            out[cap - 1] = '\0';
+            return 0;
+        }
+        used += (size_t)n;
+    }
+    return 1;
 }
 
 int

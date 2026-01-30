@@ -73,7 +73,7 @@
       <div class="header">
         <div class="logo"><img id="logo" src="__LOGO_IMG__" alt="Geo Profiler" style="height:50px"/></div>
         <div class="head-right">
-          <div class="brand">ENGINE9000 PROFILER (NEO GEO 68K)</div>
+          <div class="brand">ENGINE9000 PROFILER (68K)</div>
           <div class="stats-row">
             <div class="stats-left" style="display:flex;gap:8px;align-items:center;">
               <div id="status" class="meta"></div>
@@ -600,10 +600,15 @@
         const s = statusObj||{}; const el = document.getElementById('diagContent');
         if (!el) return;
         const errs = Array.isArray(s.errors)? s.errors: [];
-        const lines = [];
-        if (s.asm){
-          lines.push(`ASM ok: ${s.asm.ok} source: ${s.asm.source||'n/a'} tool: ${s.asm.tool||'n/a'} mixed: ${s.asm.mixed}`);
-        }
+	        const lines = [];
+	        if (s.asm){
+	          lines.push(`ASM ok: ${s.asm.ok} source: ${s.asm.source||'n/a'} tool: ${s.asm.tool||'n/a'} mixed: ${s.asm.mixed}`);
+	          if (s.asm.elf) lines.push(`ELF: ${s.asm.elf}`);
+	          if (s.asm.toolchainPrefix) lines.push(`Toolchain prefix: ${s.asm.toolchainPrefix}`);
+	          if (s.asm.vmaMin && s.asm.vmaMax) lines.push(`ELF VMA range: ${s.asm.vmaMin}..${s.asm.vmaMax}`);
+	          if (s.asm.textBase) lines.push(`Runtime textBase: ${s.asm.textBase}`);
+	          if (typeof s.asm.entriesTotal === 'number' && typeof s.asm.pcsParsed === 'number' && typeof s.asm.slices === 'number') lines.push(`Entries: ${s.asm.entriesTotal} pcsParsed: ${s.asm.pcsParsed} slices: ${s.asm.slices} pcsAdjusted: ${s.asm.pcsAdjusted||0}`);
+	        }
         if (s.sources){
           lines.push(`Sources mode: ${s.sources.mode} base: ${s.sources.base||'n/a'} files: ${s.sources.files||0}`);
         }

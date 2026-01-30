@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--title", default="Geo Profiler Report", help="Page title")
     p.add_argument("--flame", action="store_true", help="Embed a static flame graph SVG (built from function_chain)")
     p.add_argument("--flame-metric", choices=["cycles", "count"], help="Metric for flame graph width (default: --sort)")
+    p.add_argument("--elf", help="ELF path used for disassembly/mixed view (default: $GEO_PROF_ELF)")
+    p.add_argument("--toolchain-prefix", help="Toolchain prefix (e.g. m68k-amigaos-) used to locate objdump (default: $E9K_TOOLCHAIN_PREFIX)")
+    p.add_argument("--text-base", help="Runtime TEXT base address for PC translation (default: none)")
+    p.add_argument("--data-base", help="Runtime DATA base address (default: none)")
+    p.add_argument("--bss-base", help="Runtime BSS base address (default: none)")
     p.add_argument("--src-base", help="Source tree root for embedding source files")
     p.add_argument("--embed-source", choices=["none", "full", "context"], default="full", help="Embed source: none, full files (default), or line context slices")
     p.add_argument("--context-lines", type=int, default=12, help="Context lines on each side when --embed-source context is used")
@@ -49,6 +54,10 @@ def parse_args() -> argparse.Namespace:
         args.input = os.environ.get("GEO_PROF_RESOLVED_JSON") or os.environ.get("GEO_PROF_JSON")
     if not args.src_base:
         args.src_base = os.environ.get("GEO_PROF_SRC_BASE")
+    if not args.elf:
+        args.elf = os.environ.get("GEO_PROF_ELF")
+    if not args.toolchain_prefix:
+        args.toolchain_prefix = os.environ.get("E9K_TOOLCHAIN_PREFIX")
     if not args.out and args.input:
         try:
             inp = Path(args.input)
@@ -232,12 +241,13 @@ def main() -> None:
         flame_json = None
     # Optionally embed sources
     sources_json = None
+    sources_obj: Optional[Dict[str, Any]] = None
     if args.embed_source != "none":
         if not args.src_base:
             print("Warning: --embed-source requested but --src-base not provided; skipping embedding")
         else:
-            src_map = embed_sources(entries, Path(args.src_base), mode=args.embed_source, context_lines=max(0, args.context_lines))
-            sources_json = json.dumps(src_map)
+            sources_obj = embed_sources(entries, Path(args.src_base), mode=args.embed_source, context_lines=max(0, args.context_lines))
+            sources_json = json.dumps(sources_obj)
             try:
                 # initialize status for sources if available later
                 pass
@@ -249,7 +259,7 @@ def main() -> None:
     # Status for UI badge
     errors: List[str] = []
     status = {
-        "asm": {"ok": False, "tool": None, "mixed": False, "source": None},
+        "asm": {"ok": False, "tool": None, "mixed": False, "source": None, "elf": args.elf or None, "toolchainPrefix": args.toolchain_prefix or None},
         "sources": {"mode": args.embed_source, "base": args.src_base or None, "files": 0},
         "errors": errors,
     }
@@ -260,13 +270,35 @@ def main() -> None:
             status["sources"]["files"] = len((_src_tmp or {}).get("files", {}))
         except Exception:
             pass
-    elf_path = os.environ.get("GEO_PROF_ELF")
+    elf_path = args.elf
     asm_mix: Dict[str, List[Dict[str, Any]]] = {}
     if elf_path and Path(elf_path).exists():
         try:
-            asm_index, asm_diag, asm_seq = build_disasm_index(Path(elf_path))
+            asm_index, asm_diag, asm_seq = build_disasm_index(Path(elf_path), toolchain_prefix=args.toolchain_prefix)
             if asm_index:
                 status["asm"].update({"ok": True, "tool": asm_diag.get("tool"), "source": "elf"})
+                status["asm"]["entriesTotal"] = len(out.get("entries") or [])
+                status["asm"]["slices"] = 0
+                status["asm"]["pcsParsed"] = 0
+                status["asm"]["pcsAdjusted"] = 0
+                status["asm"]["textBase"] = args.text_base
+                status["asm"]["dataBase"] = args.data_base
+                status["asm"]["bssBase"] = args.bss_base
+
+                asm_addrs = sorted(asm_index.keys())
+                asm_min = asm_addrs[0] if asm_addrs else 0
+                asm_max = asm_addrs[-1] if asm_addrs else 0
+                status["asm"]["vmaMin"] = f"0x{asm_min:08x}"
+                status["asm"]["vmaMax"] = f"0x{asm_max:08x}"
+
+                text_base_int = None
+                try:
+                    if args.text_base:
+                        text_base_int = int(str(args.text_base), 0)
+                except Exception:
+                    text_base_int = None
+
+                addr2 = addr2line_create(Path(elf_path), toolchain_prefix=args.toolchain_prefix, src_base=Path(args.src_base) if args.src_base else None, sources=sources_obj)
                 # create slices for each entry using its representative PC
                 for row in out["entries"]:
                     pc_hex = row.get("address") or ""
@@ -274,21 +306,39 @@ def main() -> None:
                         pc = int(pc_hex, 16)
                     except Exception:
                         continue
-                    slice_rows = disasm_slice(asm_index, pc, context=24)
+                    status["asm"]["pcsParsed"] += 1
+
+                    pc_adj = pc
+                    if asm_addrs and text_base_int is not None and not (asm_min <= pc_adj <= asm_max):
+                        # Heuristic: if profile PCs are runtime addresses, translate into ELF VMAs by subtracting the runtime text base.
+                        # Assume ELF VMAs begin at asm_min.
+                        bias = text_base_int - asm_min
+                        candidate = pc_adj - bias
+                        if asm_min <= candidate <= asm_max:
+                            pc_adj = candidate
+                            status["asm"]["pcsAdjusted"] += 1
+
+                    slice_rows = disasm_slice(asm_index, pc_adj, context=24)
+                    if addr2 and slice_rows:
+                        addr2line_annotate_slice(addr2, slice_rows)
                     if slice_rows:
                         asm_map[pc_hex.lower()] = slice_rows
+                        status["asm"]["slices"] += 1
                     # Build mixed slice using sequence
-                    idxs = [i for i,e in enumerate(asm_seq) if e.get("type")=="insn" and e.get("address")==pc]
+                    idxs = [i for i,e in enumerate(asm_seq) if e.get("type")=="insn" and e.get("address")==pc_adj]
                     if idxs:
                         i0 = idxs[0]
                         start = max(0, i0-60)
                         end = min(len(asm_seq), i0+61)
                         mixed = []
-                        for e in asm_seq[start:end]:
-                            if e.get("type")=="src":
-                                mixed.append({"kind":"src","file":e.get("file"),"line":e.get("line"),"text":e.get("text")})
-                            elif e.get("type")=="insn":
-                                mixed.append({"kind":"insn","address":f"0x{e.get('address',0):06x}","text":e.get("text"),"file":e.get("file"),"line":e.get("line"),"isPC": e.get("address")==pc})
+                        if asm_diag.get("mixedCandidate"):
+                            for e in asm_seq[start:end]:
+                                if e.get("type")=="src":
+                                    mixed.append({"kind":"src","file":e.get("file"),"line":e.get("line"),"text":e.get("text")})
+                                elif e.get("type")=="insn":
+                                    mixed.append({"kind":"insn","address":f"0x{e.get('address',0):06x}","text":e.get("text"),"file":e.get("file"),"line":e.get("line"),"isPC": e.get("address")==pc_adj})
+                        elif addr2:
+                            mixed = addr2line_build_mixed(addr2, asm_seq[start:end], pc_adj, sources_obj)
                         if mixed:
                             asm_mix[pc_hex.lower()] = mixed
                 # determine if any slice has file/line for mixed OR any mixed slice exists
@@ -309,7 +359,7 @@ def main() -> None:
         if rom and Path(rom).exists() and base:
             try:
                 base_int = int(str(base), 0)
-                asm_index, asm_diag, asm_seq = build_disasm_index_from_rom(Path(rom), base_int)
+                asm_index, asm_diag, asm_seq = build_disasm_index_from_rom(Path(rom), base_int, toolchain_prefix=args.toolchain_prefix)
                 if asm_index:
                     status["asm"].update({"ok": True, "tool": asm_diag.get("tool"), "source": "rom", "mixed": False})
                     for row in out["entries"]:
@@ -337,9 +387,13 @@ def main() -> None:
             except Exception as e:
                 errors.append(f"ROM disassembly failed: {e}")
     if status["asm"]["ok"] and not status["asm"]["mixed"]:
-        errors.append("ASM OK but no source line mapping found; Mixed view unavailable. Ensure ELF has DWARF line info and objdump emits -S lines.")
+        pcs_parsed = status.get("asm", {}).get("pcsParsed")
+        if isinstance(pcs_parsed, int) and pcs_parsed == 0:
+            errors.append("No entry addresses found (all address fields empty); ASM/Mixed view unavailable. Ensure analysis JSON includes an address per entry.")
+        else:
+            errors.append("ASM OK but no source line mapping found; Mixed view unavailable. Ensure ELF has DWARF line info (build with -g and do not strip), and that PCs match the ELF VMAs.")
     if not status["asm"]["ok"]:
-        errors.append("No ASM available. Ensure a suitable objdump is in PATH and GEO_PROF_ELF is set (or ROM+BASE).")
+        errors.append("No ASM available. Ensure a suitable objdump is in PATH and --elf is set (or ROM+BASE).")
     # Prepare logo image as data URI
     def _load_logo_data_uri() -> str:
         try:
@@ -416,6 +470,191 @@ def main() -> None:
     index_path.write_text(html, encoding="utf-8")
     print(f"✅ Wrote single-file viewer to {index_path}")
     try_open(index_path, no_open=args.no_open)
+
+
+def addr2line_create(elf: Path, *, toolchain_prefix: Optional[str], src_base: Optional[Path], sources: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    cmd = None
+    tc = toolchain_cmd("addr2line", toolchain_prefix)
+    if tc and which(tc):
+        cmd = tc
+    elif which("llvm-addr2line"):
+        cmd = "llvm-addr2line"
+    elif which("addr2line"):
+        cmd = "addr2line"
+    if not cmd:
+        return None
+    base = src_base.resolve() if src_base else None
+    basename_index: Dict[str, Optional[str]] = {}
+    if sources and isinstance(sources.get("files"), dict):
+        for k in sources["files"].keys():
+            b = Path(k).name
+            if b in basename_index and basename_index[b] != k:
+                basename_index[b] = None
+            else:
+                basename_index[b] = k
+    return {
+        "cmd": cmd,
+        "elf": str(elf),
+        "cache": {},  # addr(int) -> (file(str)|None, line(int)|None)
+        "src_base": str(base) if base else None,
+        "basename_index": basename_index,
+    }
+
+
+def addr2line_resolve(addr2: Dict[str, Any], addrs: List[int]) -> None:
+    cache: Dict[int, Any] = addr2["cache"]
+    todo = [a for a in addrs if a not in cache]
+    if not todo:
+        return
+    cmd = [addr2["cmd"], "-e", addr2["elf"]] + [hex(a) for a in todo]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+    except Exception:
+        for a in todo:
+            cache[a] = (None, None)
+        return
+    lines = out.splitlines()
+    if len(lines) != len(todo):
+        # best-effort map what we can
+        lines = (lines + ["??:0"] * len(todo))[: len(todo)]
+    src_base = Path(addr2["src_base"]).resolve() if addr2.get("src_base") else None
+    basename_index: Dict[str, Optional[str]] = addr2.get("basename_index") or {}
+    for a, ln in zip(todo, lines):
+        ln = (ln or "").strip()
+        file_part = None
+        line_part: Optional[int] = None
+        if ":" in ln:
+            fp, lp = ln.rsplit(":", 1)
+            fp = fp.strip()
+            lp = lp.strip()
+            if fp and fp != "??":
+                file_part = fp
+            try:
+                line_part = int(lp)
+            except Exception:
+                line_part = None
+        if not file_part or not line_part or line_part <= 0:
+            cache[a] = (None, None)
+            continue
+        # Normalize file to match embedded sources keys where possible
+        norm_file = file_part
+        try:
+            p = Path(file_part)
+            if src_base and p.is_absolute():
+                rel = p.resolve().relative_to(src_base)
+                norm_file = rel.as_posix()
+        except Exception:
+            pass
+        # If embedded sources exist, attempt to match by basename when needed
+        b = Path(norm_file).name
+        if basename_index and norm_file not in basename_index.values():
+            k = basename_index.get(b)
+            if isinstance(k, str):
+                norm_file = k
+        cache[a] = (norm_file, line_part)
+
+def addr2line_annotate_slice(addr2: Dict[str, Any], slice_rows: List[Dict[str, Any]]) -> None:
+    addrs: List[int] = []
+    for r in slice_rows:
+        if r.get("file") and r.get("line"):
+            continue
+        a = r.get("address")
+        if isinstance(a, str):
+            try:
+                addrs.append(int(a, 16))
+            except Exception:
+                continue
+    addr2line_resolve(addr2, addrs)
+    cache: Dict[int, Any] = addr2["cache"]
+    for r in slice_rows:
+        if r.get("file") and r.get("line"):
+            continue
+        a = r.get("address")
+        if not isinstance(a, str):
+            continue
+        try:
+            ai = int(a, 16)
+        except Exception:
+            continue
+        fp, lp = cache.get(ai, (None, None))
+        if fp and lp:
+            r["file"] = fp
+            r["line"] = lp
+
+
+def source_lookup_build(sources: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "sources": sources,
+        "full_cache": {},  # file -> list[str]
+    }
+
+
+def source_lookup_line(lookup: Dict[str, Any], file: str, line: int) -> Optional[str]:
+    sources = lookup.get("sources")
+    if not sources or not isinstance(sources.get("files"), dict):
+        return None
+    rec = sources["files"].get(file)
+    if not isinstance(rec, dict):
+        return None
+    if "content" in rec:
+        cache: Dict[str, Any] = lookup["full_cache"]
+        lines = cache.get(file)
+        if lines is None:
+            lines = str(rec.get("content") or "").splitlines()
+            cache[file] = lines
+        if line <= 0 or line > len(lines):
+            return None
+        return lines[line - 1]
+    if "ranges" in rec and isinstance(rec.get("ranges"), list):
+        for rng in rec["ranges"]:
+            if not isinstance(rng, dict):
+                continue
+            start = rng.get("start")
+            content = rng.get("content")
+            if not isinstance(start, int) or not isinstance(content, str):
+                continue
+            chunk_lines = content.splitlines()
+            end = start + len(chunk_lines) - 1
+            if start <= line <= end:
+                return chunk_lines[line - start]
+    return None
+
+
+def addr2line_build_mixed(addr2: Dict[str, Any], seq_window: List[Dict[str, Any]], pc: int, sources: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    lookup = source_lookup_build(sources)
+    # Resolve file/line for each instruction in the window
+    insn_addrs: List[int] = []
+    for e in seq_window:
+        if e.get("type") == "insn":
+            a = e.get("address")
+            if isinstance(a, int):
+                insn_addrs.append(a)
+    addr2line_resolve(addr2, insn_addrs)
+    cache: Dict[int, Any] = addr2["cache"]
+    last_file = None
+    last_line = None
+    for e in seq_window:
+        if e.get("type") != "insn":
+            continue
+        a = e.get("address")
+        if not isinstance(a, int):
+            continue
+        fp, lp = cache.get(a, (None, None))
+        if fp and lp and (fp != last_file or lp != last_line):
+            src_text = source_lookup_line(lookup, fp, lp) or ""
+            out.append({"kind": "src", "file": fp, "line": lp, "text": src_text})
+            last_file = fp
+            last_line = lp
+        out.append({
+            "kind": "insn",
+            "address": f"0x{a:06x}",
+            "text": e.get("text"),
+            "file": fp,
+            "line": lp,
+            "isPC": (a == pc),
+        })
+    return out
 
 
 # ---------------- Flame graph generation -----------------
@@ -679,30 +918,25 @@ def which(cmd: str) -> Optional[str]:
     return None
 
 
-def toolchain_cmd(tool: str) -> Optional[str]:
-    """Build a cross-tool command from E9K_TOOLCHAIN_PREFIX, if set.
+def toolchain_cmd(tool: str, prefix: Optional[str]) -> Optional[str]:
+    """Build a cross-tool command from the provided toolchain prefix.
 
     Accepts either "m68k-foo" or "m68k-foo-" styles.
     """
-    prefix = (os.environ.get("E9K_TOOLCHAIN_PREFIX") or "").strip()
+    prefix = (prefix or "").strip()
     if not prefix:
         return None
     return f"{prefix}{tool}" if prefix.endswith("-") else f"{prefix}-{tool}"
 
 
-def build_disasm_index(elf: Path) -> (Dict[int, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]):
+def build_disasm_index(elf: Path, *, toolchain_prefix: Optional[str] = None) -> (Dict[int, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]):
     """Run objdump/llvm-objdump and return a mapping of address -> instruction text.
     Keeps only addresses with instructions to enable slicing around PCs.
     """
     cmds = []
-    tc_objdump = toolchain_cmd("objdump")
+    tc_objdump = toolchain_cmd("objdump", toolchain_prefix)
     if tc_objdump and which(tc_objdump):
         cmds.append([tc_objdump, "-dS", "-C", "-l", str(elf)])
-    # Prefer target-specific objdump first, include source (-S/-l)
-    if which("m68k-neogeo-elf-objdump"):
-        cmds.append(["m68k-neogeo-elf-objdump", "-dS", "-C", "-l", str(elf)])
-    if which("m68k-elf-objdump"):
-        cmds.append(["m68k-elf-objdump", "-dS", "-C", "-l", str(elf)])
     # LLVM generic (use -S/--source and show addresses, line numbers)
     if which("llvm-objdump"):
         cmds.append(["llvm-objdump", "-dS", "--source", "--demangle", "--no-show-raw-insn", "--line-numbers", "--addresses", str(elf)])
@@ -726,7 +960,8 @@ def build_disasm_index(elf: Path) -> (Dict[int, Dict[str, Any]], Dict[str, Any],
     m: Dict[int, Dict[str, Any]] = {}
     seq: List[Dict[str, Any]] = []
     import re
-    file_re = re.compile(r"([\w\./\\-]+):([0-9]{1,7})")
+    addr_line_re = re.compile(r"^\s*([0-9a-fA-F]+):")
+    file_re = re.compile(r"([^\s:][^:]*\.[A-Za-z0-9_]+):([0-9]{1,7})")
     file_only_re = re.compile(r"^\s*([^\s].*\.[A-Za-z0-9_]+):\s*$")
     line_only_re = re.compile(r"^\s*([0-9]{1,7})\b")
     mixed_candidate = False
@@ -734,36 +969,52 @@ def build_disasm_index(elf: Path) -> (Dict[int, Dict[str, Any]], Dict[str, Any],
     cur_line: Optional[int] = None
     for ln in lines:
         ln = ln.rstrip()
-        # Match addresses like: "  2cc44:" or "0002cc44:" etc.
-        # Also accept optional bytes after colon.
-        # Capture address and instruction tail after raw bytes if present.
-        if ":" in ln:
-            parts = ln.split(":", 1)
-            addr_str = parts[0].strip()
-            tail = parts[1]
-            # Skip labels like "<symbol>:" which don't parse as hex
+        s = ln.strip()
+
+        # Track source mapping lines from -S output. These commonly look like:
+        #   /path/to/file.c:123
+        # and MUST be processed before instruction parsing, since they contain ':'.
+        m2 = file_re.match(s)
+        if m2 and not addr_line_re.match(ln):
+            cur_file = m2.group(1)
             try:
-                addr = int(addr_str, 16)
-            except ValueError:
-                # Not an address line (likely label or other); treat as possible source text
-                s = ln.strip()
-                if s and not s.endswith(":"):
-                    seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": s})
+                cur_line = int(m2.group(2))
+            except Exception:
+                cur_line = None
+            rest = s[m2.end():].strip()
+            if rest:
+                seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": rest})
+            continue
+
+        mfo = file_only_re.match(s)
+        if mfo and not addr_line_re.match(ln):
+            cur_file = mfo.group(1)
+            # line will follow on next line-only entries
+            continue
+
+        mlo = line_only_re.match(ln)
+        if mlo and cur_file and not addr_line_re.match(ln):
+            try:
+                cur_line = int(mlo.group(1))
+            except Exception:
+                cur_line = None
+            rest = ln[mlo.end():].rstrip()
+            if rest:
+                seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": rest.strip()})
+            continue
+
+        # Match instruction addresses like: "  2cc44:" or "0002cc44:" etc.
+        ma = addr_line_re.match(ln)
+        if ma:
+            try:
+                addr = int(ma.group(1), 16)
+            except Exception:
+                addr = None
+            if addr is None:
                 continue
-            # If tail has bytes then opcode after two spaces or a tab
-            ins = tail
-            # Remove leading raw bytes (common in GNU objdump)
-            # Pattern: <spaces><bytes><spaces><ins>
-            ins = ins.strip()
-            # Heuristic: drop initial hex bytes sequences
-            while ins and all(c in "0123456789abcdefABCDEF " for c in ins.split("\t")[0].split(" ")):
-                # If there's a tab, assume after it is the insn
-                if "\t" in ins:
-                    ins = ins.split("\t", 1)[1].strip()
-                    break
-                else:
-                    # break; keep as-is
-                    break
+            tail = ln[ma.end():]
+            ins = tail.strip()
+
             # Use the most recent source mapping seen (from -S output)
             src_file = cur_file
             src_line = cur_line
@@ -774,44 +1025,17 @@ def build_disasm_index(elf: Path) -> (Dict[int, Dict[str, Any]], Dict[str, Any],
                 try:
                     src_line = int(mobj.group(2))
                 except Exception:
-                    pass
+                    src_line = None
             if ins:
                 m[addr] = {"text": ins, "file": src_file, "line": src_line}
-                if src_file and src_line:
+                if src_file and src_line and src_line > 0:
                     mixed_candidate = True
                 seq.append({"type": "insn", "address": addr, "text": ins, "file": src_file, "line": src_line})
-        else:
-            # Track source mapping lines from -S output
-            s = ln.strip()
-            m2 = file_re.match(s)
-            if m2:
-                cur_file = m2.group(1)
-                try:
-                    cur_line = int(m2.group(2))
-                except Exception:
-                    cur_line = None
-            else:
-                # Lines that are just a file path ending with ':'
-                mfo = file_only_re.match(s)
-                if mfo:
-                    cur_file = mfo.group(1)
-                    # line will follow on next line-only entries
-                else:
-                    # Lines that start with a line number; update current line
-                    mlo = line_only_re.match(ln)
-                    if mlo and cur_file:
-                        try:
-                            cur_line = int(mlo.group(1))
-                        except Exception:
-                            pass
-                        # The rest of the line after the number is source text
-                        rest = ln[mlo.end():].rstrip()
-                        if rest:
-                            seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": rest.strip()})
-                    else:
-                        # Bare source text line
-                        if s and not s.endswith(":" ):
-                            seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": s})
+            continue
+
+        # Bare source text line
+        if s and not s.endswith(":"):
+            seq.append({"type": "src", "file": cur_file, "line": cur_line, "text": s})
     return m, {"ok": True, "tool": used_cmd, "mixedCandidate": mixed_candidate}, seq
 
 
@@ -840,18 +1064,14 @@ def disasm_slice(index: Dict[int, Dict[str, Any]], pc: int, *, context: int = 24
     return out
 
 
-def build_disasm_index_from_rom(rom: Path, vma_base: int) -> (Dict[int, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]):
+def build_disasm_index_from_rom(rom: Path, vma_base: int, *, toolchain_prefix: Optional[str] = None) -> (Dict[int, Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]):
     """Disassemble a raw ROM using objdump in binary mode, return address->insn map.
     Requires objdump with m68k support. Addresses will be vma_base + offset.
     """
     cmds = []
-    tc_objdump = toolchain_cmd("objdump")
+    tc_objdump = toolchain_cmd("objdump", toolchain_prefix)
     if tc_objdump and which(tc_objdump):
         cmds.append([tc_objdump, "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
-    if which("m68k-neogeo-elf-objdump"):
-        cmds.append(["m68k-neogeo-elf-objdump", "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
-    if which("m68k-elf-objdump"):
-        cmds.append(["m68k-elf-objdump", "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
     if which("objdump"):
         cmds.append(["objdump", "-b", "binary", "-m", "m68k", "--adjust-vma", hex(vma_base), "-D", str(rom)])
     out = None

@@ -51,6 +51,7 @@ typedef struct {
     analyse_frame *frames;
     size_t frameCount;
     unsigned long long bestCycles;
+    unsigned long long bestSamples;
 } analyse_line_entry;
 
 typedef struct {
@@ -1233,12 +1234,24 @@ analyse_writeFinalJson(const char *jsonPath)
             line->chain = NULL;
             line->source = NULL;
             line->bestCycles = 0;
+            line->bestSamples = 0;
             line->address[0] = '\0';
         }
         line->cycles += entry->cycles;
         line->count += entry->samples;
-        if (entry->cycles > line->bestCycles) {
+        int shouldReplace = 0;
+        if (line->address[0] == '\0') {
+            shouldReplace = 1;
+        } else if (entry->cycles > line->bestCycles) {
+            shouldReplace = 1;
+        } else if (entry->cycles == line->bestCycles) {
+            if (entry->cycles == 0 && entry->samples > line->bestSamples) {
+                shouldReplace = 1;
+            }
+        }
+        if (shouldReplace) {
             line->bestCycles = entry->cycles;
+            line->bestSamples = entry->samples;
             strncpy(line->address, entry->address, sizeof(line->address));
             line->address[sizeof(line->address) - 1] = '\0';
             analyse_freeFrames(line->frames, line->frameCount);

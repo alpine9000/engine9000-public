@@ -6447,14 +6447,20 @@ static void cpu_thread_run_2(void *v)
 	while (!exit) {
 		TRY(prb)
 		{
-			while (!exit) {
-				r->instruction_pc = m68k_getpc();
+				while (!exit) {
+					r->instruction_pc = m68k_getpc();
 
-				r->opcode = x_get_iword(0);
+					r->opcode = x_get_iword(0);
+#ifdef __LIBRETRO__
+					if (geo_debug_instructionHook(r->instruction_pc, (uae_u16)r->opcode)) {
+						exit = true;
+						continue;
+					}
+#endif
 
-				(*cpufunctbl[r->opcode])(r->opcode);
+					(*cpufunctbl[r->opcode])(r->opcode);
 
-				if (regs.spcflags || cpu_thread_ilvl > 0) {
+					if (regs.spcflags || cpu_thread_ilvl > 0) {
 					if (do_specialties_thread())
 						exit = true;
 				}
@@ -6482,15 +6488,21 @@ static void m68k_run_2_000(void)
 	while (!exit) {
 		check_debugger();
 		TRY(prb) {
-			while (!exit) {
-				r->instruction_pc = m68k_getpc ();
+				while (!exit) {
+					r->instruction_pc = m68k_getpc ();
 
-				r->opcode = x_get_iword(0);
-				count_instr (r->opcode);
+					r->opcode = x_get_iword(0);
+					count_instr (r->opcode);
+#ifdef __LIBRETRO__
+					if (geo_debug_instructionHook(r->instruction_pc, (uae_u16)r->opcode)) {
+						exit = true;
+						continue;
+					}
+#endif
 #ifdef DEBUGGER
-				if (debug_opcode_watch) {
-					debug_trainer_match();
-				}
+					if (debug_opcode_watch) {
+						debug_trainer_match();
+					}
 #endif
 
 				cpu_cycles = (*cpufunctbl[r->opcode])(r->opcode) & 0xffff;
@@ -6527,15 +6539,21 @@ static void m68k_run_2_020(void)
 	while (!exit) {
 		check_debugger();
 		TRY(prb) {
-			while (!exit) {
-				r->instruction_pc = m68k_getpc();
+				while (!exit) {
+					r->instruction_pc = m68k_getpc();
 
-				r->opcode = x_get_iword(0);
-				count_instr(r->opcode);
+					r->opcode = x_get_iword(0);
+					count_instr(r->opcode);
+#ifdef __LIBRETRO__
+					if (geo_debug_instructionHook(r->instruction_pc, (uae_u16)r->opcode)) {
+						exit = true;
+						continue;
+					}
+#endif
 
 #ifdef DEBUGGER
-				if (debug_opcode_watch) {
-					debug_trainer_match();
+					if (debug_opcode_watch) {
+						debug_trainer_match();
 				}
 #endif
 

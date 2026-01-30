@@ -85,6 +85,9 @@ static int geo_debug_prof_streamEnabled = 0;
 static int geo_debug_prof_lastValid = 0;
 static uint32_t geo_debug_prof_lastPc = 0;
 static evt_t geo_debug_prof_lastCycle = 0;
+#ifdef JIT
+static int geo_debug_prof_savedCachesize = -1;
+#endif
 
 static void (*geo_debug_setDebugBaseCb)(uint32_t section, uint32_t base) = NULL;
 
@@ -1058,6 +1061,16 @@ geo_debug_profiler_start(int stream)
 	geo_debug_profiler_reset();
 	geo_debug_prof_streamEnabled = stream ? 1 : 0;
 	geo_debug_profilerEnabled = 1;
+#ifdef JIT
+	if (geo_debug_prof_savedCachesize < 0) {
+		geo_debug_prof_savedCachesize = currprefs.cachesize;
+	}
+	if (currprefs.cachesize) {
+		currprefs.cachesize = 0;
+		flush_icache(3);
+		set_special(SPCFLAG_END_COMPILE);
+	}
+#endif
 }
 
 GEO_DEBUG_EXPORT void
@@ -1065,6 +1078,16 @@ geo_debug_profiler_stop(void)
 {
 	geo_debug_profilerEnabled = 0;
 	geo_debug_prof_streamEnabled = 0;
+#ifdef JIT
+	if (geo_debug_prof_savedCachesize >= 0) {
+		if (currprefs.cachesize != geo_debug_prof_savedCachesize) {
+			currprefs.cachesize = geo_debug_prof_savedCachesize;
+			flush_icache(3);
+			set_special(SPCFLAG_END_COMPILE);
+		}
+		geo_debug_prof_savedCachesize = -1;
+	}
+#endif
 }
 
 GEO_DEBUG_EXPORT int

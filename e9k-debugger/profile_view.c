@@ -17,6 +17,7 @@
 
 #include "profile_view.h"
 #include "debug.h"
+#include "debugger.h"
 #include "file.h"
 
 #define PROFILE_VIEWER_PYTHON_ENV "E9K_PROFILE_VIEWER_PYTHON"
@@ -127,15 +128,45 @@ profile_viewer_run(const char *json_path)
         return 0;
     }
     if (pid == 0) {
-        char *const viewer_args[] = {
-            python_path,
-            script_path,
-            (char *)"--input",
-            (char *)json_path,
-            (char *)"--out",
-            out_dir,
-            NULL,
-        };
+        char *viewer_args[32];
+        char text_base_buf[32];
+        char data_base_buf[32];
+        char bss_base_buf[32];
+        int i = 0;
+        viewer_args[i++] = python_path;
+        viewer_args[i++] = script_path;
+        viewer_args[i++] = (char *)"--input";
+        viewer_args[i++] = (char *)json_path;
+        viewer_args[i++] = (char *)"--out";
+        viewer_args[i++] = out_dir;
+        if (debugger.libretro.toolchainPrefix[0]) {
+            viewer_args[i++] = (char *)"--toolchain-prefix";
+            viewer_args[i++] = debugger.libretro.toolchainPrefix;
+        }
+        if (debugger.libretro.elfPath[0]) {
+            viewer_args[i++] = (char *)"--elf";
+            viewer_args[i++] = debugger.libretro.elfPath;
+        }
+        if (debugger.libretro.sourceDir[0]) {
+            viewer_args[i++] = (char *)"--src-base";
+            viewer_args[i++] = debugger.libretro.sourceDir;
+        }
+        if (debugger.machine.textBaseAddr) {
+            snprintf(text_base_buf, sizeof(text_base_buf), "0x%08X", debugger.machine.textBaseAddr);
+            viewer_args[i++] = (char *)"--text-base";
+            viewer_args[i++] = text_base_buf;
+        }
+        if (debugger.machine.dataBaseAddr) {
+            snprintf(data_base_buf, sizeof(data_base_buf), "0x%08X", debugger.machine.dataBaseAddr);
+            viewer_args[i++] = (char *)"--data-base";
+            viewer_args[i++] = data_base_buf;
+        }
+        if (debugger.machine.bssBaseAddr) {
+            snprintf(bss_base_buf, sizeof(bss_base_buf), "0x%08X", debugger.machine.bssBaseAddr);
+            viewer_args[i++] = (char *)"--bss-base";
+            viewer_args[i++] = bss_base_buf;
+        }
+        viewer_args[i++] = NULL;
         execv(python_path, viewer_args);
         debug_error("profile: exec viewer process failed: %s (python=%s, script=%s)", strerror(errno), python_path, script_path);
         _exit(127);
