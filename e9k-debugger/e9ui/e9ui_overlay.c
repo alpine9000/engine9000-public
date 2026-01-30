@@ -48,6 +48,51 @@ e9ui_overlay_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int av
 }
 
 static void
+overlay_measureStack(e9ui_component_t *stack, e9ui_context_t *ctx, int availW, int *outW, int *outH)
+{
+  if (outW) {
+    *outW = 0;
+  }
+  if (outH) {
+    *outH = 0;
+  }
+  if (!stack || !ctx) {
+    return;
+  }
+  int wMax = 0;
+  int hSum = 0;
+  e9ui_child_iterator it;
+  e9ui_child_iterator* p = e9ui_child_iterateChildren(stack, &it);
+  while (e9ui_child_interateNext(p)) {
+    e9ui_component_t* child = p->child;
+    if (!child || e9ui_getHidden(child)) {
+      continue;
+    }
+    int cw = 0;
+    int ch = 0;
+    if (child->name && strcmp(child->name, "e9ui_button") == 0) {
+      e9ui_button_measure(child, ctx, &cw, &ch);
+    } else if (child->name && strcmp(child->name, "e9ui_flow") == 0) {
+      e9ui_flow_measure(child, ctx, &cw, &ch);
+    } else if (child->name && strcmp(child->name, "e9ui_stack") == 0) {
+      overlay_measureStack(child, ctx, availW, &cw, &ch);
+    } else if (child->preferredHeight) {
+      ch = child->preferredHeight(child, ctx, availW);
+    }
+    if (cw > wMax) {
+      wMax = cw;
+    }
+    hSum += ch;
+  }
+  if (outW) {
+    *outW = wMax;
+  }
+  if (outH) {
+    *outH = hSum;
+  }
+}
+
+static void
 e9ui_overlay_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bounds)
 {
   self->bounds = bounds;
@@ -73,6 +118,8 @@ e9ui_overlay_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bou
     e9ui_button_measure(overlay, ctx, &ow, &oh);
   } else if (overlay->name && strcmp(overlay->name, "e9ui_flow") == 0) {
     e9ui_flow_measure(overlay, ctx, &ow, &oh);
+  } else if (overlay->name && strcmp(overlay->name, "e9ui_stack") == 0) {
+    overlay_measureStack(overlay, ctx, bounds.w, &ow, &oh);
   }
   if (oh <= 0 && overlay->preferredHeight) {
     oh = overlay->preferredHeight(overlay, ctx, bounds.w);

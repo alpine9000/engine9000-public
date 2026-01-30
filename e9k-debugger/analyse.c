@@ -21,6 +21,7 @@
 #include "analyse.h"
 #include "debug.h"
 #include "debugger.h"
+#include "file.h"
 
 #define ANALYSE_MAP_INITIAL_CAP 1024
 
@@ -447,6 +448,16 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
     if (count == 0) {
         return 1;
     }
+    char bin[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
+        debug_error("profile: failed to resolve addr2line binary");
+        return 0;
+    }
+    char exe[PATH_MAX];
+    if (!file_findInPath(bin, exe, sizeof(exe))) {
+        debug_error("profile: addr2line not found in PATH: %s", bin);
+        return 0;
+    }
     int to_child[2];
     int from_child[2];
     if (pipe(to_child) != 0) {
@@ -468,12 +479,8 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
         close(to_child[1]);
         close(from_child[0]);
         close(from_child[1]);
-        char bin[PATH_MAX];
-        if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
-            _exit(127);
-        }
         char *const argv[] = {
-            bin,
+            exe,
             (char*)"-e",
             (char*)elf,
             (char*)"-a",
@@ -482,7 +489,7 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
             (char*)"-i",
             NULL
         };
-        execvp(bin, argv);
+        execv(exe, argv);
         _exit(127);
     }
     if (pid < 0) {
@@ -513,10 +520,36 @@ analyse_resolveFramesBatch(const char *elf, analyse_resolved_entry *entries, siz
         debug_error("profile: failed to open addr2line pipes");
         return 0;
     }
+    struct sigaction oldAct;
+    struct sigaction ignAct;
+    memset(&ignAct, 0, sizeof(ignAct));
+    ignAct.sa_handler = SIG_IGN;
+    sigemptyset(&ignAct.sa_mask);
+    sigaction(SIGPIPE, &ignAct, &oldAct);
+
+    int writeOk = 1;
     for (size_t i = 0; i < count; ++i) {
-        fprintf(input, "%s\n", entries[i].address);
+        if (fprintf(input, "%s\n", entries[i].address) < 0) {
+            writeOk = 0;
+            break;
+        }
     }
-    fclose(input);
+    if (writeOk && fflush(input) != 0) {
+        writeOk = 0;
+    }
+    if (fclose(input) != 0) {
+        writeOk = 0;
+    }
+
+    sigaction(SIGPIPE, &oldAct, NULL);
+
+    if (!writeOk) {
+        fclose(pipe);
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+        debug_error("profile: addr2line write failed");
+        return 0;
+    }
     char *line = NULL;
     size_t cap = 0;
     ssize_t read = 0;

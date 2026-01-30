@@ -48,6 +48,22 @@ config_trimValue(char *value)
     return value;
 }
 
+static const char *
+config_trimKey(char *key)
+{
+    if (!key) {
+        return NULL;
+    }
+    while (*key == ' ' || *key == '\t') {
+        ++key;
+    }
+    size_t len = strlen(key);
+    while (len > 0 && (key[len - 1] == ' ' || key[len - 1] == '\t' || key[len - 1] == '\n' || key[len - 1] == '\r')) {
+        key[--len] = '\0';
+    }
+    return key;
+}
+
 void
 config_persistConfig(FILE *f)
 {
@@ -63,9 +79,7 @@ config_persistConfig(FILE *f)
     if (debugger.config.amiga.libretro.elfPath[0]) {
         fprintf(f, "comp.config.amiga.elf=%s\n", debugger.config.amiga.libretro.elfPath);
     }
-    if (debugger.config.amiga.libretro.toolchainPrefix[0]) {
-        fprintf(f, "comp.config.amiga.toolchain_prefix=%s\n", debugger.config.amiga.libretro.toolchainPrefix);
-    }
+    fprintf(f, "comp.config.amiga.toolchain_prefix=%s\n", debugger.config.amiga.libretro.toolchainPrefix);
     if (debugger.config.amiga.libretro.systemDir[0]) {
         fprintf(f, "comp.config.amiga.bios=%s\n", debugger.config.amiga.libretro.systemDir);
     }
@@ -91,9 +105,7 @@ config_persistConfig(FILE *f)
     if (debugger.config.neogeo.libretro.elfPath[0]) {
         fprintf(f, "comp.config.neogeo.elf=%s\n", debugger.config.neogeo.libretro.elfPath);
     }
-    if (debugger.config.neogeo.libretro.toolchainPrefix[0]) {
-        fprintf(f, "comp.config.neogeo.toolchain_prefix=%s\n", debugger.config.neogeo.libretro.toolchainPrefix);
-    }
+    fprintf(f, "comp.config.neogeo.toolchain_prefix=%s\n", debugger.config.neogeo.libretro.toolchainPrefix);
     if (debugger.config.neogeo.libretro.systemDir[0]) {
         fprintf(f, "comp.config.neogeo.bios=%s\n", debugger.config.neogeo.libretro.systemDir);
     }
@@ -144,12 +156,23 @@ config_loadConfig(void)
         debugger_platform_setDefaultsAmiga(&debugger.config.amiga);
         return;
     }
-    char key[256];
-    char val[1024];
-    while (fscanf(f, "%255[^=]=%1023[^\n]\n", key, val) == 2) {
+
+    char line[1280];
+    while (fgets(line, sizeof(line), f)) {
+        char *eq = strchr(line, '=');
+        if (!eq) {
+            continue;
+        }
+        *eq = '\0';
+        const char *key = config_trimKey(line);
+        const char *val = eq + 1;
+        const char *value = config_trimValue((char *)val);
+        if (!key) {
+            continue;
+        }
+
         if (strncmp(key, "comp.config.", 12) == 0) {
             const char *prop = key + 12;
-            const char *value = config_trimValue(val);
             if (strcmp(prop, "amiga.core") == 0) {
                 config_setConfigValue(debugger.config.amiga.libretro.corePath, sizeof(debugger.config.amiga.libretro.corePath), value);
             } else if (strcmp(prop, "amiga.rom") == 0) {
@@ -214,13 +237,11 @@ config_loadConfig(void)
         }
         if (strncmp(key, "comp.crt.", 9) == 0) {
             const char *prop = key + 9;
-            const char *value = config_trimValue(val);
             crt_loadConfigProperty(prop, value);
             continue;
         }
         if (strncmp(key, "comp.sprite_debug.", 18) == 0) {
             const char *prop = key + 18;
-            const char *value = config_trimValue(val);
             sprite_debug_loadConfigProperty(prop, value);
             continue;
         }

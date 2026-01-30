@@ -26,6 +26,7 @@
 #include "breakpoints.h"
 #include "libretro_host.h"
 #include "debug.h"
+#include "file.h"
 
 typedef struct view_toggle_ctx {
   e9ui_component_t *pane;
@@ -181,7 +182,12 @@ source_pane_resolveFileLine(const char *elf, const char *file, int line_no, uint
         debug_error("break: failed to resolve objdump");
         return 0;
     }
-    snprintf(cmd, sizeof(cmd), "%s -l -d '%s'", objdump, elf);
+    char objdumpExe[PATH_MAX];
+    if (!file_findInPath(objdump, objdumpExe, sizeof(objdumpExe))) {
+        debug_error("break: objdump not found in PATH: %s", objdump);
+        return 0;
+    }
+    snprintf(cmd, sizeof(cmd), "%s -l -d '%s'", objdumpExe, elf);
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         debug_error("break: failed to run objdump");

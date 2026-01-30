@@ -17,6 +17,7 @@
 #include "debugger.h"
 #include "debug.h"
 #include "elfutil.h"
+#include "file.h"
 #include "libretro_host.h"
 
 #ifdef _WIN32
@@ -193,13 +194,18 @@ dasm_geo_preloadText(void)
     debug_error("dasm: failed to resolve objdump binary");
     return dasm_preloadFromCore();
   }
+  char objdumpExe[PATH_MAX];
+  if (!file_findInPath(objdump, objdumpExe, sizeof(objdumpExe))) {
+    debug_error("dasm: objdump not found in PATH: %s", objdump);
+    return dasm_preloadFromCore();
+  }
   char cmd[PATH_MAX + 256];
   snprintf(cmd, sizeof(cmd),
 	   "%s -d -z -j .text --start-address=0x%llx --stop-address=0x%llx %s",
-	   objdump, (unsigned long long)lo, (unsigned long long)hi, elf);
+	   objdumpExe, (unsigned long long)lo, (unsigned long long)hi, elf);
   FILE *pipe = popen(cmd, "r");
   if (!pipe) {
-    debug_error("dasm: failed to run %s: %s", objdump, strerror(errno));
+    debug_error("dasm: failed to run %s: %s", objdumpExe, strerror(errno));
     return dasm_preloadFromCore();
   }
   int width = (hi > 0xFFFFFFFFull) ? 16 : 8;

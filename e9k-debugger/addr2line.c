@@ -50,6 +50,7 @@ addr2line_resolve(uint64_t addr, char *out_file, size_t file_cap, int *out_line)
 #include <unistd.h>
 
 #include "debugger.h"
+#include "file.h"
 
 typedef struct {
   pid_t pid;
@@ -67,6 +68,8 @@ static addr2line_t addr2line = {
     .pid = -1,
     .outFD = -1,
 };
+
+static char addr2line_missingTool[PATH_MAX];
 
 static void
 addr2line_clearPending(void)
@@ -166,6 +169,60 @@ addr2line_closeStreams(void)
     }
 }
 
+static int
+addr2line_processIsAlive(void)
+{
+    if (addr2line.pid <= 0) {
+        return 0;
+    }
+    int status = 0;
+    pid_t r = waitpid(addr2line.pid, &status, WNOHANG);
+    if (r == 0) {
+        return 1;
+    }
+    if (r == addr2line.pid) {
+        addr2line_closeStreams();
+        addr2line.pid = -1;
+        addr2line.elf[0] = '\0';
+        addr2line.bufLen = 0;
+        addr2line.expectFunc = 0;
+        addr2line.expectFile = 0;
+        return 0;
+    }
+    return 1;
+}
+
+static int
+addr2line_writeQuery(uint64_t addr)
+{
+    if (!addr2line.in) {
+        return 0;
+    }
+
+    struct sigaction oldAct;
+    struct sigaction ignAct;
+    memset(&ignAct, 0, sizeof(ignAct));
+    ignAct.sa_handler = SIG_IGN;
+    sigemptyset(&ignAct.sa_mask);
+    sigaction(SIGPIPE, &ignAct, &oldAct);
+
+    errno = 0;
+    int ok = 1;
+    if (fprintf(addr2line.in, "0x%llx\n", (unsigned long long)addr) < 0) {
+        ok = 0;
+    } else if (fflush(addr2line.in) != 0) {
+        ok = 0;
+    }
+
+    sigaction(SIGPIPE, &oldAct, NULL);
+
+    if (!ok) {
+        addr2line_stop();
+        return 0;
+    }
+    return 1;
+}
+
 int
 addr2line_start(const char *elf_path)
 {
@@ -176,6 +233,21 @@ addr2line_start(const char *elf_path)
         return 1;
     }
     addr2line_stop();
+
+    char bin[PATH_MAX];
+    if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
+        return 0;
+    }
+    char exe[PATH_MAX];
+    if (!file_findInPath(bin, exe, sizeof(exe))) {
+        if (addr2line_missingTool[0] == '\0' || strcmp(addr2line_missingTool, bin) != 0) {
+            strncpy(addr2line_missingTool, bin, sizeof(addr2line_missingTool) - 1);
+            addr2line_missingTool[sizeof(addr2line_missingTool) - 1] = '\0';
+            debug_error("addr2line: not found in PATH: %s", bin);
+        }
+        return 0;
+    }
+    addr2line_missingTool[0] = '\0';
 
     int to_child[2];
     int from_child[2];
@@ -197,12 +269,8 @@ addr2line_start(const char *elf_path)
         close(to_child[1]);
         close(from_child[0]);
         close(from_child[1]);
-        char bin[PATH_MAX];
-        if (!debugger_toolchainBuildBinary(bin, sizeof(bin), "addr2line")) {
-            _exit(127);
-        }
         char *const argv[] = {
-            bin,
+            exe,
             (char*)"-e",
             (char*)elf_path,
             (char*)"-a",
@@ -210,7 +278,7 @@ addr2line_start(const char *elf_path)
             (char*)"-C",
             NULL
         };
-        execvp(bin, argv);
+        execv(exe, argv);
         _exit(127);
     }
     if (pid < 0) {
@@ -275,21 +343,24 @@ addr2line_resolve(uint64_t addr, char *out_file, size_t file_cap, int *out_line)
     if (!addr2line.in || addr2line.outFD < 0) {
         return 0;
     }
+    if (!addr2line_processIsAlive()) {
+        return 0;
+    }
     uint64_t queryAddr = addr;
     uint64_t base = (uint64_t)debugger.machine.textBaseAddr;
     if (base != 0 && queryAddr >= base) {
         queryAddr -= base;
     }
-    if (fprintf(addr2line.in, "0x%llx\n", (unsigned long long)queryAddr) < 0) {
+    if (!addr2line_writeQuery(queryAddr)) {
         return 0;
     }
-    fflush(addr2line.in);
 
     char *line = NULL;
     int ok = 0;
     int got_addr = 0;
     for (int i = 0; i < 128; ++i) {
         if (!addr2line_readLine(&line)) {
+            addr2line_stop();
             break;
         }
         if (addr2line_isAddressLine(line)) {

@@ -24,6 +24,12 @@
 #include "amiga_uae_options.h"
 #include "neogeo_core_options.h"
 
+void
+debugger_platform_setDefaults(e9k_neogeo_config_t *config);
+
+void
+debugger_platform_setDefaultsAmiga(e9k_amiga_config_t *config);
+
 static int
 settings_neogeoEffectiveRomPath(const e9k_neogeo_config_t *cfg, char *out, size_t cap)
 {
@@ -475,6 +481,113 @@ settings_updateSaveLabel(void)
     }
 }
 
+static int
+settings_shouldShowUaeExtensionWarning(void)
+{
+    if (debugger.settingsEdit.coreSystem != DEBUGGER_SYSTEM_AMIGA) {
+        return 0;
+    }
+    const char *uaePath = debugger.settingsEdit.amiga.libretro.romPath;
+    if (!uaePath || !uaePath[0]) {
+        return 0;
+    }
+    if (settings_pathHasUaeExtension(uaePath)) {
+        return 0;
+    }
+    return 1;
+}
+
+typedef struct settings_uae_extension_warning_state {
+    SDL_Color color;
+} settings_uae_extension_warning_state_t;
+
+static int
+settings_uaeExtensionWarning_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
+{
+    (void)self;
+    (void)availW;
+    if (!settings_shouldShowUaeExtensionWarning()) {
+        return 0;
+    }
+    TTF_Font *font = ctx ? ctx->font : NULL;
+    int lh = font ? TTF_FontHeight(font) : 16;
+    if (lh <= 0) {
+        lh = 16;
+    }
+    int pad = ctx ? e9ui_scale_px(ctx, 4) : 4;
+    return lh + pad * 2;
+}
+
+static void
+settings_uaeExtensionWarning_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rect_t bounds)
+{
+    (void)ctx;
+    self->bounds = bounds;
+}
+
+static void
+settings_uaeExtensionWarning_render(e9ui_component_t *self, e9ui_context_t *ctx)
+{
+    if (!self || !ctx || !ctx->renderer) {
+        return;
+    }
+    if (!settings_shouldShowUaeExtensionWarning()) {
+        return;
+    }
+    settings_uae_extension_warning_state_t *st = (settings_uae_extension_warning_state_t*)self->state;
+    if (!st) {
+        return;
+    }
+    TTF_Font *font = ctx->font;
+    if (!font) {
+        return;
+    }
+    const char *msg = "UAE CONFIG filename must end with .uae";
+    int tw = 0;
+    int th = 0;
+    SDL_Texture *tex = e9ui_text_cache_getText(ctx->renderer, font, msg, st->color, &tw, &th);
+    if (!tex) {
+        return;
+    }
+    int x = self->bounds.x + self->bounds.w - tw;
+    int y = self->bounds.y + (self->bounds.h - th) / 2;
+    SDL_Rect dst = { x, y, tw, th };
+    SDL_RenderCopy(ctx->renderer, tex, NULL, &dst);
+}
+
+static void
+settings_uaeExtensionWarning_dtor(e9ui_component_t *self, e9ui_context_t *ctx)
+{
+    (void)ctx;
+    if (!self || !self->state) {
+        return;
+    }
+    alloc_free(self->state);
+    self->state = NULL;
+}
+
+static e9ui_component_t *
+settings_uaeExtensionWarning_make(void)
+{
+    e9ui_component_t *c = (e9ui_component_t*)alloc_calloc(1, sizeof(*c));
+    if (!c) {
+        return NULL;
+    }
+    settings_uae_extension_warning_state_t *st = (settings_uae_extension_warning_state_t*)alloc_calloc(1, sizeof(*st));
+    if (!st) {
+        alloc_free(c);
+        return NULL;
+    }
+    st->color = (SDL_Color){255, 80, 80, 255};
+    c->name = "settings_uae_extension_warning";
+    c->state = st;
+    c->preferredHeight = settings_uaeExtensionWarning_preferredHeight;
+    c->layout = settings_uaeExtensionWarning_layout;
+    c->render = settings_uaeExtensionWarning_render;
+    c->dtor = settings_uaeExtensionWarning_dtor;
+    return c;
+}
+
 void
 settings_refreshSaveLabel(void)
 {
@@ -566,16 +679,10 @@ settings_save(void)
 {
     int needsRestart = settings_needsRestart();
     if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
-        if (!debugger.settingsEdit.amiga.libretro.toolchainPrefix[0]) {
-            snprintf(debugger.settingsEdit.amiga.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.amiga.libretro.toolchainPrefix), "m68k-amigaos-");
-        }
         if (debugger.settingsEdit.amiga.libretro.audioBufferMs <= 0) {
             debugger.settingsEdit.amiga.libretro.audioBufferMs = 50;
         }
     } else {
-        if (!debugger.settingsEdit.neogeo.libretro.toolchainPrefix[0]) {
-            snprintf(debugger.settingsEdit.neogeo.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.neogeo.libretro.toolchainPrefix), "m68k-neogeo-elf");
-        }
         if (debugger.settingsEdit.neogeo.libretro.audioBufferMs <= 0) {
             debugger.settingsEdit.neogeo.libretro.audioBufferMs = 50;
         }
@@ -646,6 +753,48 @@ settings_uiSave(e9ui_context_t *ctx, void *user)
 }
 
 static void
+settings_uiDefaults(e9ui_context_t *ctx, void *user)
+{
+    (void)user;
+    if (!ctx || !e9ui->settingsModal) {
+        return;
+    }
+    debugger_system_type_t system = debugger.settingsEdit.coreSystem;
+    if (system == DEBUGGER_SYSTEM_AMIGA) {
+        char uaePath[PATH_MAX];
+        char elfPath[PATH_MAX];
+        settings_copyPath(uaePath, sizeof(uaePath), debugger.settingsEdit.amiga.libretro.romPath);
+        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.amiga.libretro.elfPath);
+        int audioEnabled = debugger.settingsEdit.amiga.libretro.audioEnabled;
+        debugger_platform_setDefaultsAmiga(&debugger.settingsEdit.amiga);
+        debugger.settingsEdit.amiga.libretro.audioEnabled = audioEnabled;
+        settings_copyPath(debugger.settingsEdit.amiga.libretro.romPath, sizeof(debugger.settingsEdit.amiga.libretro.romPath), uaePath);
+        settings_copyPath(debugger.settingsEdit.amiga.libretro.elfPath, sizeof(debugger.settingsEdit.amiga.libretro.elfPath), elfPath);
+        amiga_uaeClearPuaeOptions();
+        if (debugger.settingsEdit.amiga.libretro.romPath[0]) {
+            amiga_uaeLoadUaeOptions(debugger.settingsEdit.amiga.libretro.romPath);
+        }
+    } else {
+        char romPath[PATH_MAX];
+        char romFolder[PATH_MAX];
+        char elfPath[PATH_MAX];
+        settings_copyPath(romPath, sizeof(romPath), debugger.settingsEdit.neogeo.libretro.romPath);
+        settings_copyPath(romFolder, sizeof(romFolder), debugger.settingsEdit.neogeo.romFolder);
+        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.neogeo.libretro.elfPath);
+        int audioEnabled = debugger.settingsEdit.neogeo.libretro.audioEnabled;
+        debugger_platform_setDefaults(&debugger.settingsEdit.neogeo);
+        debugger.settingsEdit.neogeo.libretro.audioEnabled = audioEnabled;
+        settings_copyPath(debugger.settingsEdit.neogeo.libretro.romPath, sizeof(debugger.settingsEdit.neogeo.libretro.romPath), romPath);
+        settings_copyPath(debugger.settingsEdit.neogeo.romFolder, sizeof(debugger.settingsEdit.neogeo.romFolder), romFolder);
+        settings_copyPath(debugger.settingsEdit.neogeo.libretro.elfPath, sizeof(debugger.settingsEdit.neogeo.libretro.elfPath), elfPath);
+    }
+    settings_clearCoreOptionsDirty();
+    neogeo_coreOptionsClear();
+    settings_pendingRebuild = 1;
+    e9ui_showTransientMessage("DEFAULTS RESTORED");
+}
+
+static void
 settings_pathChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *text, void *user)
 {
     (void)ctx;
@@ -689,35 +838,16 @@ settings_defaultCorePathForSystem(debugger_system_type_t system)
     }
 }
 
-static const char *
-settings_defaultToolchainPrefixForSystem(debugger_system_type_t system)
-{
-    switch (system) {
-    case DEBUGGER_SYSTEM_AMIGA:
-        return "m68k-amigaos-";
-    case DEBUGGER_SYSTEM_NEOGEO:
-    case DEBUGGER_SYSTEM_MEGADRIVE:
-    default:
-        return "m68k-neogeo-elf";
-    }
-}
-
 static void
 settings_toolchainPrefixChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *text, void *user)
 {
     (void)ctx;
+    (void)comp;
     settings_toolchainprefix_state_t *st = (settings_toolchainprefix_state_t *)user;
     if (!st || !st->prefix) {
         return;
     }
-    const char *value = text;
-    if (!value || !*value) {
-        value = settings_defaultToolchainPrefixForSystem(st->system);
-        if (comp && value && *value) {
-            e9ui_labeled_textbox_setText(comp, value);
-        }
-    }
-    settings_config_setValue(st->prefix, PATH_MAX, value);
+    settings_config_setValue(st->prefix, PATH_MAX, text ? text : "");
     settings_updateSaveLabel();
 }
 
@@ -1360,10 +1490,6 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.elfPath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
         if (ltToolchain) {
-            if (!debugger.settingsEdit.amiga.libretro.toolchainPrefix[0]) {
-                snprintf(debugger.settingsEdit.amiga.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.amiga.libretro.toolchainPrefix), "%s",
-                         settings_defaultToolchainPrefixForSystem(DEBUGGER_SYSTEM_AMIGA));
-            }
             e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.amiga.libretro.toolchainPrefix);
         }
         e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.amiga.libretro.systemDir);
@@ -1403,10 +1529,6 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.neogeo.libretro.elfPath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
         if (ltToolchain) {
-            if (!debugger.settingsEdit.neogeo.libretro.toolchainPrefix[0]) {
-                snprintf(debugger.settingsEdit.neogeo.libretro.toolchainPrefix, sizeof(debugger.settingsEdit.neogeo.libretro.toolchainPrefix), "%s",
-                         settings_defaultToolchainPrefixForSystem(DEBUGGER_SYSTEM_NEOGEO));
-            }
             e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.neogeo.libretro.toolchainPrefix);
         }
         e9ui_fileSelect_setText(fsBios, debugger.settingsEdit.neogeo.libretro.systemDir);
@@ -1660,23 +1782,37 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_stack_addFixed(stack, rowGlobalCenter);
     }
     e9ui_component_t *center = e9ui_center_make(stack);
+    e9ui_component_t *btnDefaults = e9ui_button_make("Defaults", settings_uiDefaults, NULL);
     e9ui_component_t *btnSave = e9ui_button_make("Save", settings_uiSave, NULL);
     e9ui_component_t *btnCancel = e9ui_button_make("Cancel", settings_uiCancel, NULL);
     e9ui->settingsSaveButton = btnSave;
     settings_updateSaveLabel();
-    e9ui_component_t *footer = e9ui_flow_make();
-    e9ui_flow_setPadding(footer, 0);
-    e9ui_flow_setSpacing(footer, 8);
-    e9ui_flow_setWrap(footer, 0);
+    e9ui_component_t *buttons = e9ui_flow_make();
+    e9ui_flow_setPadding(buttons, 0);
+    e9ui_flow_setSpacing(buttons, 8);
+    e9ui_flow_setWrap(buttons, 0);
+    if (btnDefaults) {
+        e9ui_button_setTheme(btnDefaults, e9ui_theme_button_preset_profile_active());
+        e9ui_button_setGlowPulse(btnDefaults, 1);
+        e9ui_flow_add(buttons, btnDefaults);
+    }
     if (btnSave) {
         e9ui_button_setTheme(btnSave, e9ui_theme_button_preset_green());
         e9ui_button_setGlowPulse(btnSave, 1);
-        e9ui_flow_add(footer, btnSave);
+        e9ui_flow_add(buttons, btnSave);
     }
     if (btnCancel) {
         e9ui_button_setTheme(btnCancel, e9ui_theme_button_preset_red());
         e9ui_button_setGlowPulse(btnCancel, 1);
-        e9ui_flow_add(footer, btnCancel);
+        e9ui_flow_add(buttons, btnCancel);
+    }
+    e9ui_component_t *warning = settings_uaeExtensionWarning_make();
+    e9ui_component_t *footer = e9ui_stack_makeVertical();
+    if (warning) {
+        e9ui_stack_addFixed(footer, warning);
+    }
+    if (buttons) {
+        e9ui_stack_addFixed(footer, buttons);
     }
     int contentW = e9ui_scale_px(ctx, 600);
     int hGap = gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;

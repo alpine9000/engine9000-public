@@ -269,11 +269,17 @@ debugger_refreshElfValid(void)
     } else {
         rawElf = debugger.config.neogeo.libretro.elfPath;
     }
+    const char* toolchainPrefix = NULL;
+    if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        toolchainPrefix = debugger.config.amiga.libretro.toolchainPrefix;
+    } else {
+        toolchainPrefix = debugger.config.neogeo.libretro.toolchainPrefix;
+    }    
     char elfPath[PATH_MAX];
     elfPath[0] = '\0';
     debugger_copyPath(elfPath, sizeof(elfPath), rawElf);
-    if (elfPath[0] && debugger_pathExistsFile(elfPath)) {
-        debugger.elfValid = 1;
+    if (elfPath[0] && debugger_pathExistsFile(elfPath) && toolchainPrefix && toolchainPrefix[0] != 0) {
+      debugger.elfValid = 1;
     }
     ui_applySourcePaneElfMode();
 }
