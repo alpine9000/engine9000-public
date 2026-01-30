@@ -80,6 +80,7 @@ static uint32_t geo_debug_prof_dirtyIdx[GEO_DEBUG_PROF_TABLE_CAP];
 static uint32_t geo_debug_prof_dirtyCount = 0;
 static uint32_t geo_debug_prof_epoch = 1;
 static uint32_t geo_debug_prof_tick = 0;
+static uint32_t geo_debug_prof_lastTickAtFrame = 0;
 static int geo_debug_prof_streamEnabled = 0;
 static int geo_debug_prof_lastValid = 0;
 static uint32_t geo_debug_prof_lastPc = 0;
@@ -104,6 +105,7 @@ geo_debug_profiler_reset(void)
 	geo_debug_prof_dirtyCount = 0;
 	geo_debug_prof_epoch = 1;
 	geo_debug_prof_tick = 0;
+	geo_debug_prof_lastTickAtFrame = 0;
 	geo_debug_prof_lastValid = 0;
 	geo_debug_prof_lastPc = 0;
 	geo_debug_prof_lastCycle = 0;
@@ -623,6 +625,13 @@ geo_set_debug_base_callback(void (*cb)(uint32_t section, uint32_t base))
 GEO_DEBUG_EXPORT void
 geo_vblank_notify(void)
 {
+	if (geo_debug_profilerEnabled && !geo_debug_paused) {
+		if (geo_debug_prof_tick == geo_debug_prof_lastTickAtFrame) {
+			uaecptr pc = m68k_getpc();
+			geo_debug_profiler_samplePc(geo_debug_maskAddr(pc));
+		}
+		geo_debug_prof_lastTickAtFrame = geo_debug_prof_tick;
+	}
 	if (geo_debug_vblankCb) {
 		geo_debug_vblankCb(geo_debug_vblankUser);
 	}
