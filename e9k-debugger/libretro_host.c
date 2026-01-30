@@ -93,6 +93,7 @@ typedef void (*geo_debug_set_checkpoint_enabled_fn_t)(int enabled);
 typedef int (*geo_debug_get_checkpoint_enabled_fn_t)(void);
 typedef uint64_t (*geo_debug_read_cycle_count_fn_t)(void);
 typedef void (*geo_set_vblank_callback_fn_t)(void (*cb)(void *), void *user);
+typedef int *(*geo_debug_amiga_get_debug_dma_addr_fn_t)(void);
 
 #define LIBRETRO_HOST_MAX_PORTS 4
 
@@ -194,6 +195,7 @@ typedef struct  {
     geo_debug_get_checkpoint_enabled_fn_t debugGetCheckpointEnabled;
     geo_debug_read_cycle_count_fn_t debugReadCycleCount;
     geo_set_vblank_callback_fn_t setVblankCallback;
+    geo_debug_amiga_get_debug_dma_addr_fn_t debugAmigaGetDebugDmaAddr;
     uint8_t *stateData;
     size_t stateSize;
     uint32_t inputMask[LIBRETRO_HOST_MAX_PORTS];
@@ -1803,6 +1805,24 @@ libretro_host_debugTextRead(char *out, size_t cap)
         return 0;
     }
     return libretro_host.debugTextRead(out, cap);
+}
+
+bool
+libretro_host_debugGetAmigaDebugDmaAddr(int **out_addr)
+{
+    if (!out_addr) {
+        return false;
+    }
+    *out_addr = NULL;
+    if (!libretro_host.debugAmigaGetDebugDmaAddr) {
+        libretro_host.debugAmigaGetDebugDmaAddr = (geo_debug_amiga_get_debug_dma_addr_fn_t)
+            libretro_host_loadSymbol("geo_debug_amiga_get_debug_dma_addr");
+    }
+    if (!libretro_host.debugAmigaGetDebugDmaAddr) {
+        return false;
+    }
+    *out_addr = libretro_host.debugAmigaGetDebugDmaAddr();
+    return *out_addr != NULL;
 }
 
 bool

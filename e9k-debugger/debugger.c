@@ -538,6 +538,7 @@ debugger_main(int argc, char **argv)
 
   if (debugger.libretro.enabled) {
     debugger_applyCoreOptions();
+    debugger.amigaDebug.debugDma = NULL;
     if (!libretro_host_start(debugger.libretro.corePath, debugger.libretro.romPath,
                              debugger.libretro.systemDir, debugger.libretro.saveDir)) {
       debug_error("libretro: failed to start core");
@@ -546,6 +547,12 @@ debugger_main(int argc, char **argv)
       if (!libretro_host_setDebugBaseCallback(debugger_onSetDebugBaseFromCore)) {
         if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
           debug_error("debug_base: core does not expose geo_set_debug_base_callback");
+        }
+      }
+      if (debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        int *debugDma = NULL;
+        if (libretro_host_debugGetAmigaDebugDmaAddr(&debugDma)) {
+          debugger.amigaDebug.debugDma = debugDma;
         }
       }
       snapshot_loadOnBoot();

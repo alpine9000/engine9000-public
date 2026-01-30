@@ -183,6 +183,9 @@ size_t
 libretro_host_debugTextRead(char *out, size_t cap);
 
 bool
+libretro_host_debugGetAmigaDebugDmaAddr(int **out_addr);
+
+bool
 libretro_host_getSerializeSize(size_t *out_size);
 
 bool

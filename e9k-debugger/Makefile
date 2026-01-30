@@ -10,7 +10,7 @@ INCLUDES += -I.
 
 DEBUG_FLAGS=-g -fno-omit-frame-pointer -fsanitize=address,undefined 
 CFLAGS += $(DEBUG_FLAGS) -Wall -Wextra -std=c99 -MMD -MP -Werror -pthread
-CFLAGS += -O2 -flto
+CFLAGS += #-O2 -flto
 CFLAGS += $(shell $(PKG_CONFIG) --cflags sdl2 SDL2_image SDL2_ttf libpng)
 CFLAGS += $(INCLUDES)
 

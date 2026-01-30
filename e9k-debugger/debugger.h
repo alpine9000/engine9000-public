@@ -70,6 +70,10 @@ typedef struct {
     e9k_libretro_config_t libretro;  
 } e9k_amiga_config_t;
 
+typedef struct amiga_debug {
+    int *debugDma;
+} amiga_debug_t;
+
 typedef struct {
     debugger_system_type_t coreSystem;
     e9k_neogeo_config_t neogeo;
@@ -133,6 +137,7 @@ typedef struct e9k_debugger {
     int restartRequested;
     e9k_debug_options_t opts;
     e9k_libretro_config_t libretro;
+    amiga_debug_t amigaDebug;
     int loopEnabled;
     uint64_t loopFrom;
     uint64_t loopTo;

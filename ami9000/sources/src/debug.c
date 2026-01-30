@@ -75,7 +75,7 @@ int debugging;
 int exception_debugging;
 int no_trace_exceptions;
 int debug_copper = 0;
-int debug_dma = 0, debug_heatmap = 0;
+int debug_dma = 0, debug_heatmap = 1;
 int debug_sprite_mask = 0xff;
 int debug_illegal = 0;
 uae_u64 debug_illegal_mask;

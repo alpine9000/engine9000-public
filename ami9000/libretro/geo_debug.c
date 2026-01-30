@@ -15,6 +15,7 @@
 #include "memory.h"
 #include "custom.h"
 #include "newcpu.h"
+#include "debug.h"
 
 #define GEO_DEBUG_CALLSTACK_MAX 256
 #define GEO_DEBUG_BREAKPOINT_MAX 4096
@@ -1251,4 +1252,10 @@ GEO_DEBUG_EXPORT int
 geo_debug_get_checkpoint_enabled(void)
 {
 	return geo_debug_checkpointEnabled;
+}
+
+GEO_DEBUG_EXPORT int *
+geo_debug_amiga_get_debug_dma_addr(void)
+{
+	return &debug_dma;
 }

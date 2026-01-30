@@ -164,10 +164,36 @@ emu_ami_translateKey(SDL_Keycode key)
 }
 
 static void
+emu_ami_cycleDebugDma(e9ui_context_t *ctx, void *user)
+{
+    (void)ctx;
+    (void)user;
+    int *debugDma = debugger.amigaDebug.debugDma;
+    if (!debugDma) {
+        return;
+    }
+    switch (*debugDma) {
+    case 0: *debugDma = 2; break;
+    case 2: *debugDma = 3; break;
+    case 3: *debugDma = 4; break;
+    default: *debugDma = 0; break;
+    }
+}
+
+static void
 emu_ami_createOverlays(e9ui_component_t* comp, e9ui_component_t* button_stack)
 {
-    (void)comp;
-    (void)button_stack;
+    e9ui_component_t *btn = e9ui_button_make("DMA Debug", emu_ami_cycleDebugDma, comp);
+    if (btn) {
+        e9ui_button_setMini(btn, 1);
+        e9ui_setFocusTarget(btn, comp);
+        void* dmaDebugBtnMeta = alloc_strdup("dma_debug");
+        if (button_stack) {
+            e9ui_child_add(button_stack, btn, dmaDebugBtnMeta);
+        } else {
+            e9ui_child_add(comp, btn, dmaDebugBtnMeta);
+        }
+    }
 }
 
 static void
