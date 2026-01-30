@@ -1,1 +1,0 @@
-make && ./e9k-debugger --libretro-core=/Users/alex/project/engine9000/libretro-super/dist/osx-unknown/geolith_libretro.dylib  --libretro-rom=/Users/alex/project/neogeo/yamcha/build/engine9000.neo --libretro-system-dir=/Users/alex/project/engine9000/e9k-debugger/system --libretro-save-dir=/tmp
