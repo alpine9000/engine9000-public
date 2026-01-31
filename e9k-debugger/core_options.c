@@ -18,6 +18,7 @@
 #include "libretro_host.h"
 #include "neogeo_core_options.h"
 #include "settings.h"
+#include "system_badge.h"
 
 typedef struct core_options_kv {
     char *key;
@@ -79,6 +80,31 @@ core_options_clearOptionCbs(core_options_modal_state_t *st);
 
 static void
 core_options_clearCategoryCbs(core_options_modal_state_t *st);
+
+static e9ui_component_t *
+core_options_makeSystemBadge(e9ui_context_t *ctx, debugger_system_type_t coreSystem)
+{
+    if (!ctx || !ctx->renderer) {
+        return NULL;
+    }
+    int w = 0;
+    int h = 0;
+    SDL_Texture *tex = system_badge_getTexture(ctx->renderer, coreSystem, &w, &h);
+    if (!tex) {
+        return NULL;
+    }
+    e9ui_component_t *img = e9ui_image_makeFromTexture(tex, w, h);
+    if (!img) {
+        return NULL;
+    }
+    e9ui_component_t *box = e9ui_box_make(img);
+    if (!box) {
+        return img;
+    }
+    e9ui_box_setWidth(box, e9ui_dim_fixed, 139);
+    e9ui_box_setHeight(box, e9ui_dim_fixed, 48);
+    return box;
+}
 
 static void
 core_options_closeModal(void)
@@ -850,6 +876,7 @@ core_options_makeBody(core_options_modal_state_t *st, e9ui_context_t *ctx)
     e9ui_component_t *cols = e9ui_hstack_make();
     e9ui_hstack_addFixed(cols, categoryScroll, leftWidth);
     e9ui_hstack_addFlex(cols, optionsScroll);
+
     e9ui_component_t *content = e9ui_box_make(cols);
     if (content) {
         e9ui_box_setPadding(content, 32);
@@ -914,6 +941,17 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
     core_options_clearCategoryCbs(st);
 
     const e9k_system_config_t *cfg = core_options_selectConfig();
+    debugger_system_type_t coreSystem = cfg ? cfg->coreSystem : DEBUGGER_SYSTEM_NEOGEO;
+    e9ui_component_t *badge = core_options_makeSystemBadge(ctx, coreSystem);
+    if (badge) {
+        e9ui_stack_addFixed(st->categoryStack, badge);
+        int gap = e9ui_scale_px(ctx, 12);
+        if (gap < 0) {
+            gap = 0;
+        }
+        e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(gap));
+    }
+
     int includeGeneral = 0;
     if (!st->cats || st->catCount == 0) {
         includeGeneral = 1;

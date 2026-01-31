@@ -23,6 +23,7 @@
 #include "list.h"
 #include "amiga_uae_options.h"
 #include "neogeo_core_options.h"
+#include "system_badge.h"
 
 void
 debugger_platform_setDefaults(e9k_neogeo_config_t *config);
@@ -113,6 +114,9 @@ typedef struct settings_toolchainprefix_state {
 
 static void
 settings_rebuildModalBody(e9ui_context_t *ctx);
+
+static e9ui_component_t *
+settings_makeSystemBadge(e9ui_context_t *ctx, debugger_system_type_t coreSystem);
 
 static int settings_pendingRebuild = 0;
 static int settings_coreOptionsDirty = 0;
@@ -1310,9 +1314,27 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         }
     }
 
+    debugger_system_type_t coreSystem = isAmiga ? DEBUGGER_SYSTEM_AMIGA : DEBUGGER_SYSTEM_NEOGEO;
+    e9ui_component_t *badge = settings_makeSystemBadge(ctx, coreSystem);
+    e9ui_component_t *rowHeader = NULL;
+    if (badge && rowCoreCenter) {
+        rowHeader = e9ui_hstack_make();
+        if (rowHeader) {
+            int badgeWPx = e9ui_scale_px(ctx, 139);
+            int gapPx = e9ui_scale_px(ctx, 12);
+            e9ui_hstack_addFixed(rowHeader, badge, badgeWPx);
+            e9ui_hstack_addFixed(rowHeader, e9ui_spacer_make(gapPx), gapPx);
+            e9ui_hstack_addFlex(rowHeader, rowCoreCenter);
+        } else {
+            e9ui_childDestroy(badge, ctx);
+            badge = NULL;
+        }
+    }
+
     int contentW = e9ui_scale_px(ctx, 600);
     int hGap = gap && gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;
-    int hCoreRow = rowCoreCenter && rowCoreCenter->preferredHeight ? rowCoreCenter->preferredHeight(rowCoreCenter, ctx, contentW) : 0;
+    e9ui_component_t *coreRow = rowHeader ? rowHeader : (rowCoreCenter ? rowCoreCenter : badge);
+    int hCoreRow = coreRow && coreRow->preferredHeight ? coreRow->preferredHeight(coreRow, ctx, contentW) : 0;
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
     int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
     int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
@@ -1325,7 +1347,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     int hSys = rowSystemCenter && rowSystemCenter->preferredHeight ? rowSystemCenter->preferredHeight(rowSystemCenter, ctx, contentW) : 0;
     int hGlobal = rowGlobalCenter && rowGlobalCenter->preferredHeight ? rowGlobalCenter->preferredHeight(rowGlobalCenter, ctx, contentW) : 0;
     int contentH = 0;
-    if (rowCoreCenter) {
+    if (coreRow) {
         contentH += hCoreRow + hGap;
     }
     contentH += hRom;
@@ -1360,8 +1382,15 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         contentH += hGap + hGlobal;
     }
 
-    if (rowCoreCenter) {
+    if (rowHeader) {
+        e9ui_childDestroy(rowHeader, ctx);
+        rowCoreCenter = NULL;
+        badge = NULL;
+    } else if (rowCoreCenter) {
         e9ui_childDestroy(rowCoreCenter, ctx);
+    }
+    if (badge) {
+        e9ui_childDestroy(badge, ctx);
     }
     if (rowSystemCenter) {
         e9ui_childDestroy(rowSystemCenter, ctx);
@@ -1410,6 +1439,31 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
 }
 
 static e9ui_component_t *
+settings_makeSystemBadge(e9ui_context_t *ctx, debugger_system_type_t coreSystem)
+{
+    if (!ctx || !ctx->renderer) {
+        return NULL;
+    }
+    int w = 0;
+    int h = 0;
+    SDL_Texture *tex = system_badge_getTexture(ctx->renderer, coreSystem, &w, &h);
+    if (!tex) {
+        return NULL;
+    }
+    e9ui_component_t *img = e9ui_image_makeFromTexture(tex, w, h);
+    if (!img) {
+        return NULL;
+    }
+    e9ui_component_t *box = e9ui_box_make(img);
+    if (!box) {
+        return img;
+    }
+    e9ui_box_setWidth(box, e9ui_dim_fixed, 139);
+    e9ui_box_setHeight(box, e9ui_dim_fixed, 48);
+    return box;
+}
+
+static e9ui_component_t *
 settings_buildModalBody(e9ui_context_t *ctx)
 {
     if (!ctx) {
@@ -1445,6 +1499,21 @@ settings_buildModalBody(e9ui_context_t *ctx)
     e9ui_component_t *rowCoreCenter = rowCore ? e9ui_center_make(rowCore) : NULL;
     e9ui_component_t *btnCoreOptionsTop = e9ui_button_make("Core Options", core_options_uiOpen, NULL);
     e9ui_setTooltip(btnCoreOptionsTop, "Libretro core options");
+    e9ui_component_t *badge = settings_makeSystemBadge(ctx, debugger.settingsEdit.coreSystem);
+    e9ui_component_t *rowHeader = NULL;
+    if (badge && rowCoreCenter) {
+        rowHeader = e9ui_hstack_make();
+        if (rowHeader) {
+            int badgeWPx = e9ui_scale_px(ctx, 139);
+            int gapPx = e9ui_scale_px(ctx, 12);
+            e9ui_hstack_addFixed(rowHeader, badge, badgeWPx);
+            e9ui_hstack_addFixed(rowHeader, e9ui_spacer_make(gapPx), gapPx);
+            e9ui_hstack_addFlex(rowHeader, rowCoreCenter);
+        } else {
+            e9ui_childDestroy(badge, ctx);
+            badge = NULL;
+        }
+    }
 
     int funSelected = (e9ui->transition.mode != e9k_transition_none);
     e9ui_component_t *cbFun = e9ui_checkbox_make("FUN", funSelected, settings_funChanged, NULL);
@@ -1726,8 +1795,14 @@ settings_buildModalBody(e9ui_context_t *ctx)
 
     e9ui_component_t *stack = e9ui_stack_makeVertical();
     e9ui_component_t *gap = e9ui_vspacer_make(12);
-    if (rowCoreCenter) {
+    if (rowHeader) {
+        e9ui_stack_addFixed(stack, rowHeader);
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+    } else if (rowCoreCenter) {
         e9ui_stack_addFixed(stack, rowCoreCenter);
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+    } else if (badge) {
+        e9ui_stack_addFixed(stack, badge);
         e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
     }
     if (fsRom) {
@@ -1814,7 +1889,8 @@ settings_buildModalBody(e9ui_context_t *ctx)
     }
     int contentW = e9ui_scale_px(ctx, 600);
     int hGap = gap->preferredHeight ? gap->preferredHeight(gap, ctx, contentW) : 0;
-    int hCoreRow = rowCoreCenter && rowCoreCenter->preferredHeight ? rowCoreCenter->preferredHeight(rowCoreCenter, ctx, contentW) : 0;
+    e9ui_component_t *coreRow = rowHeader ? rowHeader : (rowCoreCenter ? rowCoreCenter : badge);
+    int hCoreRow = coreRow && coreRow->preferredHeight ? coreRow->preferredHeight(coreRow, ctx, contentW) : 0;
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
     int hDf0 = fsDf0 && fsDf0->preferredHeight ? fsDf0->preferredHeight(fsDf0, ctx, contentW) : 0;
     int hDf1 = fsDf1 && fsDf1->preferredHeight ? fsDf1->preferredHeight(fsDf1, ctx, contentW) : 0;
@@ -1829,7 +1905,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
     int hSys = rowSystemCenter && rowSystemCenter->preferredHeight ? rowSystemCenter->preferredHeight(rowSystemCenter, ctx, contentW) : 0;
     int hGlobal = rowGlobalCenter && rowGlobalCenter->preferredHeight ? rowGlobalCenter->preferredHeight(rowGlobalCenter, ctx, contentW) : 0;
     int contentH = 0;
-    if (rowCoreCenter) {
+    if (coreRow) {
         contentH += hCoreRow + hGap;
     }
     contentH += hRom;

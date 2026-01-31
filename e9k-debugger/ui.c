@@ -38,6 +38,7 @@
 #include "source_pane.h"
 #include "stack.h"
 #include "status_bar.h"
+#include "system_badge.h"
 #include "state_buffer.h"
 #include "trainer.h"
 #include "console.h"
@@ -481,33 +482,9 @@ ui_build(void)
         comp_logo = logo_box;
     }
 
-    SDL_Texture *systemTex = NULL; int systemW = 0, systemH = 0;
-    {
-        char exedir[PATH_MAX];
-        if (file_getExeDir(exedir, sizeof(exedir))) {
-            char p[PATH_MAX]; size_t n = strlen(exedir);
-            if (n < sizeof(p)) {
-                memcpy(p, exedir, n);
-                if (n > 0 && p[n-1] != '/') {
-                    p[n++] = '/';
-                }
-                const char *rel = debugger.config.coreSystem == DEBUGGER_SYSTEM_AMIGA ? "assets/amiga.png" : "assets/neogeo.png";
-                size_t rl = strlen(rel);
-                if (n + rl < sizeof(p)) {
-                    memcpy(p + n, rel, rl + 1);
-                    SDL_Surface *s = IMG_Load(p);
-                    if (s) {
-                        systemTex = SDL_CreateTextureFromSurface(e9ui->ctx.renderer, s);
-                        systemW = s->w;
-                        systemH = s->h;
-                        SDL_FreeSurface(s);
-                    } else {
-                        debug_error("e9k: IMG_Load failed for %s: %s", p, IMG_GetError());
-                    }
-                }
-            }
-        }
-    }
+    int systemW = 0;
+    int systemH = 0;
+    SDL_Texture *systemTex = system_badge_getTexture(e9ui->ctx.renderer, debugger.config.coreSystem, &systemW, &systemH);
     e9ui_component_t *comp_system = NULL;
     if (systemTex) {
         comp_system = e9ui_image_makeFromTexture(systemTex, systemW, systemH);
