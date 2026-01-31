@@ -6826,7 +6826,9 @@ void m68k_go (int may_quit)
 
 		set_x_funcs();
 		if (hardboot) {
-			custom_prepare();
+			if (!restored) {
+				custom_prepare();
+			}
 			mman_set_barriers(false);
 			protect_roms(true);
 		}

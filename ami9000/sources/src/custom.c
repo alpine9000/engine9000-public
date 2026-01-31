@@ -15036,6 +15036,7 @@ void custom_reset(bool hardreset, bool keyboardreset)
 	frame_rendered = false;
 
 	if (isrestore()) {
+#ifndef __LIBRETRO__
 		uae_u16 v;
 		uae_u32 vv;
 
@@ -15084,6 +15085,7 @@ void custom_reset(bool hardreset, bool keyboardreset)
 			eventtab[ev_audio].active = 0;
 			events_schedule();
 		}
+#endif // __LIBRETRO__
 
 		write_log(_T("CPU=%d Chipset=%s %s\n"),
 			currprefs.cpu_model,
@@ -15849,6 +15851,18 @@ void restore_custom_finish(void)
 		changed_prefs.genlock = currprefs.genlock = 1;
 		write_log(_T("statefile with BPLCON0 ERSY set without Genlock. Enabling Genlock.\n"));
 	}
+
+	// Post-restore fixups:
+	// - Copper enable is tracked via SPCFLAG_COPPER (not serialized directly)
+	// - Sprite DMA must be recomputed from SPRxPOS/CTL to avoid invisible sprites
+	compute_spcflag_copper();
+	nr_armed = 0;
+	for (int i = 0; i < 8; i++) {
+		SPRxCTLPOS(i);
+		if (spr[i].armed) {
+			nr_armed++;
+		}
+	}
 }
 
 void restore_custom_start(void)
@@ -16045,6 +16059,8 @@ uae_u8 *restore_custom(uae_u8 *src)
 		current_colors.extra |= 1 << CE_BORDERNTRANS;
 	}
 	setextblank();
+	/* Restore fills color_regs_* but not the derived native color cache (acolors[]). */
+	docols(&current_colors);
 
 	lof_prev_lastline = lof_lastline = lof_store != 0;
 
@@ -16484,13 +16500,15 @@ uae_u8 *save_custom_slots(size_t *len, uae_u8 *dstptr)
 	else
 		dstbak = dst = xmalloc(uae_u8, 1000);
 
-	uae_u32 v = 1;
-	// copper final MOVE pending?
-	if (cop_state.state == COP_read1) {
-		v |= 2;
-	} else if (cop_state.state == COP_read2) {
-		v |= 4;
-	}
+	// v1 only stored a very small subset of copper state and assumed saves were
+	// taken at safe points (typically vblank). Some software relies on restoring
+	// the exact in-flight copper state (e.g. active WAIT/SKIP/MOVE).
+	//
+	// Format:
+	//   v (bit0=valid, top byte=version)
+	//   v1 payload (kept for backwards restore compatibility)
+	//   v2+ appends full copper state needed to resume correctly.
+	uae_u32 v = 1 | (2 << 24);
 	save_u32(v);
 	save_u32(cop_state.ip);
 	save_u16(cop_state.ir[0]);
@@ -16500,6 +16518,9 @@ uae_u8 *save_custom_slots(size_t *len, uae_u8 *dstptr)
 		save_u16(cycle_line_pipe[i]);
 		save_u16(cycle_line_slot[i]);
 	}
+
+	// v2 extension: full copper execution state.
+	save_u32((uae_u32)cop_state.state);
 
 	*len = dst - dstbak;
 	return dstbak;
@@ -16511,20 +16532,28 @@ uae_u8 *restore_custom_slots(uae_u8 *src)
 	if (!(v & 1))
 		return src;
 
+	uae_u32 ver = v >> 24;
+	if (ver != 2) {
+		return src;
+	}
 	cop_state.ip = restore_u32();
 	cop_state.ir[0] = restore_u16();
 	cop_state.ir[1] = restore_u16();
-	cop_state.state = COP_stop;
-	if (v & 2) {
-		cop_state.state = COP_read1;
-	} else if (v & 4) {
-		cop_state.state = COP_read2;
-	}
 
 	for (int i = 0; i < 4; i++) {
 		cycle_line_pipe[i] = restore_u16();
 		cycle_line_slot[i] = (uae_u8)restore_u16();
 	}
+
+	cop_state.state = (enum copper_states)(uae_s32)restore_u32();
+	cop_state.state_prev = cop_state.state;
+	cop_state.ignore_next = 0;
+	cop_state.vcmp = (cop_state.ir[0] & (cop_state.ir[1] | 0x8000)) >> 8;
+	cop_state.hcmp = (cop_state.ir[0] & cop_state.ir[1] & 0xFE);
+	cop_state.moveaddr = 0;
+	cop_state.movedata = 0;
+	cop_state.movedelay = 0;
+	cop_state.moveptr = cop_state.ip;
 
 	return src;
 }
@@ -16533,6 +16562,7 @@ uae_u8 *restore_custom_event_delay(uae_u8 *src)
 {
 	if (restore_u32() != 1)
 		return src;
+
 	int cnt = restore_u8();
 	for (int i = 0; i < cnt; i++) {
 		uae_u8 type = restore_u8();
