@@ -34,6 +34,12 @@ e9ui_button_setGlowPulse(e9ui_component_t *btn, int enable);
 void
 e9ui_button_setIconAsset(e9ui_component_t *btn, const char *rel_asset_png);
 
+void
+e9ui_button_setLeftJustify(e9ui_component_t *btn, int padding_px);
+
+void
+e9ui_button_setIconRightPadding(e9ui_component_t *btn, int padding_px);
+
 int
 e9ui_button_registerHotkey(e9ui_component_t *btn, e9ui_context_t *ctx,
                              SDL_Keycode key, SDL_Keymod modMask, SDL_Keymod modValue);
@@ -43,5 +49,3 @@ e9ui_button_setTheme(e9ui_component_t *btn, const struct e9k_theme_button *theme
 
 void
 e9ui_button_clearTheme(e9ui_component_t *btn);
-
-

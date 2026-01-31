@@ -379,6 +379,66 @@ core_options_updateCategoryButtonThemes(core_options_modal_state_t *st)
     }
 }
 
+static int
+core_options_hasUncategorizedDefs(const core_options_modal_state_t *st)
+{
+    if (!st || !st->defs) {
+        return 0;
+    }
+    const e9k_system_config_t *cfg = core_options_selectConfig();
+    int isAmiga = (cfg && cfg->coreSystem == DEBUGGER_SYSTEM_AMIGA) ? 1 : 0;
+    for (size_t i = 0; i < st->defCount; ++i) {
+        const struct retro_core_option_v2_definition *def = &st->defs[i];
+        const char *defCat = def ? def->category_key : NULL;
+        if (!defCat || !*defCat) {
+            if (isAmiga && def && def->key) {
+                if (strcmp(def->key, "puae_video_options_display") == 0 ||
+                    strcmp(def->key, "puae_audio_options_display") == 0 ||
+                    strcmp(def->key, "puae_mapping_options_display") == 0) {
+                    continue;
+                }
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *
+core_options_categoryIconAssetForKey(const char *categoryKey)
+{
+    if (!categoryKey || !*categoryKey) {
+        return "assets/icons/settings.png";
+    }
+
+    if (strcmp(categoryKey, "system") == 0) {
+        return "assets/icons/settings.png";
+    }
+    if (strcmp(categoryKey, "audio") == 0) {
+        return "assets/icons/audio.png";
+    }
+    if (strcmp(categoryKey, "video") == 0) {
+        return "assets/icons/video.png";
+    }
+    if (strcmp(categoryKey, "media") == 0) {
+        return "assets/icons/media.png";
+    }
+    if (strcmp(categoryKey, "input") == 0) {
+        return "assets/icons/game.png";
+    }
+    if (strcmp(categoryKey, "hotkey") == 0) {
+        return "assets/icons/hotkey.png";
+    }
+    if (strcmp(categoryKey, "retropad") == 0) {
+        return "assets/icons/game.png";
+    }
+    if (strcmp(categoryKey, "osd") == 0) {
+        return "assets/icons/osd.png";
+    }
+
+    return NULL;
+}
+
 static void
 core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_context_t *ctx)
 {
@@ -441,12 +501,16 @@ core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_contex
             continue;
         }
         if (def->info && *def->info) {
-            e9ui_setTooltip(select, def->info);
+            e9ui_labeled_select_setInfo(select, def->info);
         }
 
         e9ui_component_t *button = e9ui_labeled_select_getButton(select);
         if (button && largestLabel && *largestLabel) {
             e9ui_button_setLargestLabel(button, largestLabel);
+        }
+        if (button) {
+            e9ui_button_setLeftJustify(button, 16);
+            e9ui_button_setIconRightPadding(button, 16);
         }
         if (button && optCount <= 1) {
             button->disabled = 1;
@@ -849,19 +913,37 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
     e9ui_child_destroyChildren(st->categoryStack, ctx);
     core_options_clearCategoryCbs(st);
 
-    core_options_category_cb_t *generalCb = (core_options_category_cb_t*)alloc_calloc(1, sizeof(*generalCb));
-    if (generalCb) {
-        generalCb->st = st;
-        generalCb->categoryKey = NULL;
-        core_options_trackCategoryCb(st, generalCb);
+    const e9k_system_config_t *cfg = core_options_selectConfig();
+    int includeGeneral = 0;
+    if (!st->cats || st->catCount == 0) {
+        includeGeneral = 1;
+    } else if (cfg && cfg->coreSystem == DEBUGGER_SYSTEM_NEOGEO) {
+        includeGeneral = 1;
+    } else if (core_options_hasUncategorizedDefs(st)) {
+        includeGeneral = 1;
     }
-    e9ui_component_t *btnGeneral = e9ui_button_make("General", core_options_categoryClicked, generalCb);
-    if (btnGeneral) {
+
+    if (includeGeneral) {
+        core_options_category_cb_t *generalCb = (core_options_category_cb_t*)alloc_calloc(1, sizeof(*generalCb));
         if (generalCb) {
-            generalCb->button = btnGeneral;
+            generalCb->st = st;
+            generalCb->categoryKey = NULL;
+            core_options_trackCategoryCb(st, generalCb);
         }
-        e9ui_stack_addFixed(st->categoryStack, btnGeneral);
-        e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(4));
+        e9ui_component_t *btnGeneral = e9ui_button_make("General", core_options_categoryClicked, generalCb);
+        if (btnGeneral) {
+            if (generalCb) {
+                generalCb->button = btnGeneral;
+            }
+            e9ui_button_setLeftJustify(btnGeneral, 16);
+            e9ui_button_setIconRightPadding(btnGeneral, 16);
+            const char *icon = core_options_categoryIconAssetForKey(NULL);
+            if (icon && *icon) {
+                e9ui_button_setIconAsset(btnGeneral, icon);
+            }
+            e9ui_stack_addFixed(st->categoryStack, btnGeneral);
+            e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(4));
+        }
     }
 
     if (st->cats && st->catCount > 0) {
@@ -883,6 +965,12 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
                 continue;
             }
             cb->button = btn;
+            e9ui_button_setLeftJustify(btn, 16);
+            e9ui_button_setIconRightPadding(btn, 16);
+            const char *icon = core_options_categoryIconAssetForKey(cat->key);
+            if (icon && *icon) {
+                e9ui_button_setIconAsset(btn, icon);
+            }
             if (cat->info && *cat->info) {
                 e9ui_setTooltip(btn, cat->info);
             }
@@ -893,7 +981,23 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
 
     e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(72));
 
-    st->selectedCategoryKey = NULL;
+    if (includeGeneral) {
+        st->selectedCategoryKey = NULL;
+    } else if (st->cats && st->catCount > 0) {
+        st->selectedCategoryKey = NULL;
+        for (size_t i = 0; i < st->catCount; ++i) {
+            const struct retro_core_option_v2_category *cat = &st->cats[i];
+            if (cat && cat->key && *cat->key) {
+                st->selectedCategoryKey = cat->key;
+                break;
+            }
+        }
+        if (!st->selectedCategoryKey) {
+            st->selectedCategoryKey = NULL;
+        }
+    } else {
+        st->selectedCategoryKey = NULL;
+    }
     core_options_updateCategoryButtonThemes(st);
 
     int width = st->categoryWidthPx > 0 ? st->categoryWidthPx : e9ui_scale_px(ctx, 240);

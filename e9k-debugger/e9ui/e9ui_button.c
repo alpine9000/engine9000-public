@@ -22,6 +22,9 @@ typedef struct e9ui_button_state {
   SDL_Texture        *icon;
   int                 iconW;
   int                 iconH;
+  int                 leftJustify;
+  int                 leftJustifyPad_px;
+  int                 iconRightPad_px;
   int                 useMini;
   int                 useCustomTheme;
   e9k_theme_button_t  customTheme;
@@ -478,13 +481,20 @@ e9ui_button_render(e9ui_component_t *self, e9ui_context_t *ctx)
         }
         iconRenderW = iw;
         iconRenderH = ih;
-        iconMargin = (textW > 0 && textTexture) ? 6 : 0;
+        int pad = st->iconRightPad_px > 0 ? e9ui_scale_px(ctx, st->iconRightPad_px) : 6;
+        iconMargin = (textW > 0 && textTexture) ? pad : 0;
     }
     int contentWidth = iconRenderW + iconMargin + textW;
-    int contentStart = r.x + (r.w - contentWidth) / 2;
-    int minStart = innerStartX;
-    if (contentStart < minStart) {
-        contentStart = minStart;
+    int contentStart = 0;
+    if (st->leftJustify) {
+        int pad = st->leftJustifyPad_px > 0 ? e9ui_scale_px(ctx, st->leftJustifyPad_px) : 0;
+        contentStart = r.x + padding + pad;
+    } else {
+        contentStart = r.x + (r.w - contentWidth) / 2;
+        int minStart = innerStartX;
+        if (contentStart < minStart) {
+            contentStart = minStart;
+        }
     }
     if (st->icon) {
         Uint8 prevR = 255, prevG = 255, prevB = 255, prevA = 255;
@@ -505,6 +515,27 @@ e9ui_button_render(e9ui_component_t *self, e9ui_context_t *ctx)
         SDL_Rect tr = { contentStart + iconRenderW + iconMargin, cy - textH/2, textW, textH };
         SDL_RenderCopy(ctx->renderer, textTexture, NULL, &tr);
     }
+}
+
+void
+e9ui_button_setLeftJustify(e9ui_component_t *btn, int padding_px)
+{
+    if (!btn || !btn->state) {
+        return;
+    }
+    e9ui_button_state_t *st = (e9ui_button_state_t*)btn->state;
+    st->leftJustify = 1;
+    st->leftJustifyPad_px = padding_px > 0 ? padding_px : 0;
+}
+
+void
+e9ui_button_setIconRightPadding(e9ui_component_t *btn, int padding_px)
+{
+    if (!btn || !btn->state) {
+        return;
+    }
+    e9ui_button_state_t *st = (e9ui_button_state_t*)btn->state;
+    st->iconRightPad_px = padding_px > 0 ? padding_px : 0;
 }
 
 static void

@@ -43,3 +43,5 @@ e9ui_labeled_select_setOnChange(e9ui_component_t *comp, e9ui_labeled_select_chan
 e9ui_component_t *
 e9ui_labeled_select_getButton(const e9ui_component_t *comp);
 
+void
+e9ui_labeled_select_setInfo(e9ui_component_t *comp, const char *info);
