@@ -30,6 +30,7 @@
 #include "debugger.h"
 #include "input_record.h"
 #include "alloc.h"
+#include "state_wrap.h"
 
 
 typedef void (*retro_set_environment_fn_t)(retro_environment_t);
@@ -2070,6 +2071,10 @@ libretro_host_setStateData(const void *data, size_t size)
     if (!data || size == 0) {
         return false;
     }
+    state_wrap_info_t info;
+    if (!state_wrap_parse((const uint8_t *)data, size, &info)) {
+        return false;
+    }
     uint8_t *buf = (uint8_t*)alloc_realloc(libretro_host.stateData, size);
     if (!buf) {
         return false;
@@ -2183,10 +2188,12 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff)
     if (!libretro_host.serializeSize || !libretro_host.serialize) {
         return false;
     }
-    size_t size = libretro_host.serializeSize();
-    if (size == 0) {
+    size_t rawSize = libretro_host.serializeSize();
+    if (rawSize == 0) {
         return false;
     }
+    size_t headerSize = state_wrap_headerSize();
+    size_t size = headerSize + rawSize;
     uint8_t *prev = NULL;
     if (libretro_host.stateData && libretro_host.stateSize == size) {
         prev = (uint8_t*)alloc_alloc(size);
@@ -2203,7 +2210,11 @@ libretro_host_saveState(size_t *out_size, size_t *out_diff)
         libretro_host.stateData = buf;
         libretro_host.stateSize = size;
     }
-    if (!libretro_host.serialize(libretro_host.stateData, libretro_host.stateSize)) {
+    if (!libretro_host.serialize(libretro_host.stateData + headerSize, rawSize)) {
+        alloc_free(prev);
+        return false;
+    }
+    if (!state_wrap_writeHeader(libretro_host.stateData, libretro_host.stateSize, rawSize, &debugger.machine)) {
         alloc_free(prev);
         return false;
     }
@@ -2232,7 +2243,14 @@ libretro_host_restoreState(size_t *out_size)
     if (!libretro_host.unserialize || !libretro_host.stateData || libretro_host.stateSize == 0) {
         return false;
     }
-    if (!libretro_host.unserialize(libretro_host.stateData, libretro_host.stateSize)) {
+    state_wrap_info_t info;
+    if (!state_wrap_parse((const uint8_t *)libretro_host.stateData, libretro_host.stateSize, &info)) {
+        return false;
+    }
+    debugger.machine.textBaseAddr = info.textBaseAddr;
+    debugger.machine.dataBaseAddr = info.dataBaseAddr;
+    debugger.machine.bssBaseAddr = info.bssBaseAddr;
+    if (!libretro_host.unserialize(info.payload, info.payloadSize)) {
         return false;
     }
     if (out_size) {

@@ -828,9 +828,7 @@ textbox_filenameCompletion(textbox_state_t *st, e9ui_context_t *ctx, TTF_Font *f
         return 1;
     }
 
-    st->completionSel = reverse ? count - 1 : 0;
-    const char *cand = st->completionList[st->completionSel] ? st->completionList[st->completionSel] : "";
-    textbox_applyFilenameCompletionChoice(st, ctx, font, viewW, cand);
+    st->completionSel = -1;
     return 1;
 }
 

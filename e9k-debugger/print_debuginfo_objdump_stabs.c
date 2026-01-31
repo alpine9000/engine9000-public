@@ -78,7 +78,228 @@ print_debuginfo_objdump_stabs_preferData(void)
 typedef struct print_debuginfo_objdump_stabs_type_def {
     uint32_t alias;
     uint32_t bits;
+    char *def;
+    char *name;
 } print_debuginfo_objdump_stabs_type_def_t;
+
+#define PRINT_DEBINFO_STABS_TYPE_BASE 0x80000000u
+
+static int
+print_debuginfo_objdump_stabs_parseStabStringName(const char *stabStr, char *outName, size_t cap);
+
+static void
+print_debuginfo_objdump_stabs_typeEnsure(print_debuginfo_objdump_stabs_type_def_t **defs, size_t *cap, uint32_t id);
+
+static int
+print_debuginfo_objdump_stabs_parseTypeId(const char *p, const char **outEnd, uint32_t *outTypeId)
+{
+    if (outEnd) {
+        *outEnd = NULL;
+    }
+    if (outTypeId) {
+        *outTypeId = 0;
+    }
+    if (!p || !outEnd || !outTypeId) {
+        return 0;
+    }
+
+    if (isdigit((unsigned char)*p)) {
+        errno = 0;
+        char *end = NULL;
+        unsigned long v = strtoul(p, &end, 10);
+        if (errno != 0 || !end || end == p || v > 0xfffffffful) {
+            return 0;
+        }
+        *outTypeId = (uint32_t)v;
+        *outEnd = end;
+        return 1;
+    }
+
+    if (*p == '(') {
+        ++p;
+        if (!isdigit((unsigned char)*p)) {
+            return 0;
+        }
+        errno = 0;
+        char *endA = NULL;
+        unsigned long a = strtoul(p, &endA, 10);
+        if (errno != 0 || !endA || endA == p || *endA != ',') {
+            return 0;
+        }
+        const char *pB = endA + 1;
+        if (!isdigit((unsigned char)*pB)) {
+            return 0;
+        }
+        errno = 0;
+        char *endB = NULL;
+        unsigned long b = strtoul(pB, &endB, 10);
+        if (errno != 0 || !endB || endB == pB || *endB != ')') {
+            return 0;
+        }
+        if (a > 0xfffful || b > 0xfffful) {
+            return 0;
+        }
+        *outTypeId = (uint32_t)((a << 16) | b);
+        *outEnd = endB + 1;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int
+print_debuginfo_objdump_stabs_stripslash(char *s)
+{
+    if (!s) {
+        return 0;
+    }
+    size_t len = strlen(s);
+    if (len == 0) {
+        return 0;
+    }
+    if (s[len - 1] != '\\') {
+        return 0;
+    }
+    s[len - 1] = '\0';
+    return 1;
+}
+
+static int
+print_debuginfo_objdump_stabs_appendString(char **dst, const char *src)
+{
+    if (!dst || !src) {
+        return 0;
+    }
+    if (!*dst) {
+        *dst = print_debuginfo_objdump_stabs_strdup(src);
+        return *dst != NULL;
+    }
+    size_t a = strlen(*dst);
+    size_t b = strlen(src);
+    char *next = (char *)alloc_realloc(*dst, a + b + 1);
+    if (!next) {
+        return 0;
+    }
+    memcpy(next + a, src, b + 1);
+    *dst = next;
+    return 1;
+}
+
+static void
+print_debuginfo_objdump_stabs_splitNestedAliasDef(print_debuginfo_objdump_stabs_type_def_t **defs,
+                                                  size_t *cap,
+                                                  uint32_t typeId)
+{
+    if (!defs || !*defs || !cap || *cap == 0 || typeId == 0 || typeId >= *cap) {
+        return;
+    }
+    if (!(*defs)[typeId].def || !*(*defs)[typeId].def) {
+        return;
+    }
+
+    const char *def = (*defs)[typeId].def;
+    uint32_t innerId = 0;
+    const char *end = NULL;
+    if (!print_debuginfo_objdump_stabs_parseTypeId(def, &end, &innerId)) {
+        return;
+    }
+    if (!end || *end != '=' || !end[1]) {
+        return;
+    }
+    if (innerId == 0) {
+        return;
+    }
+
+    print_debuginfo_objdump_stabs_typeEnsure(defs, cap, innerId);
+    if (innerId >= *cap) {
+        return;
+    }
+
+    if ((*defs)[typeId].alias == 0) {
+        (*defs)[typeId].alias = innerId;
+    }
+    if (!(*defs)[innerId].def) {
+        (*defs)[innerId].def = print_debuginfo_objdump_stabs_strdup(end + 1);
+    }
+}
+
+static uint32_t
+print_debuginfo_objdump_stabs_typeDieOffset(uint32_t typeId)
+{
+    return PRINT_DEBINFO_STABS_TYPE_BASE | (typeId & 0x7fffffffu);
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_findType(print_index_t *index, uint32_t dieOffset)
+{
+    if (!index) {
+        return NULL;
+    }
+    for (int i = 0; i < index->typeCount; ++i) {
+        if (index->types[i] && index->types[i]->dieOffset == dieOffset) {
+            return index->types[i];
+        }
+    }
+    return NULL;
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_addType(print_index_t *index, uint32_t dieOffset)
+{
+    if (!index) {
+        return NULL;
+    }
+    if (index->typeCount >= index->typeCap) {
+        int next = index->typeCap ? index->typeCap * 2 : 128;
+        print_type_t **nextTypes = (print_type_t **)alloc_realloc(index->types, sizeof(*nextTypes) * (size_t)next);
+        if (!nextTypes) {
+            return NULL;
+        }
+        index->types = nextTypes;
+        index->typeCap = next;
+    }
+    print_type_t *type = (print_type_t *)alloc_calloc(1, sizeof(*type));
+    if (!type) {
+        return NULL;
+    }
+    type->dieOffset = dieOffset;
+    index->types[index->typeCount++] = type;
+    return type;
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_addAnonBaseType(print_index_t *index, size_t byteSize)
+{
+    if (!index || byteSize == 0) {
+        return NULL;
+    }
+    print_type_t *type = print_debuginfo_objdump_stabs_addType(index, 0);
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_base;
+    type->byteSize = byteSize;
+    type->encoding = print_base_encoding_unsigned;
+    type->name = print_debuginfo_objdump_stabs_strdup("");
+    return type;
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_addAnonPointerType(print_index_t *index, print_type_t *target)
+{
+    if (!index) {
+        return NULL;
+    }
+    print_type_t *type = print_debuginfo_objdump_stabs_addType(index, 0);
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_pointer;
+    type->byteSize = 4;
+    type->targetType = target;
+    type->name = print_debuginfo_objdump_stabs_strdup("");
+    return type;
+}
 
 static void
 print_debuginfo_objdump_stabs_typeEnsure(print_debuginfo_objdump_stabs_type_def_t **defs, size_t *cap, uint32_t id)
@@ -142,23 +363,29 @@ print_debuginfo_objdump_stabs_parseTypeDef(const char *stabStr, uint32_t *outTyp
 
     const char *p = strstr(stabStr, ":t");
     if (!p) {
-        return 0;
+        p = strstr(stabStr, ":T");
+        if (!p) {
+            return 0;
+        }
     }
     p += 2;
-    if (!isdigit((unsigned char)*p)) {
+    uint32_t typeId = 0;
+    if (!print_debuginfo_objdump_stabs_parseTypeId(p, &p, &typeId)) {
         return 0;
     }
-    uint32_t typeId = (uint32_t)strtoul(p, (char **)&p, 10);
     if (*p != '=') {
         return 0;
     }
     ++p;
 
-    if (isdigit((unsigned char)*p)) {
-        uint32_t alias = (uint32_t)strtoul(p, NULL, 10);
-        *outTypeId = typeId;
-        *outAlias = alias;
-        return 1;
+    if (isdigit((unsigned char)*p) || *p == '(') {
+        uint32_t alias = 0;
+        const char *end = NULL;
+        if (print_debuginfo_objdump_stabs_parseTypeId(p, &end, &alias)) {
+            *outTypeId = typeId;
+            *outAlias = alias;
+            return 1;
+        }
     }
 
     const char *sz = strstr(p, "@s");
@@ -188,35 +415,322 @@ print_debuginfo_objdump_stabs_parseVarTypeId(const char *stabStr, uint32_t *outT
         return 0;
     }
     const char *p = colon + 2;
-    if (!isdigit((unsigned char)*p)) {
+    uint32_t typeId = 0;
+    const char *end = NULL;
+    if (!print_debuginfo_objdump_stabs_parseTypeId(p, &end, &typeId)) {
         return 0;
     }
-    *outTypeId = (uint32_t)strtoul(p, NULL, 10);
+    *outTypeId = typeId;
     return 1;
 }
 
 static int
-print_debuginfo_objdump_stabs_hasVariable(print_index_t *index, const char *name)
+print_debuginfo_objdump_stabs_parseFullTypeDef(const char *stabStr, uint32_t *outTypeId, const char **outDef)
 {
-    if (!index || !name) {
+    if (outTypeId) {
+        *outTypeId = 0;
+    }
+    if (outDef) {
+        *outDef = NULL;
+    }
+    if (!stabStr || !*stabStr || !outTypeId || !outDef) {
         return 0;
     }
-    for (int i = 0; i < index->varCount; ++i) {
-        if (index->vars[i].name && strcmp(index->vars[i].name, name) == 0) {
-            return 1;
+    const char *p = strstr(stabStr, ":t");
+    if (!p) {
+        p = strstr(stabStr, ":T");
+        if (!p) {
+            return 0;
         }
     }
-    return 0;
+    p += 2;
+    uint32_t typeId = 0;
+    if (!print_debuginfo_objdump_stabs_parseTypeId(p, &p, &typeId)) {
+        return 0;
+    }
+    if (*p != '=') {
+        return 0;
+    }
+    ++p;
+    *outTypeId = typeId;
+    *outDef = p;
+    return 1;
 }
 
 static int
-print_debuginfo_objdump_stabs_addVariable(print_index_t *index, const char *name, uint32_t addr, size_t byteSize, int hasByteSize)
+print_debuginfo_objdump_stabs_parseStructByteSize(const char *def, size_t *outByteSize)
+{
+    if (outByteSize) {
+        *outByteSize = 0;
+    }
+    if (!def || !outByteSize) {
+        return 0;
+    }
+    if (def[0] != 's' && def[0] != 'u') {
+        return 0;
+    }
+    const char *p = def + 1;
+    if (!isdigit((unsigned char)*p)) {
+        return 0;
+    }
+    unsigned long bytes = strtoul(p, NULL, 10);
+    if (bytes == 0) {
+        return 0;
+    }
+    *outByteSize = (size_t)bytes;
+    return 1;
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_buildType(print_index_t *index,
+                                       const print_debuginfo_objdump_stabs_type_def_t *defs,
+                                       size_t cap,
+                                       uint32_t typeId,
+                                       int depth);
+
+static print_type_t *
+print_debuginfo_objdump_stabs_parseTypeSpec(print_index_t *index,
+                                            const print_debuginfo_objdump_stabs_type_def_t *defs,
+                                            size_t cap,
+                                            const char *spec,
+                                            size_t specLen,
+                                            size_t bitSize,
+                                            int depth)
+{
+    if (!index || !spec || specLen == 0) {
+        return NULL;
+    }
+
+    char tmp[128];
+    size_t tl = specLen;
+    if (tl >= sizeof(tmp)) {
+        tl = sizeof(tmp) - 1;
+    }
+    memcpy(tmp, spec, tl);
+    tmp[tl] = '\0';
+
+    if (tmp[0] == '*' && tmp[1] != '\0') {
+        const char *p = tmp + 1;
+        uint32_t tid = 0;
+        const char *end = NULL;
+        if (print_debuginfo_objdump_stabs_parseTypeId(p, &end, &tid)) {
+            print_type_t *target = print_debuginfo_objdump_stabs_buildType(index, defs, cap, tid, depth + 1);
+            return print_debuginfo_objdump_stabs_addAnonPointerType(index, target);
+        }
+    }
+
+    if (isdigit((unsigned char)tmp[0]) || tmp[0] == '(') {
+        uint32_t tid = 0;
+        const char *end = NULL;
+        if (print_debuginfo_objdump_stabs_parseTypeId(tmp, &end, &tid)) {
+            return print_debuginfo_objdump_stabs_buildType(index, defs, cap, tid, depth + 1);
+        }
+    }
+
+    if (bitSize != 0) {
+        size_t bytes = (bitSize + 7u) / 8u;
+        if (bytes == 0) {
+            bytes = 1;
+        }
+        return print_debuginfo_objdump_stabs_addAnonBaseType(index, bytes);
+    }
+
+    return NULL;
+}
+
+static int
+print_debuginfo_objdump_stabs_buildStructMembers(print_index_t *index,
+                                                 print_type_t *type,
+                                                 const print_debuginfo_objdump_stabs_type_def_t *defs,
+                                                 size_t cap,
+                                                 const char *def,
+                                                 int depth)
+{
+    if (!index || !type || !def) {
+        return 0;
+    }
+    if (def[0] != 's' && def[0] != 'u') {
+        return 0;
+    }
+
+    const char *p = def + 1;
+    while (*p && isdigit((unsigned char)*p)) {
+        ++p;
+    }
+
+    int count = 0;
+    const char *scan = p;
+    while (*scan) {
+        const char *colon = strchr(scan, ':');
+        if (!colon) {
+            break;
+        }
+        const char *semi = strchr(colon + 1, ';');
+        if (!semi) {
+            break;
+        }
+        ++count;
+        scan = semi + 1;
+        if (*scan == ';') {
+            break;
+        }
+    }
+    if (count <= 0) {
+        return 1;
+    }
+
+    type->members = (print_member_t *)alloc_calloc((size_t)count, sizeof(*type->members));
+    if (!type->members) {
+        return 0;
+    }
+    type->memberCount = 0;
+
+    for (int i = 0; i < count; ++i) {
+        const char *colon = strchr(p, ':');
+        if (!colon) {
+            break;
+        }
+        const char *semi = strchr(colon + 1, ';');
+        if (!semi) {
+            break;
+        }
+
+        size_t nameLen = (size_t)(colon - p);
+        char nameBuf[256];
+        if (nameLen == 0) {
+            strncpy(nameBuf, "<anon>", sizeof(nameBuf) - 1);
+            nameBuf[sizeof(nameBuf) - 1] = '\0';
+        } else {
+            if (nameLen >= sizeof(nameBuf)) {
+                nameLen = sizeof(nameBuf) - 1;
+            }
+            memcpy(nameBuf, p, nameLen);
+            nameBuf[nameLen] = '\0';
+        }
+
+        const char *specStart = colon + 1;
+        const char *comma1 = strchr(specStart, ',');
+        const char *comma2 = comma1 ? strchr(comma1 + 1, ',') : NULL;
+        if (!comma1 || !comma2 || comma2 > semi) {
+            p = semi + 1;
+            continue;
+        }
+        size_t specLen = (size_t)(comma1 - specStart);
+        if (specLen == 0) {
+            p = semi + 1;
+            continue;
+        }
+        unsigned long bitOffset = strtoul(comma1 + 1, NULL, 10);
+        unsigned long bitSize = strtoul(comma2 + 1, NULL, 10);
+
+        print_member_t *member = &type->members[type->memberCount++];
+        member->name = print_debuginfo_objdump_stabs_strdup(nameBuf[0] ? nameBuf : "<anon>");
+        member->offset = (uint32_t)(bitOffset / 8ul);
+        member->type = print_debuginfo_objdump_stabs_parseTypeSpec(index, defs, cap, specStart, specLen, (size_t)bitSize, depth);
+        if (!member->type && bitSize != 0) {
+            size_t bytes = ((size_t)bitSize + 7u) / 8u;
+            if (bytes == 0) {
+                bytes = 1;
+            }
+            member->type = print_debuginfo_objdump_stabs_addAnonBaseType(index, bytes);
+        }
+
+        p = semi + 1;
+        if (*p == ';') {
+            break;
+        }
+    }
+    return 1;
+}
+
+static print_type_t *
+print_debuginfo_objdump_stabs_buildType(print_index_t *index,
+                                       const print_debuginfo_objdump_stabs_type_def_t *defs,
+                                       size_t cap,
+                                       uint32_t typeId,
+                                       int depth)
+{
+    if (!index || !defs || cap == 0 || typeId == 0 || typeId >= cap) {
+        return NULL;
+    }
+    if (depth > 64) {
+        return NULL;
+    }
+
+    uint32_t dieOffset = print_debuginfo_objdump_stabs_typeDieOffset(typeId);
+    print_type_t *existing = print_debuginfo_objdump_stabs_findType(index, dieOffset);
+    if (existing) {
+        return existing;
+    }
+
+    print_type_t *type = print_debuginfo_objdump_stabs_addType(index, dieOffset);
+    if (!type) {
+        return NULL;
+    }
+    type->kind = print_type_invalid;
+    type->name = print_debuginfo_objdump_stabs_strdup(defs[typeId].name ? defs[typeId].name : "");
+
+    if (defs[typeId].alias != 0 && defs[typeId].alias < cap) {
+        type->kind = print_type_typedef;
+        type->targetType = print_debuginfo_objdump_stabs_buildType(index, defs, cap, defs[typeId].alias, depth + 1);
+        return type;
+    }
+
+    if (defs[typeId].def && *defs[typeId].def) {
+        const char *def = defs[typeId].def;
+        if (def[0] == '*') {
+            type->kind = print_type_pointer;
+            type->byteSize = 4;
+            const char *p = def + 1;
+            uint32_t tid = 0;
+            const char *end = NULL;
+            if (print_debuginfo_objdump_stabs_parseTypeId(p, &end, &tid)) {
+                type->targetType = print_debuginfo_objdump_stabs_buildType(index, defs, cap, tid, depth + 1);
+            }
+            return type;
+        }
+        if (def[0] == 's' || def[0] == 'u') {
+            type->kind = print_type_struct;
+            size_t byteSize = 0;
+            if (print_debuginfo_objdump_stabs_parseStructByteSize(def, &byteSize)) {
+                type->byteSize = byteSize;
+            }
+            (void)print_debuginfo_objdump_stabs_buildStructMembers(index, type, defs, cap, def, depth + 1);
+            return type;
+        }
+    }
+
+    if (defs[typeId].bits != 0 && (defs[typeId].bits % 8u) == 0u) {
+        type->kind = print_type_base;
+        type->byteSize = (size_t)(defs[typeId].bits / 8u);
+        type->encoding = print_base_encoding_unsigned;
+        return type;
+    }
+
+    type->kind = print_type_base;
+    type->byteSize = 4;
+    type->encoding = print_base_encoding_unsigned;
+    return type;
+}
+
+static int
+print_debuginfo_objdump_stabs_setVariable(print_index_t *index, const char *name, uint32_t addr, uint32_t typeRef, size_t byteSize, int hasByteSize)
 {
     if (!index || !name || !*name) {
         return 0;
     }
-    if (print_debuginfo_objdump_stabs_hasVariable(index, name)) {
-        return 1;
+    for (int i = 0; i < index->varCount; ++i) {
+        if (index->vars[i].name && strcmp(index->vars[i].name, name) == 0) {
+            index->vars[i].addr = addr;
+            if (typeRef != 0) {
+                index->vars[i].typeRef = typeRef;
+            }
+            if (hasByteSize) {
+                index->vars[i].byteSize = byteSize;
+                index->vars[i].hasByteSize = 1;
+            }
+            return 1;
+        }
     }
     if (index->varCount >= index->varCap) {
         int next = index->varCap ? index->varCap * 2 : 128;
@@ -231,7 +745,7 @@ print_debuginfo_objdump_stabs_addVariable(print_index_t *index, const char *name
     memset(var, 0, sizeof(*var));
     var->name = print_debuginfo_objdump_stabs_strdup(name);
     var->addr = addr;
-    var->typeRef = 0;
+    var->typeRef = typeRef;
     var->byteSize = byteSize;
     var->hasByteSize = hasByteSize ? 1 : 0;
     return var->name != NULL;
@@ -391,6 +905,9 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         return 0;
     }
     int added = 0;
+    uint32_t pendingTypeId = 0;
+    char *pendingTypeDef = NULL;
+    int pendingTypeContinue = 0;
     char line[2048];
     while (fgets(line, sizeof(line), fp)) {
         char *tokens[12];
@@ -429,11 +946,50 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
             continue;
         }
 
-        // Collect simple STABS type aliases/sizes from LSYM entries.
+        // Collect STABS type definitions from LSYM entries.
         if (strcmp(stabType, "LSYM") == 0) {
+            int startedTypeDef = 0;
             uint32_t typeId = 0;
             uint32_t alias = 0;
             uint32_t bits = 0;
+            const char *def = NULL;
+            if (print_debuginfo_objdump_stabs_parseFullTypeDef(stabStr, &typeId, &def)) {
+                startedTypeDef = 1;
+                if (pendingTypeDef) {
+                    print_debuginfo_objdump_stabs_typeEnsure(&typeDefs, &typeCap, pendingTypeId);
+                    if (pendingTypeId < typeCap && !typeDefs[pendingTypeId].def) {
+                        typeDefs[pendingTypeId].def = pendingTypeDef;
+                        pendingTypeDef = NULL;
+                        print_debuginfo_objdump_stabs_splitNestedAliasDef(&typeDefs, &typeCap, pendingTypeId);
+                    } else {
+                        alloc_free(pendingTypeDef);
+                        pendingTypeDef = NULL;
+                    }
+                    pendingTypeId = 0;
+                    pendingTypeContinue = 0;
+                }
+                print_debuginfo_objdump_stabs_typeEnsure(&typeDefs, &typeCap, typeId);
+                if (typeId < typeCap) {
+                    if (def && *def) {
+                        pendingTypeId = typeId;
+                        pendingTypeDef = print_debuginfo_objdump_stabs_strdup(def);
+                        if (pendingTypeDef) {
+                            pendingTypeContinue = print_debuginfo_objdump_stabs_stripslash(pendingTypeDef);
+                            if (!pendingTypeContinue && !typeDefs[typeId].def) {
+                                typeDefs[typeId].def = pendingTypeDef;
+                                pendingTypeDef = NULL;
+                                print_debuginfo_objdump_stabs_splitNestedAliasDef(&typeDefs, &typeCap, typeId);
+                            }
+                        }
+                    }
+                    if (!typeDefs[typeId].name) {
+                        char typeName[256];
+                        if (print_debuginfo_objdump_stabs_parseStabStringName(stabStr, typeName, sizeof(typeName))) {
+                            typeDefs[typeId].name = print_debuginfo_objdump_stabs_strdup(typeName);
+                        }
+                    }
+                }
+            }
             if (print_debuginfo_objdump_stabs_parseTypeDef(stabStr, &typeId, &alias, &bits)) {
                 print_debuginfo_objdump_stabs_typeEnsure(&typeDefs, &typeCap, typeId);
                 if (typeId < typeCap) {
@@ -443,6 +999,27 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
                     if (bits != 0) {
                         typeDefs[typeId].bits = bits;
                     }
+                }
+            }
+            if (!startedTypeDef && pendingTypeDef && pendingTypeContinue) {
+                char pieceBuf[2048];
+                strncpy(pieceBuf, stabStr, sizeof(pieceBuf) - 1);
+                pieceBuf[sizeof(pieceBuf) - 1] = '\0';
+                int cont = print_debuginfo_objdump_stabs_stripslash(pieceBuf);
+                (void)print_debuginfo_objdump_stabs_appendString(&pendingTypeDef, pieceBuf);
+                pendingTypeContinue = cont;
+                if (!pendingTypeContinue) {
+                    print_debuginfo_objdump_stabs_typeEnsure(&typeDefs, &typeCap, pendingTypeId);
+                    if (pendingTypeId < typeCap && !typeDefs[pendingTypeId].def) {
+                        typeDefs[pendingTypeId].def = pendingTypeDef;
+                        pendingTypeDef = NULL;
+                        print_debuginfo_objdump_stabs_splitNestedAliasDef(&typeDefs, &typeCap, pendingTypeId);
+                    } else {
+                        alloc_free(pendingTypeDef);
+                        pendingTypeDef = NULL;
+                    }
+                    pendingTypeId = 0;
+                    pendingTypeContinue = 0;
                 }
             }
             continue;
@@ -526,6 +1103,20 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
     }
     pclose(fp);
 
+    if (pendingTypeDef) {
+        print_debuginfo_objdump_stabs_typeEnsure(&typeDefs, &typeCap, pendingTypeId);
+        if (pendingTypeId < typeCap && !typeDefs[pendingTypeId].def) {
+            typeDefs[pendingTypeId].def = pendingTypeDef;
+            pendingTypeDef = NULL;
+            print_debuginfo_objdump_stabs_splitNestedAliasDef(&typeDefs, &typeCap, pendingTypeId);
+        } else {
+            alloc_free(pendingTypeDef);
+            pendingTypeDef = NULL;
+        }
+        pendingTypeId = 0;
+        pendingTypeContinue = 0;
+    }
+
     for (size_t i = 0; i < pendingCount; ++i) {
         pending_var_t *pv = &pending[i];
         if (!pv->name) {
@@ -539,12 +1130,39 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         if (bits != 0 && (bits % 8u) == 0u) {
             byteSize = (size_t)(bits / 8u);
         }
+        if (byteSize == 0 && pv->typeId != 0) {
+            uint32_t cur = pv->typeId;
+            for (int j = 0; j < 16; ++j) {
+                if (cur == 0 || cur >= typeCap) {
+                    break;
+                }
+                if (typeDefs[cur].def) {
+                    (void)print_debuginfo_objdump_stabs_parseStructByteSize(typeDefs[cur].def, &byteSize);
+                    if (byteSize != 0) {
+                        break;
+                    }
+                }
+                uint32_t next = typeDefs[cur].alias;
+                if (next == 0 || next == cur) {
+                    break;
+                }
+                cur = next;
+            }
+        }
+
+        uint32_t typeRef = 0;
+        if (pv->typeId != 0 && pv->typeId < typeCap) {
+            print_type_t *t = print_debuginfo_objdump_stabs_buildType(index, typeDefs, typeCap, pv->typeId, 0);
+            if (t) {
+                typeRef = t->dieOffset;
+            }
+        }
         if (byteSize != 0) {
-            if (print_debuginfo_objdump_stabs_addVariable(index, pv->name, pv->addr, byteSize, 1)) {
+            if (print_debuginfo_objdump_stabs_setVariable(index, pv->name, pv->addr, typeRef, byteSize, 1)) {
                 added = 1;
             }
         } else {
-            (void)print_debuginfo_objdump_stabs_addVariable(index, pv->name, pv->addr, 0, 0);
+            (void)print_debuginfo_objdump_stabs_setVariable(index, pv->name, pv->addr, typeRef, 0, 0);
         }
         if (print_debuginfo_objdump_stabs_debugEnabled() && print_debuginfo_objdump_stabs_debugWantsSymbol(pv->name)) {
             debug_printf("print: stabs sym '%s' type=%s typeId=%u n_value=0x%X %s=0x%08X addr=0x%08X size=%u\n",
@@ -555,6 +1173,14 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         pv->name = NULL;
     }
     alloc_free(pending);
+    if (typeDefs) {
+        for (size_t i = 0; i < typeCap; ++i) {
+            alloc_free(typeDefs[i].def);
+            typeDefs[i].def = NULL;
+            alloc_free(typeDefs[i].name);
+            typeDefs[i].name = NULL;
+        }
+    }
     alloc_free(typeDefs);
     return added;
 }

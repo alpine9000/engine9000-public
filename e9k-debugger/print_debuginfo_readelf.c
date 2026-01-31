@@ -534,7 +534,11 @@ print_debuginfo_readelf_loadSymbols(const char *elfPath, print_index_t *index)
     if (!debugger_toolchainBuildBinary(objdump, sizeof(objdump), "objdump")) {
         return 0;
     }
-    snprintf(cmd, sizeof(cmd), "%s --syms '%s'", objdump, elfPath);
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "%s --syms \"%s\"", objdump, elfPath);
+#else
+    snprintf(cmd, sizeof(cmd), "%s --syms '%s' 2>/dev/null", objdump, elfPath);
+#endif
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         return 0;
@@ -588,7 +592,11 @@ print_debuginfo_readelf_loadDwarfInfo(const char *elfPath, print_index_t *index)
     if (!debugger_toolchainBuildBinary(readelf, sizeof(readelf), "readelf")) {
         return 0;
     }
-    snprintf(cmd, sizeof(cmd), "%s --debug-dump=info '%s'", readelf, elfPath);
+#ifdef _WIN32
+    snprintf(cmd, sizeof(cmd), "%s --debug-dump=info \"%s\"", readelf, elfPath);
+#else
+    snprintf(cmd, sizeof(cmd), "%s --debug-dump=info '%s' 2>/dev/null", readelf, elfPath);
+#endif
     FILE *fp = popen(cmd, "r");
     if (!fp) {
         return 0;

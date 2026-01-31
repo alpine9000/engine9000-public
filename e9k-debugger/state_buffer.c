@@ -14,6 +14,7 @@
 #include "debugger.h"
 #include "state_buffer.h"
 #include "libretro_host.h"
+#include "state_wrap.h"
 
 typedef uint32_t state_buffer_u32_alias_t __attribute__((__may_alias__));
 
@@ -794,20 +795,25 @@ state_buffer_capture(void)
     if (!libretro_host_getSerializeSize(&stateSize) || stateSize == 0) {
         return;
     }
-    if (!state_buffer.current.temp_state || state_buffer.current.temp_size != stateSize) {
-        uint8_t *tmp = (uint8_t*)alloc_realloc(state_buffer.current.temp_state, stateSize);
+    size_t headerSize = state_wrap_headerSize();
+    size_t wrappedSize = headerSize + stateSize;
+    if (!state_buffer.current.temp_state || state_buffer.current.temp_size != wrappedSize) {
+        uint8_t *tmp = (uint8_t*)alloc_realloc(state_buffer.current.temp_state, wrappedSize);
         if (!tmp) {
             return;
         }
         state_buffer.current.temp_state = tmp;
-        state_buffer.current.temp_size = stateSize;
+        state_buffer.current.temp_size = wrappedSize;
     }
-    if (!libretro_host_serializeTo(state_buffer.current.temp_state, stateSize)) {
+    if (!libretro_host_serializeTo(state_buffer.current.temp_state + headerSize, stateSize)) {
+        return;
+    }
+    if (!state_wrap_writeHeader(state_buffer.current.temp_state, state_buffer.current.temp_size, stateSize, &debugger.machine)) {
         return;
     }
 
     state_buffer_level_t *lvl0 = &state_buffer.current.levels[0];
-    if (!state_buffer_level_appendState(&state_buffer.current, lvl0, state_buffer.current.temp_state, stateSize,
+    if (!state_buffer_level_appendState(&state_buffer.current, lvl0, state_buffer.current.temp_state, wrappedSize,
                                         state_buffer.current.current_frame_no)) {
         return;
     }
@@ -978,7 +984,14 @@ state_buffer_restoreFrameNo(uint64_t frame_no)
     if (!state_buffer_level_reconstructIndex(&state_buffer.current, lvl, idx, &state, &state_size)) {
         return 0;
     }
-    if (!libretro_host_unserializeFrom(state, state_size)) {
+    state_wrap_info_t info;
+    if (!state_wrap_parse(state, state_size, &info)) {
+        return 0;
+    }
+    debugger.machine.textBaseAddr = info.textBaseAddr;
+    debugger.machine.dataBaseAddr = info.dataBaseAddr;
+    debugger.machine.bssBaseAddr = info.bssBaseAddr;
+    if (!libretro_host_unserializeFrom(info.payload, info.payloadSize)) {
         return 0;
     }
     state_buffer.current.current_frame_no = target->frame_no;
@@ -1173,7 +1186,13 @@ state_buffer_setSaveKeyframe(const uint8_t *state, size_t state_size, uint64_t f
         return 0;
     }
 
-    uint8_t *payload = (uint8_t*)alloc_alloc(state_size);
+    state_wrap_info_t info;
+    if (!state_wrap_parse(state, state_size, &info)) {
+        state_buffer_reset(&state_buffer.save);
+        return 0;
+    }
+    size_t storeSize = state_size;
+    uint8_t *payload = (uint8_t*)alloc_alloc(storeSize);
     if (!payload) {
         state_buffer_reset(&state_buffer.save);
         return 0;
@@ -1184,25 +1203,25 @@ state_buffer_setSaveKeyframe(const uint8_t *state, size_t state_size, uint64_t f
     frame->id = 1;
     frame->frame_no = frame_no;
     frame->is_keyframe = 1;
-    frame->payload_size = state_size;
+    frame->payload_size = storeSize;
     frame->payload = payload;
-    frame->state_size = state_size;
+    frame->state_size = storeSize;
 
     lvl0->cap = 1;
     lvl0->count = 1;
     lvl0->start = 0;
-    lvl0->total_bytes = state_size;
-    state_buffer.save.total_bytes = state_size;
+    lvl0->total_bytes = storeSize;
+    state_buffer.save.total_bytes = storeSize;
     state_buffer.save.next_id = 2;
     state_buffer.save.current_frame_no = frame_no;
     state_buffer.save.paused = 0;
-    lvl0->prev_state = (uint8_t*)alloc_alloc(state_size);
+    lvl0->prev_state = (uint8_t*)alloc_alloc(storeSize);
     if (!lvl0->prev_state) {
         state_buffer_reset(&state_buffer.save);
         return 0;
     }
-    memcpy(lvl0->prev_state, state, state_size);
-    lvl0->prev_size = state_size;
+    memcpy(lvl0->prev_state, payload, storeSize);
+    lvl0->prev_size = storeSize;
     return 1;
 }
 
