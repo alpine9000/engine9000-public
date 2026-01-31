@@ -85,6 +85,7 @@ typedef struct settings_romselect_state {
     e9ui_component_t *coreSelect;
     e9ui_component_t *df0Select;
     e9ui_component_t *df1Select;
+    e9ui_component_t *hd0Select;
     int suppress;
 } settings_romselect_state_t;
 
@@ -903,6 +904,10 @@ settings_romPathChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char 
             const char *df1 = amiga_uaeGetFloppyPath(1);
             e9ui_fileSelect_setText(st->df1Select, df1 ? df1 : "");
         }
+        if (st->hd0Select) {
+            const char *hd0 = amiga_uaeGetHardDriveFolderPath();
+            e9ui_fileSelect_setText(st->hd0Select, hd0 ? hd0 : "");
+        }
         settings_updateSaveLabel();
     } else if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_NEOGEO) {
         char romPath[PATH_MAX];
@@ -982,6 +987,16 @@ settings_amigaFloppyChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const c
     (void)comp;
     int drive = (int)(intptr_t)user;
     amiga_uaeSetFloppyPath(drive, text ? text : "");
+    settings_updateSaveLabel();
+}
+
+static void
+settings_amigaHardDriveFolderChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *text, void *user)
+{
+    (void)ctx;
+    (void)comp;
+    (void)user;
+    amiga_uaeSetHardDriveFolderPath(text ? text : "");
     settings_updateSaveLabel();
 }
 
@@ -1170,6 +1185,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     e9ui_component_t *fsRom = NULL;
     e9ui_component_t *fsDf0 = NULL;
     e9ui_component_t *fsDf1 = NULL;
+    e9ui_component_t *fsHd0 = NULL;
     e9ui_component_t *fsRomFolder = NULL;
     e9ui_component_t *fsElf = NULL;
     e9ui_component_t *fsBios = NULL;
@@ -1200,8 +1216,10 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         e9ui_fileSelect_setValidate(fsRom, settings_validateUaeConfig, NULL);
         fsDf0 = e9ui_fileSelect_make("DF0", 120, 600, "...", floppyExtsAmiga, 6, E9UI_FILESELECT_FILE);
         fsDf1 = e9ui_fileSelect_make("DF1", 120, 600, "...", floppyExtsAmiga, 6, E9UI_FILESELECT_FILE);
+        fsHd0 = e9ui_fileSelect_make("HD0 FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         e9ui_fileSelect_setAllowEmpty(fsDf0, 1);
         e9ui_fileSelect_setAllowEmpty(fsDf1, 1);
+        e9ui_fileSelect_setAllowEmpty(fsHd0, 1);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
         ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, NULL, NULL);
         fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -1336,6 +1354,9 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     e9ui_component_t *coreRow = rowHeader ? rowHeader : (rowCoreCenter ? rowCoreCenter : badge);
     int hCoreRow = coreRow && coreRow->preferredHeight ? coreRow->preferredHeight(coreRow, ctx, contentW) : 0;
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
+    int hDf0 = fsDf0 && fsDf0->preferredHeight ? fsDf0->preferredHeight(fsDf0, ctx, contentW) : 0;
+    int hDf1 = fsDf1 && fsDf1->preferredHeight ? fsDf1->preferredHeight(fsDf1, ctx, contentW) : 0;
+    int hHd0 = fsHd0 && fsHd0->preferredHeight ? fsHd0->preferredHeight(fsHd0, ctx, contentW) : 0;
     int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
     int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
     int hToolchain = ltToolchain && ltToolchain->preferredHeight ? ltToolchain->preferredHeight(ltToolchain, ctx, contentW) : 0;
@@ -1351,6 +1372,15 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         contentH += hCoreRow + hGap;
     }
     contentH += hRom;
+    if (fsDf0) {
+        contentH += hGap + hDf0;
+    }
+    if (fsDf1) {
+        contentH += hGap + hDf1;
+    }
+    if (fsHd0) {
+        contentH += hGap + hHd0;
+    }
     if (fsRomFolder) {
         contentH += hGap + hRomFolder;
     }
@@ -1406,6 +1436,9 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     }
     if (fsDf1) {
         e9ui_childDestroy(fsDf1, ctx);
+    }
+    if (fsHd0) {
+        e9ui_childDestroy(fsHd0, ctx);
     }
     if (fsRomFolder) {
         e9ui_childDestroy(fsRomFolder, ctx);
@@ -1477,6 +1510,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
     e9ui_component_t *fsRom = NULL;
     e9ui_component_t *fsDf0 = NULL;
     e9ui_component_t *fsDf1 = NULL;
+    e9ui_component_t *fsHd0 = NULL;
     e9ui_component_t *fsRomFolder = NULL;
     e9ui_component_t *fsElf = NULL;
     e9ui_component_t *fsBios = NULL;
@@ -1530,8 +1564,10 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setValidate(fsRom, settings_validateUaeConfig, NULL);
         fsDf0 = e9ui_fileSelect_make("DF0", 120, 600, "...", floppyExtsAmiga, 6, E9UI_FILESELECT_FILE);
         fsDf1 = e9ui_fileSelect_make("DF1", 120, 600, "...", floppyExtsAmiga, 6, E9UI_FILESELECT_FILE);
+        fsHd0 = e9ui_fileSelect_make("HD0 FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         e9ui_fileSelect_setAllowEmpty(fsDf0, 1);
         e9ui_fileSelect_setAllowEmpty(fsDf1, 1);
+        e9ui_fileSelect_setAllowEmpty(fsHd0, 1);
         fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
         settings_toolchainprefix_state_t *tc = (settings_toolchainprefix_state_t *)alloc_calloc(1, sizeof(*tc));
         if (tc) {
@@ -1555,6 +1591,10 @@ settings_buildModalBody(e9ui_context_t *ctx)
         if (fsDf1) {
             const char *df1 = amiga_uaeGetFloppyPath(1);
             e9ui_fileSelect_setText(fsDf1, df1 ? df1 : "");
+        }
+        if (fsHd0) {
+            const char *hd0 = amiga_uaeGetHardDriveFolderPath();
+            e9ui_fileSelect_setText(fsHd0, hd0 ? hd0 : "");
         }
         e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.elfPath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
@@ -1743,6 +1783,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
         romState->coreSelect = fsCore;
         romState->df0Select = fsDf0;
         romState->df1Select = fsDf1;
+        romState->hd0Select = fsHd0;
         settings_updateRomSelectAllowEmpty(romState);
     }
     if (fsRom) {
@@ -1753,6 +1794,9 @@ settings_buildModalBody(e9ui_context_t *ctx)
     }
     if (fsDf1) {
         e9ui_fileSelect_setOnChange(fsDf1, settings_amigaFloppyChanged, (void *)(intptr_t)1);
+    }
+    if (fsHd0) {
+        e9ui_fileSelect_setOnChange(fsHd0, settings_amigaHardDriveFolderChanged, NULL);
     }
     if (fsRomFolder) {
         e9ui_fileSelect_setOnChange(fsRomFolder, settings_romFolderChanged, romState);
@@ -1815,6 +1859,10 @@ settings_buildModalBody(e9ui_context_t *ctx)
     if (fsDf1) {
         e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
         e9ui_stack_addFixed(stack, fsDf1);
+    }
+    if (fsHd0) {
+        e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(stack, fsHd0);
     }
     if (fsRomFolder) {
         e9ui_stack_addFixed(stack, e9ui_vspacer_make(12));
@@ -1894,6 +1942,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
     int hRom = fsRom && fsRom->preferredHeight ? fsRom->preferredHeight(fsRom, ctx, contentW) : 0;
     int hDf0 = fsDf0 && fsDf0->preferredHeight ? fsDf0->preferredHeight(fsDf0, ctx, contentW) : 0;
     int hDf1 = fsDf1 && fsDf1->preferredHeight ? fsDf1->preferredHeight(fsDf1, ctx, contentW) : 0;
+    int hHd0 = fsHd0 && fsHd0->preferredHeight ? fsHd0->preferredHeight(fsHd0, ctx, contentW) : 0;
     int hRomFolder = fsRomFolder && fsRomFolder->preferredHeight ? fsRomFolder->preferredHeight(fsRomFolder, ctx, contentW) : 0;
     int hElf = fsElf && fsElf->preferredHeight ? fsElf->preferredHeight(fsElf, ctx, contentW) : 0;
     int hToolchain = ltToolchain && ltToolchain->preferredHeight ? ltToolchain->preferredHeight(ltToolchain, ctx, contentW) : 0;
@@ -1914,6 +1963,9 @@ settings_buildModalBody(e9ui_context_t *ctx)
     }
     if (fsDf1) {
         contentH += hGap + hDf1;
+    }
+    if (fsHd0) {
+        contentH += hGap + hHd0;
     }
     if (fsRomFolder) {
         contentH += hGap + hRomFolder;

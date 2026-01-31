@@ -32,6 +32,7 @@ static int amiga_uae_dirty = 0;
 static char amiga_uae_loadedPath[PATH_MAX];
 static char amiga_uae_floppy0[PATH_MAX];
 static char amiga_uae_floppy1[PATH_MAX];
+static char amiga_uae_hd0Folder[PATH_MAX];
 
 static void
 amiga_uaeTrimRight(char *s)
@@ -121,6 +122,78 @@ amiga_uaeKeyIsFloppyType(const char *key, int *out_drive)
         *out_drive = drive;
     }
     return 1;
+}
+
+static int
+amiga_uaeParseFilesystem2Dh0Folder(const char *value, char *out, size_t cap)
+{
+    if (!out || cap == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (!value || !*value) {
+        return 0;
+    }
+    const char *comma1 = strchr(value, ',');
+    if (!comma1) {
+        return 0;
+    }
+    const char *rest = comma1 + 1;
+    if (!*rest) {
+        return 0;
+    }
+    const char *commaLast = strrchr(rest, ',');
+    size_t midLen = commaLast ? (size_t)(commaLast - rest) : strlen(rest);
+    if (midLen == 0) {
+        return 0;
+    }
+    if (midLen >= 1024) {
+        midLen = 1023;
+    }
+    char mid[1024];
+    memcpy(mid, rest, midLen);
+    mid[midLen] = '\0';
+
+    char *p = amiga_uaeTrimLeft(mid);
+    if (!p || strncmp(p, "DH0:", 4) != 0) {
+        return 0;
+    }
+    const char *colon1 = strchr(p, ':');
+    if (!colon1) {
+        return 0;
+    }
+    const char *colon2 = strchr(colon1 + 1, ':');
+    if (!colon2) {
+        return 0;
+    }
+    const char *path = colon2 + 1;
+    if (!*path) {
+        return 0;
+    }
+    if (path[0] == '"' || path[0] == '\'') {
+        char quote = path[0];
+        path++;
+        const char *end = strrchr(path, quote);
+        if (end && end > path) {
+            size_t len = (size_t)(end - path);
+            if (len >= cap) {
+                len = cap - 1;
+            }
+            memcpy(out, path, len);
+            out[len] = '\0';
+            return 1;
+        }
+    }
+    strncpy(out, path, cap - 1);
+    out[cap - 1] = '\0';
+    return 1;
+}
+
+static int
+amiga_uaeFilesystem2IsDh0Line(const char *value)
+{
+    char tmp[8];
+    return amiga_uaeParseFilesystem2Dh0Folder(value, tmp, sizeof(tmp)) ? 1 : 0;
 }
 
 static int
@@ -265,6 +338,7 @@ amiga_uaeClearPuaeOptions(void)
     amiga_uae_loadedPath[0] = '\0';
     amiga_uae_floppy0[0] = '\0';
     amiga_uae_floppy1[0] = '\0';
+    amiga_uae_hd0Folder[0] = '\0';
 }
 
 int
@@ -303,6 +377,14 @@ amiga_uaeLoadUaeOptions(const char *uaePath)
             } else if (drive == 1) {
                 strncpy(amiga_uae_floppy1, value, sizeof(amiga_uae_floppy1) - 1);
                 amiga_uae_floppy1[sizeof(amiga_uae_floppy1) - 1] = '\0';
+            }
+            continue;
+        }
+        if (strcmp(key, "filesystem2") == 0) {
+            char folder[PATH_MAX];
+            if (amiga_uaeParseFilesystem2Dh0Folder(value, folder, sizeof(folder))) {
+                strncpy(amiga_uae_hd0Folder, folder, sizeof(amiga_uae_hd0Folder) - 1);
+                amiga_uae_hd0Folder[sizeof(amiga_uae_hd0Folder) - 1] = '\0';
             }
             continue;
         }
@@ -366,6 +448,21 @@ amiga_uaeGetFloppyPath(int drive)
     return NULL;
 }
 
+const char *
+amiga_uaeGetHardDriveFolderPath(void)
+{
+    return amiga_uae_hd0Folder[0] ? amiga_uae_hd0Folder : NULL;
+}
+
+void
+amiga_uaeSetHardDriveFolderPath(const char *path)
+{
+    const char *src = path ? path : "";
+    strncpy(amiga_uae_hd0Folder, src, sizeof(amiga_uae_hd0Folder) - 1);
+    amiga_uae_hd0Folder[sizeof(amiga_uae_hd0Folder) - 1] = '\0';
+    amiga_uae_dirty = 1;
+}
+
 void
 amiga_uaeSetFloppyPath(int drive, const char *path)
 {
@@ -421,6 +518,8 @@ amiga_uaeWriteUaeOptionsToFile(const char *uaePath)
                     isManaged = 1;
                 } else if (strcmp(key, "nr_floppies") == 0) {
                     isManaged = 1;
+                } else if (strcmp(key, "filesystem2") == 0 && amiga_uaeFilesystem2IsDh0Line(value)) {
+                    isManaged = 1;
                 }
             }
             if (isManaged) {
@@ -451,6 +550,24 @@ amiga_uaeWriteUaeOptionsToFile(const char *uaePath)
     if (amiga_uae_floppy1[0]) {
         fprintf(out, "floppy1=%s\n", amiga_uae_floppy1);
         fprintf(out, "floppy1type=0\n");
+    }
+
+    if (amiga_uae_hd0Folder[0]) {
+        char sep = '/';
+        if (strchr(amiga_uae_hd0Folder, '\\')) {
+            sep = '\\';
+        }
+        char folder[PATH_MAX + 2];
+        strncpy(folder, amiga_uae_hd0Folder, sizeof(folder) - 1);
+        folder[sizeof(folder) - 1] = '\0';
+        size_t len = strlen(folder);
+        if (len > 0 && folder[len - 1] != '/' && folder[len - 1] != '\\') {
+            if (len + 2 <= sizeof(folder)) {
+                folder[len] = sep;
+                folder[len + 1] = '\0';
+            }
+        }
+        fprintf(out, "filesystem2=rw,DH0:Work:%s,0\n", folder);
     }
 
     if (amiga_uae_entryCount > 1) {

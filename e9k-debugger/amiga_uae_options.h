@@ -32,6 +32,12 @@ amiga_uaeGetFloppyPath(int drive);
 void
 amiga_uaeSetFloppyPath(int drive, const char *path);
 
+const char *
+amiga_uaeGetHardDriveFolderPath(void);
+
+void
+amiga_uaeSetHardDriveFolderPath(const char *path);
+
 bool
 amiga_uaeWriteUaeOptionsToFile(const char *uaePath);
 
