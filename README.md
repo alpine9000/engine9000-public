@@ -501,21 +501,19 @@ In this repo, the default `./system` directory corresponds to `e9k-debugger/syst
   - the filename prior to the extension has a rom designation (rom-p1.bin)
 - Use the ROM Folder to load mame style rom sets.
 
-### Amiga UAE File
+### Amiga Configuration
 
-Amiga config is specified by selecting a .uae file. A new (empty) UAE file can be created and configured via the core options dialog + DF0/DF1 inputs. PUAE core options are persisted in the .uae fille. HDF can probably be configured via the .uae file but is currently untested.
+- Create an Amiga configuration by selecting "NEW" UAE file in the SETTINGS screen
+- Amiga config is a combination of selecting PUAE core options (SETTIGNS->Core Options) and DF0/DF1/DH0 config on the settings screen
+- Additional uae options can be manually added to the .uae file
+- Not all PUAE core options make sense or will work (hotkeys for example) - I still haven't filtered these out
+- Basic PUAE configs have been tested - large complex configs will not work well with the state saving buffer
 
 ### Amiga Kickstart ROMs (required)
 
 - Kickstart ROMS are not included.
 - A complete set of WHDLoad kickstart roms in your system folder is the best option.
 - Otherwise manually settting kickstart roms in the .uae file is required.
-
-### Amiga Disks/Configs
-
-- Unsure at this stage how higher end configs work
-- Really designed for minimal A500/512/512 configs
-- For more complex configs we will need to add a way to disable rolling snapshot
 
 ### Emulator Platform defaults:
 
