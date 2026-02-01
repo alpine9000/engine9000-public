@@ -95,6 +95,7 @@ typedef int (*geo_debug_get_checkpoint_enabled_fn_t)(void);
 typedef uint64_t (*geo_debug_read_cycle_count_fn_t)(void);
 typedef void (*geo_set_vblank_callback_fn_t)(void (*cb)(void *), void *user);
 typedef int *(*geo_debug_amiga_get_debug_dma_addr_fn_t)(void);
+typedef void (*geo_set_debug_breakpoint_callback_fn_t)(void (*cb)(uint32_t addr));
 
 typedef struct libretro_option {
     const char *key;
@@ -106,6 +107,11 @@ typedef struct libretro_option_override {
     char *key;
     char *value;
 } libretro_option_override_t;
+
+typedef struct libretro_option_display {
+    char *key;
+    int visible;
+} libretro_option_display_t;
 
 typedef struct  {
     void *lib;
@@ -185,6 +191,7 @@ typedef struct  {
     geo_debug_profiler_stream_next_fn_t debugProfilerStreamNext;
     geo_debug_text_read_fn_t debugTextRead;
     geo_set_debug_base_callback_fn_t setDebugBaseCallback;
+    geo_set_debug_breakpoint_callback_fn_t setDebugBreakpointCallback;
     geo_debug_neogeo_get_sprite_state_fn_t debugNeoGeoGetSpriteState;
     geo_debug_neogeo_get_p1_rom_fn_t debugNeoGeoGetP1Rom;
     geo_debug_disassemble_quick_fn_t debugDisassembleQuick;
@@ -217,6 +224,10 @@ typedef struct  {
     size_t optionDefCountV2;
     int coreOptionsV2HasCategories;
     int coreOptionsDirty;
+    libretro_option_display_t *optionDisplay;
+    size_t optionDisplayCount;
+    size_t optionDisplayCap;
+    retro_core_options_update_display_callback_t updateDisplayCb;
     unsigned videoFrameCount;
 } libretro_host_t;
 
@@ -303,6 +314,62 @@ libretro_host_clearOptionsV2(void)
     libretro_host.optionDefCountV2 = 0;
     libretro_host.coreOptionsV2HasCategories = 0;
     libretro_host.coreOptionsDirty = 0;
+    if (libretro_host.optionDisplay) {
+        for (size_t i = 0; i < libretro_host.optionDisplayCount; ++i) {
+            alloc_free(libretro_host.optionDisplay[i].key);
+            libretro_host.optionDisplay[i].key = NULL;
+        }
+        alloc_free(libretro_host.optionDisplay);
+        libretro_host.optionDisplay = NULL;
+    }
+    libretro_host.optionDisplayCount = 0;
+    libretro_host.optionDisplayCap = 0;
+    libretro_host.updateDisplayCb = NULL;
+}
+
+static libretro_option_display_t *
+libretro_host_findOptionDisplay(const char *key)
+{
+    if (!key || !*key || !libretro_host.optionDisplay) {
+        return NULL;
+    }
+    for (size_t i = 0; i < libretro_host.optionDisplayCount; ++i) {
+        libretro_option_display_t *ent = &libretro_host.optionDisplay[i];
+        if (ent->key && strcmp(ent->key, key) == 0) {
+            return ent;
+        }
+    }
+    return NULL;
+}
+
+static void
+libretro_host_setOptionDisplayVisible(const char *key, int visible)
+{
+    if (!key || !*key) {
+        return;
+    }
+    libretro_option_display_t *ent = libretro_host_findOptionDisplay(key);
+    if (ent) {
+        ent->visible = visible ? 1 : 0;
+        return;
+    }
+    size_t nextCount = libretro_host.optionDisplayCount + 1;
+    if (nextCount > libretro_host.optionDisplayCap) {
+        size_t nextCap = libretro_host.optionDisplayCap ? libretro_host.optionDisplayCap * 2 : 64;
+        if (nextCap < nextCount) {
+            nextCap = nextCount;
+        }
+        libretro_option_display_t *next =
+            (libretro_option_display_t*)alloc_realloc(libretro_host.optionDisplay, nextCap * sizeof(*next));
+        if (!next) {
+            return;
+        }
+        libretro_host.optionDisplay = next;
+        libretro_host.optionDisplayCap = nextCap;
+    }
+    libretro_option_display_t *add = &libretro_host.optionDisplay[libretro_host.optionDisplayCount++];
+    add->key = alloc_strdup(key);
+    add->visible = visible ? 1 : 0;
 }
 
 static libretro_option_t *
@@ -426,6 +493,27 @@ libretro_host_getCoreOptionDefaultValue(const char *key)
     return opt ? opt->default_value : NULL;
 }
 
+int
+libretro_host_isCoreOptionVisible(const char *key)
+{
+    if (!key || !*key) {
+        return 1;
+    }
+    libretro_option_display_t *ent = libretro_host_findOptionDisplay(key);
+    if (!ent) {
+        return 1;
+    }
+    return ent->visible ? 1 : 0;
+}
+
+void
+libretro_host_refreshCoreOptionVisibility(void)
+{
+    if (libretro_host.updateDisplayCb) {
+        (void)libretro_host.updateDisplayCb();
+    }
+}
+
 static bool
 libretro_host_setOptions(const struct retro_core_option_definition *defs)
 {
@@ -488,6 +576,7 @@ libretro_host_setOptionsV2(const struct retro_core_options_v2 *opts)
     if (!opts || !opts->definitions) {
         return false;
     }
+    libretro_host_clearOptionsV2();
     libretro_host.optionDefsV2 = opts->definitions;
     libretro_host.optionDefCountV2 = 0;
     while (libretro_host.optionDefsV2[libretro_host.optionDefCountV2].key) {
@@ -990,7 +1079,20 @@ libretro_host_environment(unsigned cmd, void *data)
         }
         return true;
     case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
+        if (data) {
+            const struct retro_core_option_display *disp = (const struct retro_core_option_display *)data;
+            if (disp && disp->key && *disp->key) {
+                libretro_host_setOptionDisplayVisible(disp->key, disp->visible ? 1 : 0);
+            }
+        }
+        return true;
     case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK:
+        if (data) {
+            const struct retro_core_options_update_display_callback *cb =
+                (const struct retro_core_options_update_display_callback *)data;
+            libretro_host.updateDisplayCb = cb ? cb->callback : NULL;
+        }
+        return true;
     case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
         return true;
     case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK:
@@ -1211,6 +1313,7 @@ libretro_host_start(const char *corePath, const char *romPath,
     libretro_host.debugProfilerStreamNext = (geo_debug_profiler_stream_next_fn_t)libretro_host_loadSymbol("geo_debug_profiler_stream_next");
     libretro_host.debugTextRead = (geo_debug_text_read_fn_t)libretro_host_loadSymbol("geo_debug_text_read");
     libretro_host.setDebugBaseCallback = (geo_set_debug_base_callback_fn_t)libretro_host_loadSymbol("geo_set_debug_base_callback");
+    libretro_host.setDebugBreakpointCallback = (geo_set_debug_breakpoint_callback_fn_t)libretro_host_loadSymbol("geo_set_debug_breakpoint_callback");
     libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_neogeo_get_sprite_state");
     if (!libretro_host.debugNeoGeoGetSpriteState) {
         libretro_host.debugNeoGeoGetSpriteState = (geo_debug_neogeo_get_sprite_state_fn_t)libretro_host_loadSymbol("geo_debug_get_sprite_state");
@@ -2142,6 +2245,18 @@ libretro_host_getCorePath(void)
     return libretro_host.corePath[0] ? libretro_host.corePath : NULL;
 }
 
+const char *
+libretro_host_getSaveDir(void)
+{
+    return libretro_host.saveDir[0] ? libretro_host.saveDir : NULL;
+}
+
+const char *
+libretro_host_getSystemDir(void)
+{
+    return libretro_host.systemDir[0] ? libretro_host.systemDir : NULL;
+}
+
 bool
 libretro_host_setVblankCallback(void (*cb)(void *), void *user)
 {
@@ -2159,6 +2274,16 @@ libretro_host_setDebugBaseCallback(void (*cb)(uint32_t section, uint32_t base))
         return false;
     }
     libretro_host.setDebugBaseCallback(cb);
+    return true;
+}
+
+bool
+libretro_host_setDebugBreakpointCallback(void (*cb)(uint32_t addr))
+{
+    if (!libretro_host.setDebugBreakpointCallback) {
+        return false;
+    }
+    libretro_host.setDebugBreakpointCallback(cb);
     return true;
 }
 

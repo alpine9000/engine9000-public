@@ -21,6 +21,14 @@ typedef enum e9ui_textbox_completion_mode {
     e9ui_textbox_completion_folder,
 } e9ui_textbox_completion_mode_t;
 
+typedef struct e9ui_textbox_option {
+    const char *value;
+    const char *label;
+} e9ui_textbox_option_t;
+
+typedef void (*e9ui_textbox_option_change_cb_t)(e9ui_context_t *ctx, e9ui_component_t *comp,
+                                               const char *value, void *user);
+
 e9ui_component_t *
 e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_change_cb_t onChange,
                       void *user);
@@ -56,10 +64,40 @@ int
 e9ui_textbox_isEditable(const e9ui_component_t *comp);
 
 void
+e9ui_textbox_setReadOnly(e9ui_component_t *comp, int readonly);
+
+int
+e9ui_textbox_isReadOnly(const e9ui_component_t *comp);
+
+void
 e9ui_textbox_setNumericOnly(e9ui_component_t *comp, int numeric_only);
+
+void
+e9ui_textbox_setOptions(e9ui_component_t *comp, const e9ui_textbox_option_t *options, int optionCount);
+
+void
+e9ui_textbox_setSelectedValue(e9ui_component_t *comp, const char *value);
+
+const char *
+e9ui_textbox_getSelectedValue(const e9ui_component_t *comp);
+
+void
+e9ui_textbox_setOnOptionSelected(e9ui_component_t *comp, e9ui_textbox_option_change_cb_t cb, void *user);
+
+void
+e9ui_textbox_setTextColor(e9ui_component_t *comp, int enabled, SDL_Color color);
 
 void
 e9ui_textbox_setCompletionMode(e9ui_component_t *comp, e9ui_textbox_completion_mode_t mode);
 
 e9ui_textbox_completion_mode_t
 e9ui_textbox_getCompletionMode(const e9ui_component_t *comp);
+
+int
+e9ui_textbox_selectOverlayHandleEvent(e9ui_context_t *ctx, const e9ui_event_t *ev);
+
+void
+e9ui_textbox_selectOverlayRender(e9ui_context_t *ctx);
+
+void
+e9ui_textbox_selectOverlayCloseForOwner(const e9ui_component_t *owner);

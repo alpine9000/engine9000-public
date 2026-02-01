@@ -7,10 +7,12 @@
  */
 
 #include <string.h>
+#include <ctype.h>
 
 #include "core_options.h"
 #include "alloc.h"
 #include "amiga_uae_options.h"
+#include "config.h"
 #include "core_config.h"
 #include "debugger.h"
 #include "e9ui.h"
@@ -34,6 +36,8 @@ typedef struct core_options_category_cb {
 typedef struct core_options_option_cb {
     struct core_options_modal_state *st;
     const char *key;
+    const char *enabledValue;
+    const char *disabledValue;
 } core_options_option_cb_t;
 
 typedef struct core_options_modal_state {
@@ -74,6 +78,9 @@ typedef struct core_options_modal_state {
 
 static void
 core_options_optionChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *value, void *user);
+
+static void
+core_options_optionCheckboxChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user);
 
 static void
 core_options_clearOptionCbs(core_options_modal_state_t *st);
@@ -415,15 +422,45 @@ core_options_hasUncategorizedDefs(const core_options_modal_state_t *st)
     int isAmiga = (cfg && cfg->coreSystem == DEBUGGER_SYSTEM_AMIGA) ? 1 : 0;
     for (size_t i = 0; i < st->defCount; ++i) {
         const struct retro_core_option_v2_definition *def = &st->defs[i];
+        if (st->targetCoreRunning && def && def->key) {
+            if (!libretro_host_isCoreOptionVisible(def->key)) {
+                continue;
+            }
+        }
         const char *defCat = def ? def->category_key : NULL;
         if (!defCat || !*defCat) {
             if (isAmiga && def && def->key) {
                 if (strcmp(def->key, "puae_video_options_display") == 0 ||
                     strcmp(def->key, "puae_audio_options_display") == 0 ||
-                    strcmp(def->key, "puae_mapping_options_display") == 0) {
+                    strcmp(def->key, "puae_mapping_options_display") == 0 ||
+                    strcmp(def->key, "puae_model_options_display") == 0) {
                     continue;
                 }
             }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int
+core_options_categoryHasVisibleDefs(const core_options_modal_state_t *st, const char *categoryKey)
+{
+    if (!st || !st->defs || !categoryKey || !*categoryKey) {
+        return 0;
+    }
+    for (size_t i = 0; i < st->defCount; ++i) {
+        const struct retro_core_option_v2_definition *def = &st->defs[i];
+        if (!def || !def->key) {
+            continue;
+        }
+        if (st->targetCoreRunning) {
+            if (!libretro_host_isCoreOptionVisible(def->key)) {
+                continue;
+            }
+        }
+        const char *defCat = def->category_key;
+        if (defCat && strcmp(defCat, categoryKey) == 0) {
             return 1;
         }
     }
@@ -465,6 +502,99 @@ core_options_categoryIconAssetForKey(const char *categoryKey)
     return NULL;
 }
 
+static const char *
+core_options_labelStripCategoryPath(const char *label)
+{
+    if (!label || !*label) {
+        return label;
+    }
+    const char *gt = strrchr(label, '>');
+    if (!gt) {
+        return label;
+    }
+    const char *p = gt + 1;
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+    return (*p) ? p : label;
+}
+
+static const char *
+core_options_trimSpaces(const char *s)
+{
+    if (!s) {
+        return NULL;
+    }
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') {
+        s++;
+    }
+    return s;
+}
+
+static int
+core_options_equalsIgnoreCase(const char *a, const char *b)
+{
+    if (!a || !b) {
+        return 0;
+    }
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a;
+        unsigned char cb = (unsigned char)*b;
+        if (tolower(ca) != tolower(cb)) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return (*a == '\0' && *b == '\0') ? 1 : 0;
+}
+
+static int
+core_options_isEnabledDisabledOption(const struct retro_core_option_v2_definition *def,
+                                    const char **outEnabledValue,
+                                    const char **outDisabledValue)
+{
+    if (outEnabledValue) {
+        *outEnabledValue = NULL;
+    }
+    if (outDisabledValue) {
+        *outDisabledValue = NULL;
+    }
+    if (!def) {
+        return 0;
+    }
+    const char *v0 = def->values[0].value;
+    const char *v1 = def->values[1].value;
+    const char *v2 = def->values[2].value;
+    if (!v0 || !v1 || v2) {
+        return 0;
+    }
+    const char *t0 = core_options_trimSpaces(v0);
+    const char *t1 = core_options_trimSpaces(v1);
+    const char *enabledValue = NULL;
+    const char *disabledValue = NULL;
+    if (core_options_equalsIgnoreCase(t0, "enabled")) {
+        enabledValue = v0;
+    } else if (core_options_equalsIgnoreCase(t0, "disabled")) {
+        disabledValue = v0;
+    }
+    if (core_options_equalsIgnoreCase(t1, "enabled")) {
+        enabledValue = v1;
+    } else if (core_options_equalsIgnoreCase(t1, "disabled")) {
+        disabledValue = v1;
+    }
+    if (!enabledValue || !disabledValue) {
+        return 0;
+    }
+    if (outEnabledValue) {
+        *outEnabledValue = enabledValue;
+    }
+    if (outDisabledValue) {
+        *outDisabledValue = disabledValue;
+    }
+    return 1;
+}
+
 static void
 core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_context_t *ctx)
 {
@@ -476,12 +606,17 @@ core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_contex
 
     const int labelWidthPx = 340;
     const int totalWidthPx = 900;
-    const int rowGapPx = 6;
+    const int rowGapPx = debugger.coreOptionsShowHelp ? 6 : 12;
 
     for (size_t i = 0; i < st->defCount; ++i) {
         const struct retro_core_option_v2_definition *def = &st->defs[i];
         if (!def->key) {
             continue;
+        }
+        if (st->targetCoreRunning) {
+            if (!libretro_host_isCoreOptionVisible(def->key)) {
+                continue;
+            }
         }
         const char *defCat = def->category_key;
         int include = 0;
@@ -496,21 +631,17 @@ core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_contex
 
         e9ui_select_option_t opts[RETRO_NUM_CORE_OPTION_VALUES_MAX];
         int optCount = 0;
-        const char *largestLabel = NULL;
         for (int j = 0; j < RETRO_NUM_CORE_OPTION_VALUES_MAX; ++j) {
             if (!def->values[j].value) {
                 break;
             }
             opts[optCount].value = def->values[j].value;
             opts[optCount].label = def->values[j].label;
-            const char *label = (def->values[j].label && *def->values[j].label) ? def->values[j].label : def->values[j].value;
-            if (!largestLabel || (label && strlen(label) > strlen(largestLabel))) {
-                largestLabel = label;
-            }
             optCount++;
         }
 
         const char *label = (def->desc && *def->desc) ? def->desc : def->key;
+        label = core_options_labelStripCategoryPath(label);
         const char *value = core_options_getValue(st, def->key);
 
         core_options_option_cb_t *cb = (core_options_option_cb_t*)alloc_calloc(1, sizeof(*cb));
@@ -520,29 +651,49 @@ core_options_buildOptionsForCategory(core_options_modal_state_t *st, e9ui_contex
             core_options_trackOptionCb(st, cb);
         }
 
-        e9ui_component_t *select = e9ui_labeled_select_make(label, labelWidthPx, totalWidthPx,
-                                                            opts, optCount, value,
-                                                            core_options_optionChanged, cb);
-        if (!select) {
-            continue;
+        const char *enabledValue = NULL;
+        const char *disabledValue = NULL;
+        if (core_options_isEnabledDisabledOption(def, &enabledValue, &disabledValue)) {
+            int selected = 0;
+            if (value && enabledValue && strcmp(value, enabledValue) == 0) {
+                selected = 1;
+            }
+            if (cb) {
+                cb->enabledValue = enabledValue;
+                cb->disabledValue = disabledValue;
+            }
+            e9ui_component_t *chk = e9ui_labeled_checkbox_make(label, labelWidthPx, totalWidthPx,
+                                                              selected, core_options_optionCheckboxChanged, cb);
+            if (!chk) {
+                continue;
+            }
+            if (debugger.coreOptionsShowHelp && def->info && *def->info) {
+                e9ui_labeled_checkbox_setInfo(chk, def->info);
+            }
+            e9ui_stack_addFixed(st->optionsStack, chk);
+        } else {
+            e9ui_component_t *select = e9ui_labeled_select_make(label, labelWidthPx, totalWidthPx,
+                                                                opts, optCount, value,
+                                                                core_options_optionChanged, cb);
+            if (!select) {
+                continue;
+            }
+            if (debugger.coreOptionsShowHelp && def->info && *def->info) {
+                e9ui_labeled_select_setInfo(select, def->info);
+            }
+            {
+                const char *defValue = def->default_value;
+                e9ui_component_t *textbox = e9ui_labeled_select_getButton(select);
+                if (textbox && textbox->name && strcmp(textbox->name, "e9ui_textbox") == 0) {
+                    if (value && defValue && strcmp(value, defValue) == 0) {
+                        e9ui_textbox_setTextColor(textbox, 1, (SDL_Color){140, 140, 140, 255});
+                    } else {
+                        e9ui_textbox_setTextColor(textbox, 0, (SDL_Color){0, 0, 0, 0});
+                    }
+                }
+            }
+            e9ui_stack_addFixed(st->optionsStack, select);
         }
-        if (def->info && *def->info) {
-            e9ui_labeled_select_setInfo(select, def->info);
-        }
-
-        e9ui_component_t *button = e9ui_labeled_select_getButton(select);
-        if (button && largestLabel && *largestLabel) {
-            e9ui_button_setLargestLabel(button, largestLabel);
-        }
-        if (button) {
-            e9ui_button_setLeftJustify(button, 16);
-            e9ui_button_setIconRightPadding(button, 16);
-        }
-        if (button && optCount <= 1) {
-            button->disabled = 1;
-        }
-
-        e9ui_stack_addFixed(st->optionsStack, select);
         e9ui_stack_addFixed(st->optionsStack, e9ui_vspacer_make(rowGapPx));
     }
 
@@ -572,12 +723,51 @@ core_options_categoryClicked(e9ui_context_t *ctx, void *user)
 }
 
 static void
+core_options_showHelpChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user)
+{
+    (void)self;
+    core_options_modal_state_t *st = (core_options_modal_state_t*)user;
+    debugger.coreOptionsShowHelp = selected ? 1 : 0;
+    config_saveConfig();
+    core_options_buildOptionsForCategory(st, ctx);
+}
+
+static void
 core_options_optionChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char *value, void *user)
 {
     (void)ctx;
-    (void)comp;
     core_options_option_cb_t *cb = (core_options_option_cb_t*)user;
     if (!cb || !cb->st || !cb->key) {
+        return;
+    }
+    core_options_setValue(cb->st, cb->key, value);
+    if (comp) {
+        const char *defValue = core_options_findDefaultValue(cb->st, cb->key);
+        e9ui_component_t *textbox = e9ui_labeled_select_getButton(comp);
+        if (textbox && textbox->name && strcmp(textbox->name, "e9ui_textbox") == 0) {
+            if (value && defValue && strcmp(value, defValue) == 0) {
+                e9ui_textbox_setTextColor(textbox, 1, (SDL_Color){140, 140, 140, 255});
+            } else {
+                e9ui_textbox_setTextColor(textbox, 0, (SDL_Color){0, 0, 0, 0});
+            }
+        }
+    }
+    if (cb->st->btnSave) {
+        e9ui_button_setGlowPulse(cb->st->btnSave, 1);
+    }
+}
+
+static void
+core_options_optionCheckboxChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user)
+{
+    (void)self;
+    (void)ctx;
+    core_options_option_cb_t *cb = (core_options_option_cb_t*)user;
+    if (!cb || !cb->st || !cb->key) {
+        return;
+    }
+    const char *value = selected ? cb->enabledValue : cb->disabledValue;
+    if (!value) {
         return;
     }
     core_options_setValue(cb->st, cb->key, value);
@@ -990,6 +1180,9 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
             if (!cat->key) {
                 continue;
             }
+            if (!core_options_categoryHasVisibleDefs(st, cat->key)) {
+                continue;
+            }
             const char *label = (cat->desc && *cat->desc) ? cat->desc : cat->key;
             core_options_category_cb_t *cb = (core_options_category_cb_t*)alloc_calloc(1, sizeof(*cb));
             if (!cb) {
@@ -1015,6 +1208,17 @@ core_options_buildCategories(core_options_modal_state_t *st, e9ui_context_t *ctx
             e9ui_stack_addFixed(st->categoryStack, btn);
             e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(4));
         }
+    }
+
+    e9ui_component_t *cbShowHelp = e9ui_checkbox_make("Show Help",
+                                                      debugger.coreOptionsShowHelp ? 1 : 0,
+                                                      core_options_showHelpChanged,
+                                                      st);
+    if (cbShowHelp) {
+        e9ui_checkbox_setLeftMargin(cbShowHelp, 16);
+        e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(12));
+        e9ui_stack_addFixed(st->categoryStack, cbShowHelp);
+        e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(12));
     }
 
     e9ui_stack_addFixed(st->categoryStack, e9ui_vspacer_make(72));
@@ -1076,6 +1280,7 @@ core_options_showModal(e9ui_context_t *ctx)
     core_config_options_v2_t probed = {0};
     int usedProbe = 0;
     if (targetIsRunning && libretro_host_hasCoreOptionsV2()) {
+        libretro_host_refreshCoreOptionVisibility();
         defs = libretro_host_getCoreOptionDefinitions(&defCount);
         cats = libretro_host_getCoreOptionCategories(&catCount);
     } else {

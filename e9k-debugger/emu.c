@@ -329,27 +329,41 @@ emu_handleEvent(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_event_t 
         return 1;
     }
     int pressed = (ev->type == SDL_KEYDOWN) ? 1 : 0;
+    SDL_Keymod rawMods = ev->key.keysym.mod;
+    SDL_Keymod mods = 0;
+    if (rawMods & KMOD_CTRL) {
+        mods = (SDL_Keymod)(mods | KMOD_CTRL);
+    }
+    if (rawMods & KMOD_SHIFT) {
+        mods = (SDL_Keymod)(mods | KMOD_SHIFT);
+    }
+    if (rawMods & KMOD_ALT) {
+        mods = (SDL_Keymod)(mods | KMOD_ALT);
+    }
+    if (rawMods & KMOD_GUI) {
+        mods = (SDL_Keymod)(mods | KMOD_GUI);
+    }
     if (ev->key.keysym.sym == SDLK_F5) {
         if (pressed) {
             debugger_toggleSpeed();
         }
         return 1;
     }
-    if (ev->key.keysym.sym == SDLK_f) {
+    if (ev->key.keysym.sym == SDLK_f && mods == (SDL_Keymod)(KMOD_CTRL|KMOD_ALT)) {
         if (pressed) {
             debugger.frameStepMode = 1;
             debugger.frameStepPending = 1;
         }
         return 1;
     }
-    if (ev->key.keysym.sym == SDLK_b) {
+    if (ev->key.keysym.sym == SDLK_b && mods == (SDL_Keymod)(KMOD_CTRL|KMOD_ALT)) {
         if (pressed) {
             debugger.frameStepMode = 1;
             debugger.frameStepPending = -1;
         }
         return 1;
     }    
-    if (ev->key.keysym.sym == SDLK_g) {
+    if (ev->key.keysym.sym == SDLK_g && mods == (SDL_Keymod)(KMOD_CTRL|KMOD_ALT)) {
         if (pressed) {
             debugger.frameStepMode = 0;
             debugger.frameStepPending = 0;

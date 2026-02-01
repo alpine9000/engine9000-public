@@ -180,7 +180,7 @@ static int
 dasm_geo_preloadText(void)
 {
   uint64_t lo=0, hi=0;
-  const char *elf = debugger.libretro.elfPath;
+  const char *elf = debugger.libretro.exePath;
   if (!elf || !*elf) {
     return dasm_preloadFromCore();
   }

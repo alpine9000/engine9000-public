@@ -473,7 +473,7 @@ source_pane_updateSourceLocation(source_pane_state_t *st)
     st->curSrcLine = 0;
     st->curSrcPath[0] = '\0';
 
-    const char *elf = debugger.libretro.elfPath;
+    const char *elf = debugger.libretro.exePath;
     if (!elf || !*elf || !debugger.elfValid) {
         return;
     }
@@ -1223,7 +1223,7 @@ source_pane_handleEventComp(e9ui_component_t *self, e9ui_context_t *ctx, const e
                 return 1;
             }
             uint32_t addr = 0;
-            if (!source_pane_resolveFileLine(debugger.libretro.elfPath, path, lineNo, &addr)) {
+            if (!source_pane_resolveFileLine(debugger.libretro.exePath, path, lineNo, &addr)) {
                 return 0;
             }
             addr = (uint32_t)(((uint64_t)addr + (uint64_t)debugger.machine.textBaseAddr) & 0x00ffffffu);

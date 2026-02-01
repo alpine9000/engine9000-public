@@ -76,8 +76,8 @@ config_persistConfig(FILE *f)
     if (debugger.config.amiga.libretro.romPath[0]) {
         fprintf(f, "comp.config.amiga.rom=%s\n", debugger.config.amiga.libretro.romPath);
     }
-    if (debugger.config.amiga.libretro.elfPath[0]) {
-        fprintf(f, "comp.config.amiga.elf=%s\n", debugger.config.amiga.libretro.elfPath);
+    if (debugger.config.amiga.libretro.exePath[0]) {
+        fprintf(f, "comp.config.amiga.elf=%s\n", debugger.config.amiga.libretro.exePath);
     }
     fprintf(f, "comp.config.amiga.toolchain_prefix=%s\n", debugger.config.amiga.libretro.toolchainPrefix);
     if (debugger.config.amiga.libretro.systemDir[0]) {
@@ -102,8 +102,8 @@ config_persistConfig(FILE *f)
     if (debugger.config.neogeo.romFolder[0]) {
         fprintf(f, "comp.config.neogeo.rom_folder=%s\n", debugger.config.neogeo.romFolder);
     }
-    if (debugger.config.neogeo.libretro.elfPath[0]) {
-        fprintf(f, "comp.config.neogeo.elf=%s\n", debugger.config.neogeo.libretro.elfPath);
+    if (debugger.config.neogeo.libretro.exePath[0]) {
+        fprintf(f, "comp.config.neogeo.elf=%s\n", debugger.config.neogeo.libretro.exePath);
     }
     fprintf(f, "comp.config.neogeo.toolchain_prefix=%s\n", debugger.config.neogeo.libretro.toolchainPrefix);
     if (debugger.config.neogeo.libretro.systemDir[0]) {
@@ -127,7 +127,10 @@ config_persistConfig(FILE *f)
     }
     if (!debugger.config.crtEnabled) {
         fprintf(f, "comp.config.crt_enabled=0\n");
-    }    
+    }
+    if (!debugger.coreOptionsShowHelp) {
+        fprintf(f, "comp.config.core_options_show_help=0\n");
+    }
     fprintf(f, "comp.config.transition=%s\n", transition_modeName(e9ui->transition.mode));
     fprintf(f, "comp.config.core_system=%d\n", debugger.config.coreSystem);
     crt_persistConfig(f);
@@ -178,7 +181,7 @@ config_loadConfig(void)
             } else if (strcmp(prop, "amiga.rom") == 0) {
                 config_setConfigValue(debugger.config.amiga.libretro.romPath, sizeof(debugger.config.amiga.libretro.romPath), value);
             } else if (strcmp(prop, "amiga.elf") == 0) {
-                config_setConfigValue(debugger.config.amiga.libretro.elfPath, sizeof(debugger.config.amiga.libretro.elfPath), value);
+                config_setConfigValue(debugger.config.amiga.libretro.exePath, sizeof(debugger.config.amiga.libretro.exePath), value);
             } else if (strcmp(prop, "amiga.toolchain_prefix") == 0) {
                 config_setConfigValue(debugger.config.amiga.libretro.toolchainPrefix, sizeof(debugger.config.amiga.libretro.toolchainPrefix), value);
             } else if (strcmp(prop, "amiga.bios") == 0) {
@@ -202,7 +205,7 @@ config_loadConfig(void)
             } else if (strcmp(prop, "neogeo.rom_folder") == 0) {
                 config_setConfigValue(debugger.config.neogeo.romFolder, sizeof(debugger.config.neogeo.romFolder), value);
             } else if (strcmp(prop, "neogeo.elf") == 0) {
-                config_setConfigValue(debugger.config.neogeo.libretro.elfPath, sizeof(debugger.config.neogeo.libretro.elfPath), value);
+                config_setConfigValue(debugger.config.neogeo.libretro.exePath, sizeof(debugger.config.neogeo.libretro.exePath), value);
             } else if (strcmp(prop, "neogeo.toolchain_prefix") == 0) {
                 config_setConfigValue(debugger.config.neogeo.libretro.toolchainPrefix, sizeof(debugger.config.neogeo.libretro.toolchainPrefix), value);
             } else if (strcmp(prop, "neogeo.bios") == 0) {
@@ -225,6 +228,8 @@ config_loadConfig(void)
                 debugger.config.neogeo.skipBiosLogo = atoi(value) ? 1 : 0;
             } else if (strcmp(prop, "crt_enabled") == 0) {
                 debugger.config.crtEnabled = atoi(value) ? 1 : 0;
+            } else if (strcmp(prop, "core_options_show_help") == 0) {
+                debugger.coreOptionsShowHelp = atoi(value) ? 1 : 0;
             } else if (strcmp(prop, "core_system") == 0) {
                 debugger_setCoreSystem((debugger_system_type_t)atoi(value));
             } else if (strcmp(prop, "transition") == 0) {

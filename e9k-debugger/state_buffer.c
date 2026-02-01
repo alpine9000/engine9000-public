@@ -16,7 +16,50 @@
 #include "libretro_host.h"
 #include "state_wrap.h"
 
+#define STATE_BUFFER_LEVEL_COUNT 6
+#define STATE_BUFFER_DIFF_BLOCK_SIZE 64u
+#define STATE_BUFFER_PROMOTE_MAX_FRAMES 512u
+
+
 typedef uint32_t state_buffer_u32_alias_t __attribute__((__may_alias__));
+
+typedef struct {
+    state_frame_t *frames;
+    size_t count;
+    size_t cap;
+    size_t start;
+    size_t totalBytes;
+    size_t maxBytes;
+    uint8_t *prevState;
+    size_t prevSize;
+} state_buffer_level_t;
+
+typedef struct {
+    state_buffer_level_t levels[STATE_BUFFER_LEVEL_COUNT];
+    size_t totalBytes;
+    size_t maxBytes;
+    uint64_t nextId;
+    uint8_t *tempState;
+    size_t tempSize;
+    uint8_t *diffScratch;
+    size_t diffScratchCap;
+    uint8_t *reconA;
+    uint8_t *reconB;
+    size_t reconSize;
+    int paused;
+    int rollingPaused;
+    uint64_t currentFrameNo;
+} state_buffer_t;
+
+typedef struct {
+  state_buffer_t current;
+  state_buffer_t save;
+} state_buffer_global_t;
+
+state_buffer_global_t state_buffer;
+
+static void
+state_buffer_clearFrame(state_frame_t *f);
 
 static void
 state_buffer_writeU32Fast(uint8_t *dst, uint32_t v)
@@ -29,46 +72,6 @@ state_buffer_readU32Fast(const uint8_t *src)
 {
     return (uint32_t)(*(const state_buffer_u32_alias_t*)(const void*)src);
 }
-
-#define STATE_BUFFER_LEVEL_COUNT 6
-
-typedef struct {
-    state_frame_t *frames;
-    size_t count;
-    size_t cap;
-    size_t start;
-    size_t total_bytes;
-    size_t max_bytes;
-    uint8_t *prev_state;
-    size_t prev_size;
-} state_buffer_level_t;
-
-typedef struct {
-    state_buffer_level_t levels[STATE_BUFFER_LEVEL_COUNT];
-    size_t total_bytes;
-    size_t max_bytes;
-    uint64_t next_id;
-    uint8_t *temp_state;
-    size_t temp_size;
-    uint8_t *diff_scratch;
-    size_t diff_scratch_cap;
-    uint8_t *recon_a;
-    uint8_t *recon_b;
-    size_t recon_size;
-    int paused;
-    int rollingPaused;
-    uint64_t current_frame_no;
-} state_buffer_t;
-
-typedef struct {
-  state_buffer_t current;
-  state_buffer_t save;
-} state_buffer_global_t;
-
-state_buffer_global_t state_buffer;
-
-static void
-state_buffer_clearFrame(state_frame_t *f);
 
 static void
 state_buffer_resetLevel(state_buffer_level_t *lvl)
@@ -85,11 +88,11 @@ state_buffer_resetLevel(state_buffer_level_t *lvl)
     lvl->count = 0;
     lvl->cap = 0;
     lvl->start = 0;
-    lvl->total_bytes = 0;
-    lvl->max_bytes = 0;
-    alloc_free(lvl->prev_state);
-    lvl->prev_state = NULL;
-    lvl->prev_size = 0;
+    lvl->totalBytes = 0;
+    lvl->maxBytes = 0;
+    alloc_free(lvl->prevState);
+    lvl->prevState = NULL;
+    lvl->prevSize = 0;
 }
 
 static void
@@ -101,23 +104,23 @@ state_buffer_reset(state_buffer_t *buf)
     for (int i = 0; i < STATE_BUFFER_LEVEL_COUNT; ++i) {
         state_buffer_resetLevel(&buf->levels[i]);
     }
-    buf->total_bytes = 0;
-    buf->max_bytes = 0;
-    buf->next_id = 0;
-    alloc_free(buf->temp_state);
-    buf->temp_state = NULL;
-    buf->temp_size = 0;
-    alloc_free(buf->diff_scratch);
-    buf->diff_scratch = NULL;
-    buf->diff_scratch_cap = 0;
-    alloc_free(buf->recon_a);
-    buf->recon_a = NULL;
-    alloc_free(buf->recon_b);
-    buf->recon_b = NULL;
-    buf->recon_size = 0;
+    buf->totalBytes = 0;
+    buf->maxBytes = 0;
+    buf->nextId = 0;
+    alloc_free(buf->tempState);
+    buf->tempState = NULL;
+    buf->tempSize = 0;
+    alloc_free(buf->diffScratch);
+    buf->diffScratch = NULL;
+    buf->diffScratchCap = 0;
+    alloc_free(buf->reconA);
+    buf->reconA = NULL;
+    alloc_free(buf->reconB);
+    buf->reconB = NULL;
+    buf->reconSize = 0;
     buf->paused = 0;
     buf->rollingPaused = 0;
-    buf->current_frame_no = 0;
+    buf->currentFrameNo = 0;
 }
 
 static void
@@ -141,21 +144,21 @@ state_buffer_ensureRecon(state_buffer_t *buf, size_t size)
     if (!buf) {
         return 0;
     }
-    if (buf->recon_size == size && buf->recon_a && buf->recon_b) {
+    if (buf->reconSize == size && buf->reconA && buf->reconB) {
         return 1;
     }
-    uint8_t *a = (uint8_t*)alloc_realloc(buf->recon_a, size);
+    uint8_t *a = (uint8_t*)alloc_realloc(buf->reconA, size);
     if (!a) {
         return 0;
     }
-    uint8_t *b = (uint8_t*)alloc_realloc(buf->recon_b, size);
+    uint8_t *b = (uint8_t*)alloc_realloc(buf->reconB, size);
     if (!b) {
-        buf->recon_a = a;
+        buf->reconA = a;
         return 0;
     }
-    buf->recon_a = a;
-    buf->recon_b = b;
-    buf->recon_size = size;
+    buf->reconA = a;
+    buf->reconB = b;
+    buf->reconSize = size;
     return 1;
 }
 
@@ -169,10 +172,9 @@ state_buffer_compactLevel(state_buffer_level_t *lvl)
     lvl->start = 0;
 }
 
-#define STATE_BUFFER_DIFF_BLOCK_SIZE 64u
 
 static size_t
-diff_payload_max_size(size_t size)
+state_buffer_diffPayloadMaxSize(size_t size)
 {
     const uint32_t blockSize = STATE_BUFFER_DIFF_BLOCK_SIZE;
     const size_t blockCount = size / blockSize;
@@ -186,7 +188,7 @@ diff_payload_max_size(size_t size)
 }
 
 static size_t
-write_diff_payload(uint8_t *dst, size_t cap, const uint8_t *prev, const uint8_t *cur, size_t size)
+state_buffer_writeDiffPayload(uint8_t *dst, size_t cap, const uint8_t *prev, const uint8_t *cur, size_t size)
 {
     if (!dst || !prev || !cur) {
         return 0;
@@ -195,7 +197,7 @@ write_diff_payload(uint8_t *dst, size_t cap, const uint8_t *prev, const uint8_t 
     const uint32_t blockSize = STATE_BUFFER_DIFF_BLOCK_SIZE;
     const uint32_t blockCount = (uint32_t)(size / blockSize);
     const uint32_t tailLen = (uint32_t)(size - (size_t)blockCount * blockSize);
-    const size_t maxSize = diff_payload_max_size(size);
+    const size_t maxSize = state_buffer_diffPayloadMaxSize(size);
     if (cap < maxSize) {
         return 0;
     }
@@ -238,7 +240,7 @@ write_diff_payload(uint8_t *dst, size_t cap, const uint8_t *prev, const uint8_t 
 }
 
 static int
-apply_diff_inplace(uint8_t *io, size_t io_size, const uint8_t *payload, size_t payload_size)
+state_buffer_applyDiffInPlace(uint8_t *io, size_t io_size, const uint8_t *payload, size_t payload_size)
 {
     if (!io || !payload || io_size == 0) {
         return 0;
@@ -284,7 +286,7 @@ apply_diff_inplace(uint8_t *io, size_t io_size, const uint8_t *payload, size_t p
 }
 
 static void
-apply_diff_inplace_fast(uint8_t *io, size_t io_size, const uint8_t *payload)
+state_buffer_applyDiffInPlaceFast(uint8_t *io, size_t io_size, const uint8_t *payload)
 {
     const uint32_t blockSize = state_buffer_readU32Fast(payload + 0);
     const uint32_t blockCount = state_buffer_readU32Fast(payload + 4);
@@ -306,7 +308,7 @@ apply_diff_inplace_fast(uint8_t *io, size_t io_size, const uint8_t *payload)
 }
 
 static state_frame_t *
-state_buffer_level_getFrameAt(state_buffer_level_t *lvl, size_t idx)
+state_buffer_levelGetFrameAt(state_buffer_level_t *lvl, size_t idx)
 {
     if (!lvl || idx >= lvl->count) {
         return NULL;
@@ -315,7 +317,7 @@ state_buffer_level_getFrameAt(state_buffer_level_t *lvl, size_t idx)
 }
 
 static int
-state_buffer_level_ensureSlots(state_buffer_level_t *lvl, size_t additional)
+state_buffer_levelEnsureSlots(state_buffer_level_t *lvl, size_t additional)
 {
     if (!lvl) {
         return 0;
@@ -353,8 +355,8 @@ state_buffer_level_dropPrefix(state_buffer_t *buf, state_buffer_level_t *lvl, si
     }
     for (size_t i = 0; i < count; ++i) {
         state_frame_t *f = &lvl->frames[lvl->start + i];
-        lvl->total_bytes -= f->payload_size;
-        buf->total_bytes -= f->payload_size;
+        lvl->totalBytes -= f->payload_size;
+        buf->totalBytes -= f->payload_size;
         state_buffer_clearFrame(f);
     }
     lvl->start += count;
@@ -367,7 +369,7 @@ state_buffer_level_dropPrefix(state_buffer_t *buf, state_buffer_level_t *lvl, si
 }
 
 static void
-state_buffer_level_dropTailFromIndex(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx)
+state_buffer_levelDropTailFromIndex(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx)
 {
     if (!buf || !lvl || lvl->count == 0) {
         return;
@@ -376,10 +378,10 @@ state_buffer_level_dropTailFromIndex(state_buffer_t *buf, state_buffer_level_t *
         return;
     }
     for (size_t i = idx; i < lvl->count; ++i) {
-        state_frame_t *f = state_buffer_level_getFrameAt(lvl, i);
+        state_frame_t *f = state_buffer_levelGetFrameAt(lvl, i);
         if (f) {
-            lvl->total_bytes -= f->payload_size;
-            buf->total_bytes -= f->payload_size;
+            lvl->totalBytes -= f->payload_size;
+            buf->totalBytes -= f->payload_size;
             state_buffer_clearFrame(f);
         }
     }
@@ -390,13 +392,13 @@ state_buffer_level_dropTailFromIndex(state_buffer_t *buf, state_buffer_level_t *
 }
 
 static int
-state_buffer_level_convertToKeyframe(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx,
+state_buffer_levelConvertToKeyframe(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx,
                                      const uint8_t *state, size_t stateSize)
 {
     if (!buf || !lvl || !state || stateSize == 0) {
         return 0;
     }
-    state_frame_t *f = state_buffer_level_getFrameAt(lvl, idx);
+    state_frame_t *f = state_buffer_levelGetFrameAt(lvl, idx);
     if (!f) {
         return 0;
     }
@@ -409,48 +411,48 @@ state_buffer_level_convertToKeyframe(state_buffer_t *buf, state_buffer_level_t *
     }
     memcpy(payload, state, stateSize);
 
-    lvl->total_bytes -= f->payload_size;
-    buf->total_bytes -= f->payload_size;
+    lvl->totalBytes -= f->payload_size;
+    buf->totalBytes -= f->payload_size;
     alloc_free(f->payload);
     f->payload = payload;
     f->payload_size = stateSize;
     f->is_keyframe = 1;
-    lvl->total_bytes += f->payload_size;
-    buf->total_bytes += f->payload_size;
+    lvl->totalBytes += f->payload_size;
+    buf->totalBytes += f->payload_size;
     return 1;
 }
 
 static int
-state_buffer_level_appendState(state_buffer_t *buf, state_buffer_level_t *lvl,
+state_buffer_levelAppendState(state_buffer_t *buf, state_buffer_level_t *lvl,
                                const uint8_t *state, size_t stateSize, uint64_t frameNo)
 {
     if (!buf || !lvl || !state || stateSize == 0) {
         return 0;
     }
-    if (!state_buffer_level_ensureSlots(lvl, 1)) {
+    if (!state_buffer_levelEnsureSlots(lvl, 1)) {
         return 0;
     }
 
-    int havePrev = (lvl->count > 0 && lvl->prev_state && lvl->prev_size == stateSize);
+    int havePrev = (lvl->count > 0 && lvl->prevState && lvl->prevSize == stateSize);
     int isKeyframe = havePrev ? 0 : 1;
     size_t payloadSize = stateSize;
     const uint8_t *payloadSrc = state;
 
     if (havePrev) {
-        const size_t diffCap = diff_payload_max_size(stateSize);
-        if (!buf->diff_scratch || buf->diff_scratch_cap < diffCap) {
-            uint8_t *tmp = (uint8_t*)alloc_realloc(buf->diff_scratch, diffCap);
+        const size_t diffCap = state_buffer_diffPayloadMaxSize(stateSize);
+        if (!buf->diffScratch || buf->diffScratchCap < diffCap) {
+            uint8_t *tmp = (uint8_t*)alloc_realloc(buf->diffScratch, diffCap);
             if (!tmp) {
                 return 0;
             }
-            buf->diff_scratch = tmp;
-            buf->diff_scratch_cap = diffCap;
+            buf->diffScratch = tmp;
+            buf->diffScratchCap = diffCap;
         }
-        size_t diffSize = write_diff_payload(buf->diff_scratch, buf->diff_scratch_cap, lvl->prev_state, state, stateSize);
+        size_t diffSize = state_buffer_writeDiffPayload(buf->diffScratch, buf->diffScratchCap, lvl->prevState, state, stateSize);
         if (diffSize > 0 && diffSize < stateSize) {
             isKeyframe = 0;
             payloadSize = diffSize;
-            payloadSrc = buf->diff_scratch;
+            payloadSrc = buf->diffScratch;
         } else {
             isKeyframe = 1;
             payloadSize = stateSize;
@@ -460,7 +462,7 @@ state_buffer_level_appendState(state_buffer_t *buf, state_buffer_level_t *lvl,
 
     state_frame_t *frame = &lvl->frames[lvl->start + lvl->count];
     memset(frame, 0, sizeof(*frame));
-    frame->id = buf->next_id++;
+    frame->id = buf->nextId++;
     frame->frame_no = frameNo;
     frame->state_size = stateSize;
     frame->is_keyframe = isKeyframe ? 1 : 0;
@@ -472,18 +474,18 @@ state_buffer_level_appendState(state_buffer_t *buf, state_buffer_level_t *lvl,
     memcpy(frame->payload, payloadSrc, payloadSize);
 
     lvl->count++;
-    lvl->total_bytes += payloadSize;
-    buf->total_bytes += payloadSize;
+    lvl->totalBytes += payloadSize;
+    buf->totalBytes += payloadSize;
 
-    if (!lvl->prev_state || lvl->prev_size != stateSize) {
-        uint8_t *prev = (uint8_t*)alloc_realloc(lvl->prev_state, stateSize);
+    if (!lvl->prevState || lvl->prevSize != stateSize) {
+        uint8_t *prev = (uint8_t*)alloc_realloc(lvl->prevState, stateSize);
         if (!prev) {
             return 0;
         }
-        lvl->prev_state = prev;
-        lvl->prev_size = stateSize;
+        lvl->prevState = prev;
+        lvl->prevSize = stateSize;
     }
-    memcpy(lvl->prev_state, state, stateSize);
+    memcpy(lvl->prevState, state, stateSize);
 
     if (lvl->count == 1) {
         lvl->frames[lvl->start].is_keyframe = 1;
@@ -492,7 +494,7 @@ state_buffer_level_appendState(state_buffer_t *buf, state_buffer_level_t *lvl,
 }
 
 static int
-state_buffer_level_reconstructIndex(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx,
+state_buffer_levelReconstructIndex(state_buffer_t *buf, state_buffer_level_t *lvl, size_t idx,
                                     uint8_t **outState, size_t *outSize)
 {
     if (outState) {
@@ -505,19 +507,19 @@ state_buffer_level_reconstructIndex(state_buffer_t *buf, state_buffer_level_t *l
         return 0;
     }
 
-    state_frame_t *target = state_buffer_level_getFrameAt(lvl, idx);
+    state_frame_t *target = state_buffer_levelGetFrameAt(lvl, idx);
     if (!target || !target->payload || target->state_size == 0) {
         return 0;
     }
     size_t keyIdx = idx;
     while (keyIdx > 0) {
-        state_frame_t *f = state_buffer_level_getFrameAt(lvl, keyIdx);
+        state_frame_t *f = state_buffer_levelGetFrameAt(lvl, keyIdx);
         if (f && f->is_keyframe) {
             break;
         }
         keyIdx--;
     }
-    state_frame_t *key = state_buffer_level_getFrameAt(lvl, keyIdx);
+    state_frame_t *key = state_buffer_levelGetFrameAt(lvl, keyIdx);
     if (!key || !key->is_keyframe || !key->payload || key->state_size == 0) {
         return 0;
     }
@@ -526,11 +528,11 @@ state_buffer_level_reconstructIndex(state_buffer_t *buf, state_buffer_level_t *l
     if (!state_buffer_ensureRecon(buf, stateSize)) {
         return 0;
     }
-    uint8_t *cur = buf->recon_a;
+    uint8_t *cur = buf->reconA;
     memcpy(cur, key->payload, stateSize);
 
     for (size_t i = keyIdx + 1; i <= idx; ++i) {
-        state_frame_t *f = state_buffer_level_getFrameAt(lvl, i);
+        state_frame_t *f = state_buffer_levelGetFrameAt(lvl, i);
         if (!f || !f->payload || f->state_size != stateSize) {
             return 0;
         }
@@ -538,7 +540,7 @@ state_buffer_level_reconstructIndex(state_buffer_t *buf, state_buffer_level_t *l
             memcpy(cur, f->payload, stateSize);
             continue;
         }
-        if (!apply_diff_inplace(cur, stateSize, f->payload, f->payload_size)) {
+        if (!state_buffer_applyDiffInPlace(cur, stateSize, f->payload, f->payload_size)) {
             return 0;
         }
     }
@@ -559,20 +561,20 @@ state_buffer_dropOldestToFit(state_buffer_t *buf, int levelIndex)
     if (!buf || !lvl || lvl->count == 0) {
         return;
     }
-    state_frame_t *first = state_buffer_level_getFrameAt(lvl, 0);
+    state_frame_t *first = state_buffer_levelGetFrameAt(lvl, 0);
     if (!first || !first->is_keyframe) {
         return;
     }
-    if (lvl->total_bytes <= lvl->max_bytes) {
+    if (lvl->totalBytes <= lvl->maxBytes) {
         return;
     }
 
-    size_t bytesToFree = lvl->total_bytes - lvl->max_bytes;
+    size_t bytesToFree = lvl->totalBytes - lvl->maxBytes;
     size_t n = 0;
     size_t bytes = 0;
     const size_t stateSize = first->state_size;
     while (n < lvl->count && bytes < bytesToFree) {
-        state_frame_t *f = state_buffer_level_getFrameAt(lvl, n);
+        state_frame_t *f = state_buffer_levelGetFrameAt(lvl, n);
         if (!f || f->state_size != stateSize) {
             break;
         }
@@ -584,36 +586,35 @@ state_buffer_dropOldestToFit(state_buffer_t *buf, int levelIndex)
     }
     if (n >= lvl->count) {
         state_buffer_level_dropPrefix(buf, lvl, lvl->count);
-        alloc_free(lvl->prev_state);
-        lvl->prev_state = NULL;
-        lvl->prev_size = 0;
+        alloc_free(lvl->prevState);
+        lvl->prevState = NULL;
+        lvl->prevSize = 0;
         return;
     }
 
-    state_frame_t *newOldest = state_buffer_level_getFrameAt(lvl, n);
+    state_frame_t *newOldest = state_buffer_levelGetFrameAt(lvl, n);
     if (newOldest && newOldest->state_size == stateSize && !newOldest->is_keyframe) {
         if (state_buffer_ensureRecon(buf, stateSize)) {
-            uint8_t *work = buf->recon_a;
+            uint8_t *work = buf->reconA;
             memcpy(work, first->payload, stateSize);
             for (size_t i = 1; i <= n; ++i) {
-                state_frame_t *f = state_buffer_level_getFrameAt(lvl, i);
+                state_frame_t *f = state_buffer_levelGetFrameAt(lvl, i);
                 if (!f || !f->payload || f->state_size != stateSize) {
                     break;
                 }
                 if (f->is_keyframe) {
                     memcpy(work, f->payload, stateSize);
                 } else {
-                    apply_diff_inplace_fast(work, stateSize, f->payload);
+                    state_buffer_applyDiffInPlaceFast(work, stateSize, f->payload);
                 }
             }
-            state_buffer_level_convertToKeyframe(buf, lvl, n, work, stateSize);
+            state_buffer_levelConvertToKeyframe(buf, lvl, n, work, stateSize);
         }
     }
 
     state_buffer_level_dropPrefix(buf, lvl, n);
 }
 
-#define STATE_BUFFER_PROMOTE_MAX_FRAMES 512u
 
 static void
 state_buffer_promoteOldest(state_buffer_t *buf, int levelIndex)
@@ -623,22 +624,22 @@ state_buffer_promoteOldest(state_buffer_t *buf, int levelIndex)
     if (!buf || !src || !dst || src->count == 0) {
         return;
     }
-    state_frame_t *first = state_buffer_level_getFrameAt(src, 0);
+    state_frame_t *first = state_buffer_levelGetFrameAt(src, 0);
     if (!first || !first->is_keyframe || !first->payload || first->state_size == 0) {
         return;
     }
     const size_t stateSize = first->state_size;
 
     size_t bytesToFree = 0;
-    if (src->total_bytes > src->max_bytes) {
-        bytesToFree = src->total_bytes - src->max_bytes;
+    if (src->totalBytes > src->maxBytes) {
+        bytesToFree = src->totalBytes - src->maxBytes;
     }
 
     size_t n = 0;
     size_t bytes = 0;
     const size_t maxFrames = (size_t)STATE_BUFFER_PROMOTE_MAX_FRAMES;
     while (n < src->count && bytes < bytesToFree && n < maxFrames) {
-        state_frame_t *f = state_buffer_level_getFrameAt(src, n);
+        state_frame_t *f = state_buffer_levelGetFrameAt(src, n);
         if (!f || f->state_size != stateSize) {
             break;
         }
@@ -658,36 +659,36 @@ state_buffer_promoteOldest(state_buffer_t *buf, int levelIndex)
     if (!state_buffer_ensureRecon(buf, stateSize)) {
         return;
     }
-    uint8_t *work = buf->recon_a;
+    uint8_t *work = buf->reconA;
     memcpy(work, first->payload, stateSize);
 
     // Keep every 2nd frame from the promoted range (0, 2, 4, ...).
-    state_buffer_level_appendState(buf, dst, work, stateSize, first->frame_no);
+    state_buffer_levelAppendState(buf, dst, work, stateSize, first->frame_no);
     for (size_t i = 1; i < n; ++i) {
-        state_frame_t *f = state_buffer_level_getFrameAt(src, i);
+        state_frame_t *f = state_buffer_levelGetFrameAt(src, i);
         if (!f || !f->payload || f->state_size != stateSize) {
             break;
         }
         if (f->is_keyframe) {
             memcpy(work, f->payload, stateSize);
         } else {
-            apply_diff_inplace_fast(work, stateSize, f->payload);
+            state_buffer_applyDiffInPlaceFast(work, stateSize, f->payload);
         }
         if ((i & 1u) == 0u) {
-            state_buffer_level_appendState(buf, dst, work, stateSize, f->frame_no);
+            state_buffer_levelAppendState(buf, dst, work, stateSize, f->frame_no);
         }
     }
 
     // Ensure the next oldest frame in the source level remains reconstructable after dropping the prefix.
     if (n < src->count) {
-        state_frame_t *newOldest = state_buffer_level_getFrameAt(src, n);
+        state_frame_t *newOldest = state_buffer_levelGetFrameAt(src, n);
         if (newOldest && newOldest->state_size == stateSize && !newOldest->is_keyframe) {
             if (newOldest->is_keyframe) {
                 memcpy(work, newOldest->payload, stateSize);
             } else {
-                apply_diff_inplace_fast(work, stateSize, newOldest->payload);
+                state_buffer_applyDiffInPlaceFast(work, stateSize, newOldest->payload);
             }
-            state_buffer_level_convertToKeyframe(buf, src, n, work, stateSize);
+            state_buffer_levelConvertToKeyframe(buf, src, n, work, stateSize);
         }
     }
 
@@ -702,7 +703,7 @@ state_buffer_trimLevels(state_buffer_t *buf)
     }
     for (int i = 0; i < STATE_BUFFER_LEVEL_COUNT; ++i) {
         state_buffer_level_t *lvl = &buf->levels[i];
-        while (lvl->max_bytes > 0 && lvl->total_bytes > lvl->max_bytes && lvl->count > 0) {
+        while (lvl->maxBytes > 0 && lvl->totalBytes > lvl->maxBytes && lvl->count > 0) {
             if (i == STATE_BUFFER_LEVEL_COUNT - 1) {
                 state_buffer_dropOldestToFit(buf, i);
             } else {
@@ -718,7 +719,7 @@ state_buffer_configureLevelBudgets(state_buffer_t *buf, size_t maxBytes)
     if (!buf) {
         return;
     }
-    buf->max_bytes = maxBytes;
+    buf->maxBytes = maxBytes;
     size_t remaining = maxBytes;
     for (int i = 0; i < STATE_BUFFER_LEVEL_COUNT; ++i) {
         size_t b = 0;
@@ -728,7 +729,7 @@ state_buffer_configureLevelBudgets(state_buffer_t *buf, size_t maxBytes)
             b = remaining / 2;
             remaining -= b;
         }
-        buf->levels[i].max_bytes = b;
+        buf->levels[i].maxBytes = b;
     }
 }
 
@@ -747,7 +748,7 @@ state_buffer_findFrameByFrameNo(state_buffer_t *buf, uint64_t frameNo, int *outL
     for (int li = 0; li < STATE_BUFFER_LEVEL_COUNT; ++li) {
         state_buffer_level_t *lvl = &buf->levels[li];
         for (size_t i = 0; i < lvl->count; ++i) {
-            state_frame_t *f = state_buffer_level_getFrameAt(lvl, i);
+            state_frame_t *f = state_buffer_levelGetFrameAt(lvl, i);
             if (f && f->frame_no == frameNo) {
                 if (outLevel) {
                     *outLevel = li;
@@ -787,7 +788,7 @@ state_buffer_capture(void)
     if (state_buffer.current.paused || state_buffer.current.rollingPaused) {
         return;
     }
-    if (state_buffer.current.max_bytes == 0) {
+    if (state_buffer.current.maxBytes == 0) {
         return;
     }
 
@@ -797,24 +798,24 @@ state_buffer_capture(void)
     }
     size_t headerSize = state_wrap_headerSize();
     size_t wrappedSize = headerSize + stateSize;
-    if (!state_buffer.current.temp_state || state_buffer.current.temp_size != wrappedSize) {
-        uint8_t *tmp = (uint8_t*)alloc_realloc(state_buffer.current.temp_state, wrappedSize);
+    if (!state_buffer.current.tempState || state_buffer.current.tempSize != wrappedSize) {
+        uint8_t *tmp = (uint8_t*)alloc_realloc(state_buffer.current.tempState, wrappedSize);
         if (!tmp) {
             return;
         }
-        state_buffer.current.temp_state = tmp;
-        state_buffer.current.temp_size = wrappedSize;
+        state_buffer.current.tempState = tmp;
+        state_buffer.current.tempSize = wrappedSize;
     }
-    if (!libretro_host_serializeTo(state_buffer.current.temp_state + headerSize, stateSize)) {
+    if (!libretro_host_serializeTo(state_buffer.current.tempState + headerSize, stateSize)) {
         return;
     }
-    if (!state_wrap_writeHeader(state_buffer.current.temp_state, state_buffer.current.temp_size, stateSize, &debugger.machine)) {
+    if (!state_wrap_writeHeader(state_buffer.current.tempState, state_buffer.current.tempSize, stateSize, &debugger.machine)) {
         return;
     }
 
     state_buffer_level_t *lvl0 = &state_buffer.current.levels[0];
-    if (!state_buffer_level_appendState(&state_buffer.current, lvl0, state_buffer.current.temp_state, wrappedSize,
-                                        state_buffer.current.current_frame_no)) {
+    if (!state_buffer_levelAppendState(&state_buffer.current, lvl0, state_buffer.current.tempState, wrappedSize,
+                                        state_buffer.current.currentFrameNo)) {
         return;
     }
     state_buffer_trimLevels(&state_buffer.current);
@@ -847,7 +848,7 @@ state_buffer_isRollingPaused(void)
 size_t
 state_buffer_getUsedBytes(void)
 {
-    return state_buffer.current.total_bytes;
+    return state_buffer.current.totalBytes;
 }
 
 size_t
@@ -863,19 +864,19 @@ state_buffer_getCount(void)
 size_t
 state_buffer_getMaxBytes(void)
 {
-    return state_buffer.current.max_bytes;
+    return state_buffer.current.maxBytes;
 }
 
 void
 state_buffer_setCurrentFrameNo(uint64_t frame_no)
 {
-    state_buffer.current.current_frame_no = frame_no;
+    state_buffer.current.currentFrameNo = frame_no;
 }
 
 uint64_t
 state_buffer_getCurrentFrameNo(void)
 {
-    return state_buffer.current.current_frame_no;
+    return state_buffer.current.currentFrameNo;
 }
 
 state_frame_t*
@@ -894,14 +895,14 @@ state_buffer_getFrameAtPercent(float percent)
     for (int li = STATE_BUFFER_LEVEL_COUNT - 1; li >= 0; --li) {
         state_buffer_level_t *lvl = &state_buffer.current.levels[li];
         if (lvl->count > 0) {
-            oldest = state_buffer_level_getFrameAt(lvl, 0);
+            oldest = state_buffer_levelGetFrameAt(lvl, 0);
             break;
         }
     }
     for (int li = 0; li < STATE_BUFFER_LEVEL_COUNT; ++li) {
         state_buffer_level_t *lvl = &state_buffer.current.levels[li];
         if (lvl->count > 0) {
-            newest = state_buffer_level_getFrameAt(lvl, lvl->count - 1);
+            newest = state_buffer_levelGetFrameAt(lvl, lvl->count - 1);
             break;
         }
     }
@@ -925,8 +926,8 @@ state_buffer_getFrameAtPercent(float percent)
         if (lvl->count == 0) {
             continue;
         }
-        state_frame_t *first = state_buffer_level_getFrameAt(lvl, 0);
-        state_frame_t *last = state_buffer_level_getFrameAt(lvl, lvl->count - 1);
+        state_frame_t *first = state_buffer_levelGetFrameAt(lvl, 0);
+        state_frame_t *last = state_buffer_levelGetFrameAt(lvl, lvl->count - 1);
         if (!first || !last) {
             continue;
         }
@@ -942,7 +943,7 @@ state_buffer_getFrameAtPercent(float percent)
         size_t hi = lvl->count;
         while (lo < hi) {
             size_t mid = lo + (hi - lo) / 2;
-            state_frame_t *m = state_buffer_level_getFrameAt(lvl, mid);
+            state_frame_t *m = state_buffer_levelGetFrameAt(lvl, mid);
             if (!m) {
                 break;
             }
@@ -953,7 +954,7 @@ state_buffer_getFrameAtPercent(float percent)
             }
         }
         size_t idx = (lo == 0) ? 0 : (lo - 1);
-        return state_buffer_level_getFrameAt(lvl, idx);
+        return state_buffer_levelGetFrameAt(lvl, idx);
     }
 
     return newest;
@@ -975,13 +976,13 @@ state_buffer_restoreFrameNo(uint64_t frame_no)
         return 0;
     }
     state_buffer_level_t *lvl = &state_buffer.current.levels[levelIndex];
-    state_frame_t *target = state_buffer_level_getFrameAt(lvl, idx);
+    state_frame_t *target = state_buffer_levelGetFrameAt(lvl, idx);
     if (!target || target->state_size == 0) {
         return 0;
     }
     uint8_t *state = NULL;
     size_t state_size = 0;
-    if (!state_buffer_level_reconstructIndex(&state_buffer.current, lvl, idx, &state, &state_size)) {
+    if (!state_buffer_levelReconstructIndex(&state_buffer.current, lvl, idx, &state, &state_size)) {
         return 0;
     }
     state_wrap_info_t info;
@@ -994,7 +995,7 @@ state_buffer_restoreFrameNo(uint64_t frame_no)
     if (!libretro_host_unserializeFrom(info.payload, info.payloadSize)) {
         return 0;
     }
-    state_buffer.current.current_frame_no = target->frame_no;
+    state_buffer.current.currentFrameNo = target->frame_no;
     return 1;
 }
 
@@ -1015,26 +1016,26 @@ state_buffer_trimAfterFrameNo(uint64_t frame_no)
     for (int li = 0; li < STATE_BUFFER_LEVEL_COUNT; ++li) {
         state_buffer_level_t *lvl = &state_buffer.current.levels[li];
         if (lvl->count == 0) {
-            alloc_free(lvl->prev_state);
-            lvl->prev_state = NULL;
-            lvl->prev_size = 0;
+            alloc_free(lvl->prevState);
+            lvl->prevState = NULL;
+            lvl->prevSize = 0;
             continue;
         }
         size_t cut = lvl->count;
         for (size_t i = 0; i < lvl->count; ++i) {
-            state_frame_t *f = state_buffer_level_getFrameAt(lvl, i);
+            state_frame_t *f = state_buffer_levelGetFrameAt(lvl, i);
             if (f && f->frame_no > frame_no) {
                 cut = i;
                 break;
             }
         }
         if (cut < lvl->count) {
-            state_buffer_level_dropTailFromIndex(&state_buffer.current, lvl, cut);
+            state_buffer_levelDropTailFromIndex(&state_buffer.current, lvl, cut);
         }
         if (lvl->count == 0) {
-            alloc_free(lvl->prev_state);
-            lvl->prev_state = NULL;
-            lvl->prev_size = 0;
+            alloc_free(lvl->prevState);
+            lvl->prevState = NULL;
+            lvl->prevSize = 0;
         }
     }
 
@@ -1047,18 +1048,18 @@ state_buffer_trimAfterFrameNo(uint64_t frame_no)
         size_t last = lvl->count - 1;
         uint8_t *state = NULL;
         size_t stateSize = 0;
-        if (!state_buffer_level_reconstructIndex(&state_buffer.current, lvl, last, &state, &stateSize)) {
+        if (!state_buffer_levelReconstructIndex(&state_buffer.current, lvl, last, &state, &stateSize)) {
             return 0;
         }
-        if (!lvl->prev_state || lvl->prev_size != stateSize) {
-            uint8_t *prev = (uint8_t*)alloc_realloc(lvl->prev_state, stateSize);
+        if (!lvl->prevState || lvl->prevSize != stateSize) {
+            uint8_t *prev = (uint8_t*)alloc_realloc(lvl->prevState, stateSize);
             if (!prev) {
                 return 0;
             }
-            lvl->prev_state = prev;
-            lvl->prev_size = stateSize;
+            lvl->prevState = prev;
+            lvl->prevSize = stateSize;
         }
-        memcpy(lvl->prev_state, state, stateSize);
+        memcpy(lvl->prevState, state, stateSize);
     }
 
     // Seed level 0's prev_state from the exact restored frame, even if it lives in an older tier.
@@ -1070,20 +1071,20 @@ state_buffer_trimAfterFrameNo(uint64_t frame_no)
     state_buffer_level_t *foundLvl = &state_buffer.current.levels[foundLevel];
     uint8_t *exact = NULL;
     size_t exactSize = 0;
-    if (!state_buffer_level_reconstructIndex(&state_buffer.current, foundLvl, foundIdx, &exact, &exactSize)) {
+    if (!state_buffer_levelReconstructIndex(&state_buffer.current, foundLvl, foundIdx, &exact, &exactSize)) {
         return 0;
     }
     state_buffer_level_t *lvl0 = &state_buffer.current.levels[0];
-    if (!lvl0->prev_state || lvl0->prev_size != exactSize) {
-        uint8_t *prev = (uint8_t*)alloc_realloc(lvl0->prev_state, exactSize);
+    if (!lvl0->prevState || lvl0->prevSize != exactSize) {
+        uint8_t *prev = (uint8_t*)alloc_realloc(lvl0->prevState, exactSize);
         if (!prev) {
             return 0;
         }
-        lvl0->prev_state = prev;
-        lvl0->prev_size = exactSize;
+        lvl0->prevState = prev;
+        lvl0->prevSize = exactSize;
     }
-    memcpy(lvl0->prev_state, exact, exactSize);
-    state_buffer.current.current_frame_no = frame_no;
+    memcpy(lvl0->prevState, exact, exactSize);
+    state_buffer.current.currentFrameNo = frame_no;
     return 1;
 }
 
@@ -1094,21 +1095,21 @@ state_buffer_clone(state_buffer_t *dst, const state_buffer_t *src)
         return 0;
     }
     state_buffer_reset(dst);
-    state_buffer_configureLevelBudgets(dst, src->max_bytes);
-    dst->total_bytes = 0;
-    dst->next_id = src->next_id;
+    state_buffer_configureLevelBudgets(dst, src->maxBytes);
+    dst->totalBytes = 0;
+    dst->nextId = src->nextId;
     dst->paused = src->paused;
-    dst->current_frame_no = src->current_frame_no;
+    dst->currentFrameNo = src->currentFrameNo;
 
     for (int li = 0; li < STATE_BUFFER_LEVEL_COUNT; ++li) {
         const state_buffer_level_t *sLvl = &src->levels[li];
         state_buffer_level_t *dLvl = &dst->levels[li];
 
-        dLvl->max_bytes = sLvl->max_bytes;
+        dLvl->maxBytes = sLvl->maxBytes;
         dLvl->count = sLvl->count;
         dLvl->cap = sLvl->count;
         dLvl->start = 0;
-        dLvl->total_bytes = 0;
+        dLvl->totalBytes = 0;
 
         if (sLvl->count > 0) {
             dLvl->frames = (state_frame_t*)alloc_calloc(sLvl->count, sizeof(state_frame_t));
@@ -1131,20 +1132,20 @@ state_buffer_clone(state_buffer_t *dst, const state_buffer_t *src)
                         return 0;
                     }
                     memcpy(d->payload, s->payload, s->payload_size);
-                    dLvl->total_bytes += s->payload_size;
-                    dst->total_bytes += s->payload_size;
+                    dLvl->totalBytes += s->payload_size;
+                    dst->totalBytes += s->payload_size;
                 }
             }
         }
 
-        if (sLvl->prev_state && sLvl->prev_size > 0) {
-            dLvl->prev_state = (uint8_t*)alloc_alloc(sLvl->prev_size);
-            if (!dLvl->prev_state) {
+        if (sLvl->prevState && sLvl->prevSize > 0) {
+            dLvl->prevState = (uint8_t*)alloc_alloc(sLvl->prevSize);
+            if (!dLvl->prevState) {
                 state_buffer_reset(dst);
                 return 0;
             }
-            memcpy(dLvl->prev_state, sLvl->prev_state, sLvl->prev_size);
-            dLvl->prev_size = sLvl->prev_size;
+            memcpy(dLvl->prevState, sLvl->prevState, sLvl->prevSize);
+            dLvl->prevSize = sLvl->prevSize;
         }
     }
 
@@ -1177,7 +1178,7 @@ state_buffer_setSaveKeyframe(const uint8_t *state, size_t state_size, uint64_t f
         return 0;
     }
     state_buffer_reset(&state_buffer.save);
-    state_buffer_configureLevelBudgets(&state_buffer.save, state_buffer.current.max_bytes);
+    state_buffer_configureLevelBudgets(&state_buffer.save, state_buffer.current.maxBytes);
 
     state_buffer_level_t *lvl0 = &state_buffer.save.levels[0];
     lvl0->frames = (state_frame_t*)alloc_calloc(1, sizeof(state_frame_t));
@@ -1210,18 +1211,18 @@ state_buffer_setSaveKeyframe(const uint8_t *state, size_t state_size, uint64_t f
     lvl0->cap = 1;
     lvl0->count = 1;
     lvl0->start = 0;
-    lvl0->total_bytes = storeSize;
-    state_buffer.save.total_bytes = storeSize;
-    state_buffer.save.next_id = 2;
-    state_buffer.save.current_frame_no = frame_no;
+    lvl0->totalBytes = storeSize;
+    state_buffer.save.totalBytes = storeSize;
+    state_buffer.save.nextId = 2;
+    state_buffer.save.currentFrameNo = frame_no;
     state_buffer.save.paused = 0;
-    lvl0->prev_state = (uint8_t*)alloc_alloc(storeSize);
-    if (!lvl0->prev_state) {
+    lvl0->prevState = (uint8_t*)alloc_alloc(storeSize);
+    if (!lvl0->prevState) {
         state_buffer_reset(&state_buffer.save);
         return 0;
     }
-    memcpy(lvl0->prev_state, payload, storeSize);
-    lvl0->prev_size = storeSize;
+    memcpy(lvl0->prevState, payload, storeSize);
+    lvl0->prevSize = storeSize;
     return 1;
 }
 
@@ -1247,7 +1248,7 @@ state_buffer_saveSnapshotFile(const char *path, uint64_t rom_checksum)
     uint32_t version = 8;
     uint32_t levelCount = (uint32_t)STATE_BUFFER_LEVEL_COUNT;
     uint64_t count = (uint64_t)totalCount;
-    uint64_t currentFrameNo = buf->current_frame_no;
+    uint64_t currentFrameNo = buf->currentFrameNo;
     uint64_t romChecksum = rom_checksum;
     if (fwrite(magic, sizeof(magic), 1, f) != 1 ||
         fwrite(&version, sizeof(version), 1, f) != 1 ||
@@ -1262,14 +1263,14 @@ state_buffer_saveSnapshotFile(const char *path, uint64_t rom_checksum)
     for (int li = 0; li < STATE_BUFFER_LEVEL_COUNT; ++li) {
         state_buffer_level_t *lvl = &buf->levels[li];
         uint64_t lvlCount = (uint64_t)lvl->count;
-        uint64_t lvlPrevSize = (uint64_t)lvl->prev_size;
+        uint64_t lvlPrevSize = (uint64_t)lvl->prevSize;
         if (fwrite(&lvlCount, sizeof(lvlCount), 1, f) != 1 ||
             fwrite(&lvlPrevSize, sizeof(lvlPrevSize), 1, f) != 1) {
             fclose(f);
             return 0;
         }
         for (size_t i = 0; i < lvl->count; ++i) {
-            state_frame_t *frame = state_buffer_level_getFrameAt(lvl, i);
+            state_frame_t *frame = state_buffer_levelGetFrameAt(lvl, i);
             if (!frame) {
                 fclose(f);
                 return 0;
@@ -1294,8 +1295,8 @@ state_buffer_saveSnapshotFile(const char *path, uint64_t rom_checksum)
                 }
             }
         }
-        if (lvlPrevSize > 0 && lvl->prev_state) {
-            if (fwrite(lvl->prev_state, 1, (size_t)lvlPrevSize, f) != lvlPrevSize) {
+        if (lvlPrevSize > 0 && lvl->prevState) {
+            if (fwrite(lvl->prevState, 1, (size_t)lvlPrevSize, f) != lvlPrevSize) {
                 fclose(f);
                 return 0;
             }
@@ -1343,8 +1344,8 @@ state_buffer_loadSnapshotFile(const char *path, uint64_t *out_rom_checksum)
     }
 
     state_buffer_reset(&state_buffer.save);
-    state_buffer_configureLevelBudgets(&state_buffer.save, state_buffer.current.max_bytes);
-    state_buffer.save.current_frame_no = currentFrameNo;
+    state_buffer_configureLevelBudgets(&state_buffer.save, state_buffer.current.maxBytes);
+    state_buffer.save.currentFrameNo = currentFrameNo;
     state_buffer.save.paused = 0;
 
     size_t totalBytes = 0;
@@ -1404,28 +1405,28 @@ state_buffer_loadSnapshotFile(const char *path, uint64_t *out_rom_checksum)
                     return 0;
                 }
                 totalBytes += frame->payload_size;
-                lvl->total_bytes += frame->payload_size;
+                lvl->totalBytes += frame->payload_size;
             }
             lastId = id;
         }
         if (lvlPrevSize > 0) {
-            lvl->prev_state = (uint8_t*)alloc_alloc((size_t)lvlPrevSize);
-            if (!lvl->prev_state) {
+            lvl->prevState = (uint8_t*)alloc_alloc((size_t)lvlPrevSize);
+            if (!lvl->prevState) {
                 fclose(f);
                 state_buffer_reset(&state_buffer.save);
                 return 0;
             }
-            if (fread(lvl->prev_state, 1, (size_t)lvlPrevSize, f) != lvlPrevSize) {
+            if (fread(lvl->prevState, 1, (size_t)lvlPrevSize, f) != lvlPrevSize) {
                 fclose(f);
                 state_buffer_reset(&state_buffer.save);
                 return 0;
             }
-            lvl->prev_size = (size_t)lvlPrevSize;
+            lvl->prevSize = (size_t)lvlPrevSize;
         }
     }
-    state_buffer.save.total_bytes = totalBytes;
-    state_buffer.save.next_id = lastId + 1;
-    state_buffer.save.current_frame_no = currentFrameNo;
+    state_buffer.save.totalBytes = totalBytes;
+    state_buffer.save.nextId = lastId + 1;
+    state_buffer.save.currentFrameNo = currentFrameNo;
     (void)count;
     fclose(f);
     return 1;
@@ -1446,7 +1447,7 @@ state_buffer_getSnapshotState(uint8_t **outState, size_t *outSize, uint64_t *out
     state_buffer_t *buf = &state_buffer.save;
     int levelIndex = 0;
     size_t idx = 0;
-    if (buf->current_frame_no && state_buffer_findFrameByFrameNo(buf, buf->current_frame_no, &levelIndex, &idx)) {
+    if (buf->currentFrameNo && state_buffer_findFrameByFrameNo(buf, buf->currentFrameNo, &levelIndex, &idx)) {
         // ok
     } else {
         // newest frame in the lowest non-empty tier
@@ -1467,7 +1468,7 @@ state_buffer_getSnapshotState(uint8_t **outState, size_t *outSize, uint64_t *out
     state_buffer_level_t *lvl = &buf->levels[levelIndex];
     uint8_t *state = NULL;
     size_t stateSize = 0;
-    if (!state_buffer_level_reconstructIndex(buf, lvl, idx, &state, &stateSize)) {
+    if (!state_buffer_levelReconstructIndex(buf, lvl, idx, &state, &stateSize)) {
         return 0;
     }
     uint8_t *copy = (uint8_t*)alloc_alloc(stateSize);
@@ -1484,7 +1485,7 @@ state_buffer_getSnapshotState(uint8_t **outState, size_t *outSize, uint64_t *out
         *outSize = stateSize;
     }
     if (outFrameNo) {
-        state_frame_t *frame = state_buffer_level_getFrameAt(lvl, idx);
+        state_frame_t *frame = state_buffer_levelGetFrameAt(lvl, idx);
         *outFrameNo = frame ? frame->frame_no : 0;
     }
     return 1;

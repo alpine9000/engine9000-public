@@ -77,6 +77,7 @@ Supported platforms:
 - `0xFC0004` - writing a long word to this address sets this as the base address of the .text section
 - `0xFC0008` - writing a long word to this address sets this as the base address of the .data section
 - `0xFC000C` - writing a long word to this address sets this as the base address of the .bss section
+- `0xFC0010` - writing a long word to this address sets a breakpoint at the written address
 - These overlay with ROM addresses - other emulators or real Amiga might crash if you use these
 
 Checkpoints are not yet implemented on Amiga.
@@ -168,9 +169,9 @@ Global debugger hotkeys
 | `s` | Step (source line) |
 | `n` | Next (step over) |
 | `i` | Step instruction |
-| `b` | Frame step back |
-| `f` | Frame step |
-| `g` | Frame continue |
+| `Ctrl+Alt+B` | Frame step back |
+| `Ctrl+Alt+F` | Frame step |
+| `Ctrl+Alt+G` | Frame continue |
 | `,` | Checkpoint profiler toggle |
 | `.` | Checkpoint profiler reset |
 | `/` | Checkpoint profiler dump to stdout |

@@ -19,6 +19,9 @@ e9ui_labeled_checkbox_make(const char *label, int labelWidth_px, int totalWidth_
                            int selected, e9ui_labeled_checkbox_cb_t cb, void *user);
 
 void
+e9ui_labeled_checkbox_setInfo(e9ui_component_t *comp, const char *info);
+
+void
 e9ui_labeled_checkbox_setLabelWidth(e9ui_component_t *comp, int labelWidth_px);
 
 void
@@ -32,5 +35,4 @@ e9ui_labeled_checkbox_isSelected(e9ui_component_t *comp);
 
 e9ui_component_t *
 e9ui_labeled_checkbox_getCheckbox(const e9ui_component_t *comp);
-
 

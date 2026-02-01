@@ -24,6 +24,7 @@
 #include "amiga_uae_options.h"
 #include "neogeo_core_options.h"
 #include "system_badge.h"
+#include "rom_config.h"
 
 void
 debugger_platform_setDefaults(e9k_neogeo_config_t *config);
@@ -83,6 +84,9 @@ typedef struct settings_romselect_state {
     e9ui_component_t *romSelect;
     e9ui_component_t *folderSelect;
     e9ui_component_t *coreSelect;
+    e9ui_component_t *elfSelect;
+    e9ui_component_t *sourceSelect;
+    e9ui_component_t *toolchainSelect;
     e9ui_component_t *df0Select;
     e9ui_component_t *df1Select;
     e9ui_component_t *hd0Select;
@@ -319,7 +323,7 @@ settings_configMissingPathsFor(const e9k_neogeo_config_t *cfg)
     if (cfg->romFolder[0] && !settings_pathExistsDir(cfg->romFolder)) {
         return 1;
     }
-    if (cfg->libretro.elfPath[0] && !settings_pathExistsFile(cfg->libretro.elfPath)) {
+    if (cfg->libretro.exePath[0] && !settings_pathExistsFile(cfg->libretro.exePath)) {
         return 1;
     }
     if (cfg->libretro.sourceDir[0] && !settings_pathExistsDir(cfg->libretro.sourceDir)) {
@@ -345,7 +349,7 @@ settings_configMissingPathsForAmiga(const e9k_amiga_config_t *cfg)
         !settings_pathExistsDir(cfg->libretro.saveDir)) {
         return 1;
     }
-    if (cfg->libretro.elfPath[0] && !settings_pathExistsFile(cfg->libretro.elfPath)) {
+    if (cfg->libretro.exePath[0] && !settings_pathExistsFile(cfg->libretro.exePath)) {
         return 1;
     }
     if (cfg->libretro.sourceDir[0] && !settings_pathExistsDir(cfg->libretro.sourceDir)) {
@@ -407,7 +411,7 @@ settings_restartNeededForNeogeo(const e9k_neogeo_config_t *before, const e9k_neo
     }
     int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0 ||
                      strcmp(before->romFolder, after->romFolder) != 0;
-    int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int elfChanged = strcmp(before->libretro.exePath, after->libretro.exePath) != 0;
     int toolchainChanged = strcmp(before->libretro.toolchainPrefix, after->libretro.toolchainPrefix) != 0;
     int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
     int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
@@ -427,7 +431,7 @@ settings_restartNeededForAmiga(const e9k_amiga_config_t *before, const e9k_amiga
         return 1;
     }
     int romChanged = strcmp(before->libretro.romPath, after->libretro.romPath) != 0;
-    int elfChanged = strcmp(before->libretro.elfPath, after->libretro.elfPath) != 0;
+    int elfChanged = strcmp(before->libretro.exePath, after->libretro.exePath) != 0;
     int toolchainChanged = strcmp(before->libretro.toolchainPrefix, after->libretro.toolchainPrefix) != 0;
     int biosChanged = strcmp(before->libretro.systemDir, after->libretro.systemDir) != 0;
     int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
@@ -717,6 +721,26 @@ settings_save(void)
         neogeo_coreOptionsClear();
     }
 
+    if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        const char *saveDir = debugger.settingsEdit.amiga.libretro.saveDir[0] ?
+            debugger.settingsEdit.amiga.libretro.saveDir : debugger.settingsEdit.amiga.libretro.systemDir;
+        const char *romPath = debugger.settingsEdit.amiga.libretro.romPath;
+        rom_config_saveSettingsForRom(saveDir, romPath,
+                                     debugger.settingsEdit.amiga.libretro.exePath,
+                                     debugger.settingsEdit.amiga.libretro.sourceDir,
+                                     debugger.settingsEdit.amiga.libretro.toolchainPrefix);
+    } else {
+        const char *saveDir = debugger.settingsEdit.neogeo.libretro.saveDir[0] ?
+            debugger.settingsEdit.neogeo.libretro.saveDir : debugger.settingsEdit.neogeo.libretro.systemDir;
+        char romPath[PATH_MAX];
+        if (settings_neogeoEffectiveRomPath(&debugger.settingsEdit.neogeo, romPath, sizeof(romPath))) {
+            rom_config_saveSettingsForRom(saveDir, romPath,
+                                         debugger.settingsEdit.neogeo.libretro.exePath,
+                                         debugger.settingsEdit.neogeo.libretro.sourceDir,
+                                         debugger.settingsEdit.neogeo.libretro.toolchainPrefix);
+        }
+    }
+
     settings_copyConfig(&debugger.config, &debugger.settingsEdit);
     debugger_setCoreSystem(debugger.config.coreSystem);
     crt_setEnabled(debugger.config.crtEnabled ? 1 : 0);
@@ -769,12 +793,12 @@ settings_uiDefaults(e9ui_context_t *ctx, void *user)
         char uaePath[PATH_MAX];
         char elfPath[PATH_MAX];
         settings_copyPath(uaePath, sizeof(uaePath), debugger.settingsEdit.amiga.libretro.romPath);
-        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.amiga.libretro.elfPath);
+        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.amiga.libretro.exePath);
         int audioEnabled = debugger.settingsEdit.amiga.libretro.audioEnabled;
         debugger_platform_setDefaultsAmiga(&debugger.settingsEdit.amiga);
         debugger.settingsEdit.amiga.libretro.audioEnabled = audioEnabled;
         settings_copyPath(debugger.settingsEdit.amiga.libretro.romPath, sizeof(debugger.settingsEdit.amiga.libretro.romPath), uaePath);
-        settings_copyPath(debugger.settingsEdit.amiga.libretro.elfPath, sizeof(debugger.settingsEdit.amiga.libretro.elfPath), elfPath);
+        settings_copyPath(debugger.settingsEdit.amiga.libretro.exePath, sizeof(debugger.settingsEdit.amiga.libretro.exePath), elfPath);
         amiga_uaeClearPuaeOptions();
         if (debugger.settingsEdit.amiga.libretro.romPath[0]) {
             amiga_uaeLoadUaeOptions(debugger.settingsEdit.amiga.libretro.romPath);
@@ -785,13 +809,13 @@ settings_uiDefaults(e9ui_context_t *ctx, void *user)
         char elfPath[PATH_MAX];
         settings_copyPath(romPath, sizeof(romPath), debugger.settingsEdit.neogeo.libretro.romPath);
         settings_copyPath(romFolder, sizeof(romFolder), debugger.settingsEdit.neogeo.romFolder);
-        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.neogeo.libretro.elfPath);
+        settings_copyPath(elfPath, sizeof(elfPath), debugger.settingsEdit.neogeo.libretro.exePath);
         int audioEnabled = debugger.settingsEdit.neogeo.libretro.audioEnabled;
         debugger_platform_setDefaults(&debugger.settingsEdit.neogeo);
         debugger.settingsEdit.neogeo.libretro.audioEnabled = audioEnabled;
         settings_copyPath(debugger.settingsEdit.neogeo.libretro.romPath, sizeof(debugger.settingsEdit.neogeo.libretro.romPath), romPath);
         settings_copyPath(debugger.settingsEdit.neogeo.romFolder, sizeof(debugger.settingsEdit.neogeo.romFolder), romFolder);
-        settings_copyPath(debugger.settingsEdit.neogeo.libretro.elfPath, sizeof(debugger.settingsEdit.neogeo.libretro.elfPath), elfPath);
+        settings_copyPath(debugger.settingsEdit.neogeo.libretro.exePath, sizeof(debugger.settingsEdit.neogeo.libretro.exePath), elfPath);
     }
     settings_clearCoreOptionsDirty();
     neogeo_coreOptionsClear();
@@ -827,6 +851,64 @@ settings_updateRomSelectAllowEmpty(settings_romselect_state_t *st)
     }
     if (st->folderSelect) {
         e9ui_fileSelect_setAllowEmpty(st->folderSelect, allowFolderEmpty);
+    }
+}
+
+static void
+settings_applyRomConfigForSelection(settings_romselect_state_t *st)
+{
+    if (!st) {
+        return;
+    }
+    const char *saveDir = NULL;
+    const char *romPath = NULL;
+    char romPathBuf[PATH_MAX];
+    if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        saveDir = debugger.settingsEdit.amiga.libretro.saveDir[0] ?
+            debugger.settingsEdit.amiga.libretro.saveDir : debugger.settingsEdit.amiga.libretro.systemDir;
+        romPath = debugger.settingsEdit.amiga.libretro.romPath;
+    } else {
+        saveDir = debugger.settingsEdit.neogeo.libretro.saveDir[0] ?
+            debugger.settingsEdit.neogeo.libretro.saveDir : debugger.settingsEdit.neogeo.libretro.systemDir;
+        if (settings_neogeoEffectiveRomPath(&debugger.settingsEdit.neogeo, romPathBuf, sizeof(romPathBuf))) {
+            romPath = romPathBuf;
+        }
+    }
+    if (!romPath || !*romPath || !saveDir || !*saveDir) {
+        return;
+    }
+    char elfPath[PATH_MAX];
+    char sourceDir[PATH_MAX];
+    char toolchainPrefix[PATH_MAX];
+    int hasElf = 0;
+    int hasSource = 0;
+    int hasToolchain = 0;
+    if (!rom_config_loadSettingsForRom(saveDir, romPath,
+                                       elfPath, sizeof(elfPath),
+                                       sourceDir, sizeof(sourceDir),
+                                       toolchainPrefix, sizeof(toolchainPrefix),
+                                       &hasElf, &hasSource, &hasToolchain)) {
+        return;
+    }
+
+    if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
+        settings_config_setPath(debugger.settingsEdit.amiga.libretro.exePath, PATH_MAX, hasElf ? elfPath : "");
+        settings_config_setPath(debugger.settingsEdit.amiga.libretro.sourceDir, PATH_MAX, hasSource ? sourceDir : "");
+        settings_config_setValue(debugger.settingsEdit.amiga.libretro.toolchainPrefix, PATH_MAX, hasToolchain ? toolchainPrefix : "");
+    } else {
+        settings_config_setPath(debugger.settingsEdit.neogeo.libretro.exePath, PATH_MAX, hasElf ? elfPath : "");
+        settings_config_setPath(debugger.settingsEdit.neogeo.libretro.sourceDir, PATH_MAX, hasSource ? sourceDir : "");
+        settings_config_setValue(debugger.settingsEdit.neogeo.libretro.toolchainPrefix, PATH_MAX, hasToolchain ? toolchainPrefix : "");
+    }
+
+    if (st->elfSelect) {
+        e9ui_fileSelect_setText(st->elfSelect, hasElf ? elfPath : "");
+    }
+    if (st->sourceSelect) {
+        e9ui_fileSelect_setText(st->sourceSelect, hasSource ? sourceDir : "");
+    }
+    if (st->toolchainSelect) {
+        e9ui_labeled_textbox_setText(st->toolchainSelect, hasToolchain ? toolchainPrefix : "");
     }
 }
 
@@ -892,6 +974,7 @@ settings_romPathChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const char 
         st->suppress = 0;
     }
     settings_updateRomSelectAllowEmpty(st);
+    settings_applyRomConfigForSelection(st);
     settings_updateSaveLabel();
 
     if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_AMIGA) {
@@ -938,6 +1021,7 @@ settings_romFolderChanged(e9ui_context_t *ctx, e9ui_component_t *comp, const cha
         st->suppress = 0;
     }
     settings_updateRomSelectAllowEmpty(st);
+    settings_applyRomConfigForSelection(st);
     settings_updateSaveLabel();
     if (debugger.settingsEdit.coreSystem == DEBUGGER_SYSTEM_NEOGEO) {
         char romPath[PATH_MAX];
@@ -1220,7 +1304,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
         e9ui_fileSelect_setAllowEmpty(fsDf0, 1);
         e9ui_fileSelect_setAllowEmpty(fsDf1, 1);
         e9ui_fileSelect_setAllowEmpty(fsHd0, 1);
-        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsElf = e9ui_fileSelect_make("EXE", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FILE);
         ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, NULL, NULL);
         fsBios = e9ui_fileSelect_make("KICKSTART FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -1230,7 +1314,7 @@ settings_measureContentHeight(e9ui_context_t *ctx, int isAmiga)
     } else {
         fsRom = e9ui_fileSelect_make("ROM", 120, 600, "...", romExtsNeogeo, 1, E9UI_FILESELECT_FILE);
         fsRomFolder = e9ui_fileSelect_make("ROM FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
-        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsElf = e9ui_fileSelect_make("HUNK", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
         ltToolchain = e9ui_labeled_textbox_make("TOOLCHAIN PREFIX", 120, 600, NULL, NULL);
         fsBios = e9ui_fileSelect_make("BIOS FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
         fsSaves = e9ui_fileSelect_make("SAVES FOLDER", 120, 600, "...", NULL, 0, E9UI_FILESELECT_FOLDER);
@@ -1568,7 +1652,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
         e9ui_fileSelect_setAllowEmpty(fsDf0, 1);
         e9ui_fileSelect_setAllowEmpty(fsDf1, 1);
         e9ui_fileSelect_setAllowEmpty(fsHd0, 1);
-        fsElf = e9ui_fileSelect_make("ELF", 120, 600, "...", elfExts, 1, E9UI_FILESELECT_FILE);
+        fsElf = e9ui_fileSelect_make("EXE", 120, 600, "...", elfExts, 0, E9UI_FILESELECT_FILE);
         settings_toolchainprefix_state_t *tc = (settings_toolchainprefix_state_t *)alloc_calloc(1, sizeof(*tc));
         if (tc) {
             tc->prefix = debugger.settingsEdit.amiga.libretro.toolchainPrefix;
@@ -1596,7 +1680,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
             const char *hd0 = amiga_uaeGetHardDriveFolderPath();
             e9ui_fileSelect_setText(fsHd0, hd0 ? hd0 : "");
         }
-        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.elfPath);
+        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.amiga.libretro.exePath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
         if (ltToolchain) {
             e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.amiga.libretro.toolchainPrefix);
@@ -1635,7 +1719,7 @@ settings_buildModalBody(e9ui_context_t *ctx)
                                             &debugger.settingsEdit.neogeo.libretro.audioBufferMs);
         e9ui_fileSelect_setText(fsRom, debugger.settingsEdit.neogeo.libretro.romPath);
         e9ui_fileSelect_setText(fsRomFolder, debugger.settingsEdit.neogeo.romFolder);
-        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.neogeo.libretro.elfPath);
+        e9ui_fileSelect_setText(fsElf, debugger.settingsEdit.neogeo.libretro.exePath);
         e9ui_fileSelect_setAllowEmpty(fsElf, 1);
         if (ltToolchain) {
             e9ui_labeled_textbox_setText(ltToolchain, debugger.settingsEdit.neogeo.libretro.toolchainPrefix);
@@ -1781,6 +1865,9 @@ settings_buildModalBody(e9ui_context_t *ctx)
         romState->romSelect = fsRom;
         romState->folderSelect = fsRomFolder;
         romState->coreSelect = fsCore;
+        romState->elfSelect = fsElf;
+        romState->sourceSelect = fsSource;
+        romState->toolchainSelect = ltToolchain;
         romState->df0Select = fsDf0;
         romState->df1Select = fsDf1;
         romState->hd0Select = fsHd0;
@@ -1803,9 +1890,9 @@ settings_buildModalBody(e9ui_context_t *ctx)
     }
     if (fsElf) {
         if (isAmiga) {
-            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.amiga.libretro.elfPath);
+            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.amiga.libretro.exePath);
         } else {
-            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.elfPath);
+            e9ui_fileSelect_setOnChange(fsElf, settings_pathChanged, debugger.settingsEdit.neogeo.libretro.exePath);
         }
     }
     if (fsBios) {

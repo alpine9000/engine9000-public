@@ -885,7 +885,7 @@ analyse_resolveLocations(const unsigned int *pcs, size_t count)
     if (!pcs || count == 0) {
         return 0;
     }
-    const char *elfPath = debugger.libretro.elfPath;
+    const char *elfPath = debugger.libretro.exePath;
     analyse_resolved_entry *resolved = NULL;
     int didResolve = 0;
     if (elfPath && *elfPath) {
@@ -1173,7 +1173,7 @@ analyse_writeFinalJson(const char *jsonPath)
     if (!analyse_ensureCapacity()) {
         return 0;
     }
-    const char *elfPath = debugger.libretro.elfPath;
+    const char *elfPath = debugger.libretro.exePath;
     if (!elfPath || !*elfPath) {
         debug_error("profile: ELF path not configured");
         return 0;

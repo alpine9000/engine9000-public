@@ -441,7 +441,20 @@ e9ui_dispatchHotkey(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
     return 0;
   }
   SDL_Keycode key = kev->keysym.sym;
-  SDL_Keymod mods = (SDL_Keymod)(kev->keysym.mod & (KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI));
+  SDL_Keymod rawMods = kev->keysym.mod;
+  SDL_Keymod mods = 0;
+  if (rawMods & KMOD_CTRL) {
+    mods = (SDL_Keymod)(mods | KMOD_CTRL);
+  }
+  if (rawMods & KMOD_SHIFT) {
+    mods = (SDL_Keymod)(mods | KMOD_SHIFT);
+  }
+  if (rawMods & KMOD_ALT) {
+    mods = (SDL_Keymod)(mods | KMOD_ALT);
+  }
+  if (rawMods & KMOD_GUI) {
+    mods = (SDL_Keymod)(mods | KMOD_GUI);
+  }
   // If a text-input capable component is focused, prevent bare printable keys from triggering hotkeys
   if (ctx && (e9ui_getFocus(ctx))) {
     SDL_Keymod noShiftMods = (SDL_Keymod)(mods & (KMOD_CTRL|KMOD_ALT|KMOD_GUI));
@@ -1269,6 +1282,8 @@ e9ui_renderFrame(void)
   }
   e9ui_text_select_endFrame(&e9ui->ctx);
 
+  e9ui_textbox_selectOverlayRender(&e9ui->ctx);
+
   e9ui_renderTransientMessage(&e9ui->ctx, w, h);
   e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
@@ -1306,6 +1321,8 @@ e9ui_renderFrameNoLayout(void)
     root->render(root, &e9ui->ctx);
   }
   e9ui_text_select_endFrame(&e9ui->ctx);
+
+  e9ui_textbox_selectOverlayRender(&e9ui->ctx);
 
   e9ui_renderTransientMessage(&e9ui->ctx, w, h);
   e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
@@ -1348,6 +1365,8 @@ e9ui_renderFrameNoLayoutNoPresent(void)
   }
   e9ui_text_select_endFrame(&e9ui->ctx);
 
+  e9ui_textbox_selectOverlayRender(&e9ui->ctx);
+
   e9ui_renderTransientMessage(&e9ui->ctx, w, h);
   e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
 
@@ -1383,6 +1402,8 @@ e9ui_renderFrameNoLayoutNoPresentNoClear(void)
     root->render(root, &e9ui->ctx);
   }
   e9ui_text_select_endFrame(&e9ui->ctx);
+
+  e9ui_textbox_selectOverlayRender(&e9ui->ctx);
 
   e9ui_renderTransientMessage(&e9ui->ctx, w, h);
   e9ui_renderFpsOverlay(&e9ui->ctx, w, h);
@@ -1610,6 +1631,9 @@ e9ui_processEvents(void)
             e9ui->ctx.mouseY = scaledY;
             e9ui->mouseX = scaledX;
             e9ui->mouseY = scaledY;
+            if (e9ui_textbox_selectOverlayHandleEvent(&e9ui->ctx, &ev)) {
+                continue;
+            }
             e9ui_text_select_handleEvent(&e9ui->ctx, &ev);
         }
         else if (ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP) {
@@ -1624,6 +1648,9 @@ e9ui_processEvents(void)
             e9ui->ctx.mouseY = scaledY;
             e9ui->mouseX = scaledX;
             e9ui->mouseY = scaledY;
+            if (e9ui_textbox_selectOverlayHandleEvent(&e9ui->ctx, &ev)) {
+                continue;
+            }
             e9ui_text_select_handleEvent(&e9ui->ctx, &ev);
         }
         else if (ev.type == SDL_MOUSEWHEEL) {
@@ -1642,6 +1669,9 @@ e9ui_processEvents(void)
             e9ui->ctx.mouseY = scaledY;
             e9ui->mouseX = scaledX;
             e9ui->mouseY = scaledY;
+            if (e9ui_textbox_selectOverlayHandleEvent(&e9ui->ctx, &ev)) {
+                continue;
+            }
         }
         else if (ev.type == SDL_WINDOWEVENT) {
             sprite_debug_handleWindowEvent(&ev);
@@ -1682,6 +1712,9 @@ e9ui_processEvents(void)
             continue;
         }
         else if (ev.type == SDL_KEYDOWN) {
+            if (e9ui_textbox_selectOverlayHandleEvent(&e9ui->ctx, &ev)) {
+                continue;
+            }
             if (ev.key.keysym.sym == SDLK_ESCAPE) {
                 if (sprite_debug_is_window_id(ev.key.windowID)) {
                     if (sprite_debug_is_open()) {
@@ -1790,6 +1823,9 @@ e9ui_processEvents(void)
             }
             continue;
         } else if (ev.type == SDL_TEXTINPUT) {
+            if (e9ui_textbox_selectOverlayHandleEvent(&e9ui->ctx, &ev)) {
+                continue;
+            }
             // Text input goes only to focused component
             if (e9ui_getFocus(&e9ui->ctx) && e9ui_getFocus(&e9ui->ctx)->handleEvent) {
                 int consumed = e9ui_getFocus(&e9ui->ctx)->handleEvent(e9ui_getFocus(&e9ui->ctx), &e9ui->ctx, &ev);

@@ -49,7 +49,7 @@ breakpoints_resolveLocation(machine_breakpoint_t *bp)
     if (!bp || (bp->file[0] && bp->line > 0)) {
         return;
     }
-    const char *elf = debugger.libretro.elfPath;
+    const char *elf = debugger.libretro.exePath;
     if (!elf || !*elf || !debugger.elfValid) {
         return;
     }
@@ -96,7 +96,14 @@ breakpoints_formatLocation(const machine_breakpoint_t *bp, char *dst, size_t cap
 
     const char *file = breakpoints_stripCliSrcPrefix(bp->file);
     if (file && file[0] && bp->line > 0) {
-        snprintf(dst, cap, "%s:%d", file, bp->line);
+        const char *addrText = bp->addr_text[0] ? bp->addr_text : NULL;
+        if (addrText) {
+            snprintf(dst, cap, "%s:%d (%s)", file, bp->line, addrText);
+        } else if (bp->addr != 0) {
+            snprintf(dst, cap, "%s:%d (0x%llX)", file, bp->line, (unsigned long long)bp->addr);
+        } else {
+            snprintf(dst, cap, "%s:%d", file, bp->line);
+        }
         return;
     }
     if (bp->func[0]) {

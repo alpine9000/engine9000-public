@@ -689,6 +689,19 @@ print_debuginfo_objdump_stabs_buildType(print_index_t *index,
             }
             return type;
         }
+        if (def[0] == 'B' || def[0] == 'k' || def[0] == 'K') {
+            const char *p = def + 1;
+            uint32_t tid = 0;
+            const char *end = NULL;
+            if (print_debuginfo_objdump_stabs_parseTypeId(p, &end, &tid)) {
+                type->kind = (def[0] == 'B') ? print_type_volatile : print_type_const;
+                type->targetType = print_debuginfo_objdump_stabs_buildType(index, defs, cap, tid, depth + 1);
+                if (type->targetType && type->byteSize == 0) {
+                    type->byteSize = type->targetType->byteSize;
+                }
+                return type;
+            }
+        }
         if (def[0] == 's' || def[0] == 'u') {
             type->kind = print_type_struct;
             size_t byteSize = 0;
@@ -856,6 +869,61 @@ print_debuginfo_objdump_stabs_parseStabStringName(const char *stabStr, char *out
     return 1;
 }
 
+static int
+print_debuginfo_objdump_stabs_symbolMatch(const char *a, const char *b)
+{
+    if (!a || !b) {
+        return 0;
+    }
+    if (strcmp(a, b) == 0) {
+        return 1;
+    }
+    if (a[0] == '_' && strcmp(a + 1, b) == 0) {
+        return 1;
+    }
+    if (b[0] == '_' && strcmp(a, b + 1) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static void
+print_debuginfo_objdump_stabs_maybeParseInlineTypeDef(const char *stabStr,
+                                                      print_debuginfo_objdump_stabs_type_def_t **typeDefs,
+                                                      size_t *typeCap)
+{
+    if (!stabStr || !*stabStr || !typeDefs || !typeCap) {
+        return;
+    }
+    const char *colon = strchr(stabStr, ':');
+    if (!colon || !colon[1] || !colon[2]) {
+        return;
+    }
+    if (!isalpha((unsigned char)colon[1])) {
+        return;
+    }
+    const char *p = colon + 2;
+    uint32_t typeId = 0;
+    const char *end = NULL;
+    if (!print_debuginfo_objdump_stabs_parseTypeId(p, &end, &typeId)) {
+        return;
+    }
+    if (!end || *end != '=' || !end[1]) {
+        return;
+    }
+
+    print_debuginfo_objdump_stabs_typeEnsure(typeDefs, typeCap, typeId);
+    if (typeId >= *typeCap) {
+        return;
+    }
+    if (!(*typeDefs)[typeId].def) {
+        (*typeDefs)[typeId].def = print_debuginfo_objdump_stabs_strdup(end + 1);
+        if ((*typeDefs)[typeId].def) {
+            print_debuginfo_objdump_stabs_splitNestedAliasDef(typeDefs, typeCap, typeId);
+        }
+    }
+}
+
 int
 print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *index)
 {
@@ -886,6 +954,7 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         char chosenSection[8];
         uint32_t addr;
         uint32_t typeId;
+        int needsSymLookup;
     } pending_var_t;
 
     pending_var_t *pending = NULL;
@@ -1025,9 +1094,12 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
             continue;
         }
 
-        if (strcmp(stabType, "STSYM") != 0 && strcmp(stabType, "LCSYM") != 0) {
+        if (strcmp(stabType, "STSYM") != 0 && strcmp(stabType, "LCSYM") != 0 && strcmp(stabType, "GSYM") != 0) {
             continue;
         }
+        // Some toolchains emit inline type definitions on variable stabs, e.g. "name:G479=B477".
+        print_debuginfo_objdump_stabs_maybeParseInlineTypeDef(stabStr, &typeDefs, &typeCap);
+
         const char *nValueStr = tokens[4];
         if (!nValueStr || !*nValueStr) {
             continue;
@@ -1049,7 +1121,11 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         uint32_t dataAddr = (dataBase != 0) ? (dataBase + nValue) : 0;
         uint32_t bssAddr = (bssBase != 0) ? (bssBase + nValue) : 0;
 
-        if (strcmp(stabType, "LCSYM") == 0) {
+        int needsSymLookup = 0;
+        if (strcmp(stabType, "GSYM") == 0) {
+            needsSymLookup = 1;
+            chosenSection = "sym";
+        } else if (strcmp(stabType, "LCSYM") == 0) {
             base = bssBase;
             chosenSection = "bss";
         } else {
@@ -1062,21 +1138,21 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
                 chosenSection = base == bssBase ? "bss" : "data";
             }
         }
-        if (base == dataBase && dataSize != 0 && nValue >= dataSize && bssBase != 0 && (bssSize == 0 || nValue < bssSize)) {
+        if (!needsSymLookup && base == dataBase && dataSize != 0 && nValue >= dataSize && bssBase != 0 && (bssSize == 0 || nValue < bssSize)) {
             base = bssBase;
             chosenSection = "bss";
-        } else if (base == bssBase && bssSize != 0 && nValue >= bssSize && dataBase != 0 && (dataSize == 0 || nValue < dataSize)) {
+        } else if (!needsSymLookup && base == bssBase && bssSize != 0 && nValue >= bssSize && dataBase != 0 && (dataSize == 0 || nValue < dataSize)) {
             base = dataBase;
             chosenSection = "data";
         }
-        if (base == 0) {
+        if (!needsSymLookup && base == 0) {
             if (print_debuginfo_objdump_stabs_debugEnabled() && print_debuginfo_objdump_stabs_debugWantsSymbol(name)) {
                 debug_printf("print: stabs sym '%s' type=%s n_value=0x%X base=<unset> data=0x%08X bss=0x%08X\n",
                              name, stabType, (unsigned)nValue, (unsigned)dataAddr, (unsigned)bssAddr);
             }
             continue;
         }
-        uint32_t addr = (base + nValue) & 0x00ffffffu;
+        uint32_t addr = needsSymLookup ? 0 : ((base + nValue) & 0x00ffffffu);
 
         if (pendingCount >= pendingCap) {
             size_t next = pendingCap ? pendingCap * 2 : 64;
@@ -1096,9 +1172,12 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         strncpy(pv->chosenSection, chosenSection, sizeof(pv->chosenSection) - 1);
         pv->addr = addr;
         pv->typeId = typeId;
+        pv->needsSymLookup = needsSymLookup;
 
         // Keep symbol table populated for now; variables are added after size resolution.
-        (void)print_debuginfo_objdump_stabs_addSymbol(index, name, addr);
+        if (!pv->needsSymLookup) {
+            (void)print_debuginfo_objdump_stabs_addSymbol(index, name, addr);
+        }
         added = 1;
     }
     pclose(fp);
@@ -1117,9 +1196,119 @@ print_debuginfo_objdump_stabs_loadSymbols(const char *elfPath, print_index_t *in
         pendingTypeContinue = 0;
     }
 
+    // Resolve GSYM addresses from the main symbol table (objdump --syms).
+    {
+        int wantSyms = 0;
+        for (size_t i = 0; i < pendingCount; ++i) {
+            if (pending[i].needsSymLookup && pending[i].name) {
+                wantSyms = 1;
+                break;
+            }
+        }
+        if (wantSyms) {
+            char symsCmd[PATH_MAX * 2];
+            snprintf(symsCmd, sizeof(symsCmd), "%s --syms '%s'", objdump, elfPath);
+            FILE *sf = popen(symsCmd, "r");
+            if (sf) {
+                char sline[1024];
+                while (fgets(sline, sizeof(sline), sf)) {
+                    char *tokens[8];
+                    int count = 0;
+                    char *cursor = sline;
+                    while (*cursor && isspace((unsigned char)*cursor)) {
+                        ++cursor;
+                    }
+                    if (!*cursor) {
+                        continue;
+                    }
+                    while (count < (int)(sizeof(tokens) / sizeof(tokens[0]))) {
+                        while (*cursor && isspace((unsigned char)*cursor)) {
+                            ++cursor;
+                        }
+                        if (!*cursor) {
+                            break;
+                        }
+                        tokens[count++] = cursor;
+                        while (*cursor && !isspace((unsigned char)*cursor)) {
+                            ++cursor;
+                        }
+                        if (*cursor) {
+                            *cursor++ = '\0';
+                        }
+                    }
+                    if (count < 2) {
+                        continue;
+                    }
+                    uint32_t symVal = 0;
+                    if (!tokens[0] || !isxdigit((unsigned char)tokens[0][0])) {
+                        continue;
+                    }
+                    errno = 0;
+                    char *endptr = NULL;
+                    symVal = (uint32_t)strtoul(tokens[0], &endptr, 16);
+                    if (errno != 0 || !endptr || endptr == tokens[0]) {
+                        continue;
+                    }
+                    const char *symName = tokens[count - 1];
+                    if (!symName) {
+                        continue;
+                    }
+                    const char *section = NULL;
+                    for (int ti = 1; ti < count - 1; ++ti) {
+                        if (tokens[ti] && tokens[ti][0] == '.') {
+                            section = tokens[ti];
+                            break;
+                        }
+                    }
+                    if (!section) {
+                        continue;
+                    }
+                    for (size_t i = 0; i < pendingCount; ++i) {
+                        pending_var_t *pv = &pending[i];
+                        if (!pv->needsSymLookup || !pv->name) {
+                            continue;
+                        }
+                        if (!print_debuginfo_objdump_stabs_symbolMatch(symName, pv->name)) {
+                            continue;
+                        }
+                        uint32_t base = 0;
+                        const char *chosen = "unknown";
+                        if (strcmp(section, ".text") == 0 || strncmp(section, ".text.", 6) == 0) {
+                            base = debugger.machine.textBaseAddr;
+                            chosen = "text";
+                        } else if (strcmp(section, ".data") == 0 || strncmp(section, ".data.", 6) == 0) {
+                            base = dataBase;
+                            chosen = "data";
+                        } else if (strcmp(section, ".bss") == 0 || strncmp(section, ".bss.", 5) == 0) {
+                            base = bssBase;
+                            chosen = "bss";
+                        } else if (strcmp(section, ".rodata") == 0 || strncmp(section, ".rodata.", 8) == 0) {
+                            base = dataBase ? dataBase : debugger.machine.textBaseAddr;
+                            chosen = dataBase ? "data" : "text";
+                        }
+                        if (base == 0) {
+                            continue;
+                        }
+                        pv->base = base;
+                        strncpy(pv->chosenSection, chosen, sizeof(pv->chosenSection) - 1);
+                        pv->addr = (base + symVal) & 0x00ffffffu;
+                        pv->needsSymLookup = 0;
+                        (void)print_debuginfo_objdump_stabs_addSymbol(index, pv->name, pv->addr);
+                    }
+                }
+                pclose(sf);
+            }
+        }
+    }
+
     for (size_t i = 0; i < pendingCount; ++i) {
         pending_var_t *pv = &pending[i];
         if (!pv->name) {
+            continue;
+        }
+        if (pv->needsSymLookup || pv->addr == 0) {
+            alloc_free(pv->name);
+            pv->name = NULL;
             continue;
         }
         uint32_t bits = 0;

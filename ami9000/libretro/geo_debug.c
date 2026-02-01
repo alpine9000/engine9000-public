@@ -91,6 +91,7 @@ static int geo_debug_prof_savedCachesize = -1;
 #endif
 
 static void (*geo_debug_setDebugBaseCb)(uint32_t section, uint32_t base) = NULL;
+static void (*geo_debug_setDebugBreakpointCb)(uint32_t addr) = NULL;
 
 static char geo_debug_textBuf[GEO_DEBUG_TEXT_CAP];
 static size_t geo_debug_textHead = 0;
@@ -624,6 +625,23 @@ GEO_DEBUG_EXPORT void
 geo_set_debug_base_callback(void (*cb)(uint32_t section, uint32_t base))
 {
 	geo_debug_setDebugBaseCb = cb;
+}
+
+GEO_DEBUG_EXPORT void
+geo_set_debug_breakpoint_callback(void (*cb)(uint32_t addr))
+{
+	geo_debug_setDebugBreakpointCb = cb;
+}
+
+void
+geo_debug_add_breakpoint_fromPeripheral(uint32_t addr)
+{
+	uint32_t addr24 = geo_debug_maskAddr((uaecptr)addr);
+	int had = geo_debug_hasBreakpoint(addr24);
+	geo_debug_add_breakpoint(addr24);
+	if (!had && geo_debug_setDebugBreakpointCb) {
+		geo_debug_setDebugBreakpointCb(addr24);
+	}
 }
 
 GEO_DEBUG_EXPORT void

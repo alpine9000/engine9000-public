@@ -35,6 +35,7 @@
 #include "registers.h"
 #include "settings.h"
 #include "snapshot.h"
+#include "rom_config.h"
 #include "source_pane.h"
 #include "stack.h"
 #include "status_bar.h"
@@ -342,6 +343,7 @@ ui_saveState(e9ui_context_t *ctx, void *user)
             }
         }
         // Persist immediately, not just on exit (matches user expectation for the Save button).
+        rom_config_saveOnExit();
         snapshot_saveOnExit();
         e9ui_showTransientMessage("STATE SAVED");
     } else {
@@ -558,19 +560,25 @@ ui_build(void)
 
     e9ui_component_t *btn_frame_stepBack = e9ui_button_make("Back", ui_frameStepBack, NULL);
     e9ui_button_setIconAsset(btn_frame_stepBack, "assets/icons/back.png");
-    e9ui_setTooltip(btn_frame_stepBack, "Frame step back - b");
-    e9ui_button_registerHotkey(btn_frame_stepBack, &e9ui->ctx, SDLK_b, 0, 0);
+    e9ui_setTooltip(btn_frame_stepBack, "Frame step back - Ctrl+Alt+B");
+    e9ui_button_registerHotkey(btn_frame_stepBack, &e9ui->ctx, SDLK_b,
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI),
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_ALT));
     e9ui_header_flow_add(toolbar, btn_frame_stepBack);
 
     e9ui_component_t *btn_frame_step = e9ui_button_make("Frame", ui_frameStep, NULL);
     e9ui_button_setIconAsset(btn_frame_step, "assets/icons/step.png");
-    e9ui_setTooltip(btn_frame_step, "Frame step - f");
-    e9ui_button_registerHotkey(btn_frame_step, &e9ui->ctx, SDLK_f, 0, 0);
+    e9ui_setTooltip(btn_frame_step, "Frame step - Ctrl+Alt+F");
+    e9ui_button_registerHotkey(btn_frame_step, &e9ui->ctx, SDLK_f,
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI),
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_ALT));
     e9ui_header_flow_add(toolbar, btn_frame_step);
 
     e9ui_component_t *btn_frame_continue = e9ui_button_make("Continue", ui_frameContinue, NULL);
-    e9ui_setTooltip(btn_frame_continue, "Frame continue - g");
-    e9ui_button_registerHotkey(btn_frame_continue, &e9ui->ctx, SDLK_g, 0, 0);
+    e9ui_setTooltip(btn_frame_continue, "Frame continue - Ctrl+Alt+G");
+    e9ui_button_registerHotkey(btn_frame_continue, &e9ui->ctx, SDLK_g,
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_SHIFT|KMOD_ALT|KMOD_GUI),
+                               (SDL_Keymod)(KMOD_CTRL|KMOD_ALT));
     e9ui_setDisableVariable(btn_frame_continue, &debugger.frameStepMode, 0);
     e9ui_header_flow_add(toolbar, btn_frame_continue);
 

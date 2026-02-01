@@ -137,7 +137,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError("elf: missing file path");
                 return;
             }
-            cli_copyPath(debugger.cliConfig.neogeo.libretro.elfPath, sizeof(debugger.cliConfig.neogeo.libretro.elfPath), argv[++i]);
+            cli_copyPath(debugger.cliConfig.neogeo.libretro.exePath, sizeof(debugger.cliConfig.neogeo.libretro.exePath), argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--hunk") == 0) {
@@ -149,7 +149,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError("hunk: missing file path");
                 return;
             }
-            cli_copyPath(debugger.cliConfig.amiga.libretro.elfPath, sizeof(debugger.cliConfig.amiga.libretro.elfPath), argv[++i]);
+            cli_copyPath(debugger.cliConfig.amiga.libretro.exePath, sizeof(debugger.cliConfig.amiga.libretro.exePath), argv[++i]);
             continue;
         }
         if (strncmp(argv[i], "--hunk=", sizeof("--hunk=") - 1) == 0) {
@@ -161,7 +161,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError("hunk: missing file path");
                 return;
             }
-            cli_copyPath(debugger.cliConfig.amiga.libretro.elfPath, sizeof(debugger.cliConfig.amiga.libretro.elfPath), argv[i] + sizeof("--hunk=") - 1);
+            cli_copyPath(debugger.cliConfig.amiga.libretro.exePath, sizeof(debugger.cliConfig.amiga.libretro.exePath), argv[i] + sizeof("--hunk=") - 1);
             continue;
         }
         if (strcmp(argv[i], "--core") == 0 && i + 1 < argc) {
@@ -463,8 +463,8 @@ cli_applyOverrides(void)
     if (debugger.cliConfig.amiga.libretro.romPath[0]) {
         cli_copyPath(debugger.config.amiga.libretro.romPath, sizeof(debugger.config.amiga.libretro.romPath), debugger.cliConfig.amiga.libretro.romPath);
     }
-    if (debugger.cliConfig.amiga.libretro.elfPath[0]) {
-        cli_copyPath(debugger.config.amiga.libretro.elfPath, sizeof(debugger.config.amiga.libretro.elfPath), debugger.cliConfig.amiga.libretro.elfPath);
+    if (debugger.cliConfig.amiga.libretro.exePath[0]) {
+        cli_copyPath(debugger.config.amiga.libretro.exePath, sizeof(debugger.config.amiga.libretro.exePath), debugger.cliConfig.amiga.libretro.exePath);
     }
     if (debugger.cliConfig.amiga.libretro.systemDir[0]) {
         cli_copyPath(debugger.config.amiga.libretro.systemDir, sizeof(debugger.config.amiga.libretro.systemDir), debugger.cliConfig.amiga.libretro.systemDir);
@@ -486,8 +486,8 @@ cli_applyOverrides(void)
         cli_copyPath(debugger.config.neogeo.romFolder, sizeof(debugger.config.neogeo.romFolder), debugger.cliConfig.neogeo.romFolder);
         debugger.config.neogeo.libretro.romPath[0] = '\0';
     }
-    if (debugger.cliConfig.neogeo.libretro.elfPath[0]) {
-        cli_copyPath(debugger.config.neogeo.libretro.elfPath, sizeof(debugger.config.neogeo.libretro.elfPath), debugger.cliConfig.neogeo.libretro.elfPath);
+    if (debugger.cliConfig.neogeo.libretro.exePath[0]) {
+        cli_copyPath(debugger.config.neogeo.libretro.exePath, sizeof(debugger.config.neogeo.libretro.exePath), debugger.cliConfig.neogeo.libretro.exePath);
     }
     if (debugger.cliConfig.neogeo.libretro.systemDir[0]) {
         cli_copyPath(debugger.config.neogeo.libretro.systemDir, sizeof(debugger.config.neogeo.libretro.systemDir), debugger.cliConfig.neogeo.libretro.systemDir);

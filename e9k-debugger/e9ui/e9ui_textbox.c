@@ -40,6 +40,14 @@ typedef struct textbox_state {
     void               *key_user;
     void               *user;
     int                frame_visible;
+    e9ui_textbox_option_t *select_options;
+    int                select_optionCount;
+    int                select_optionCap;
+    int                select_selectedIndex;
+    e9ui_textbox_option_change_cb_t select_change;
+    void               *select_changeUser;
+    int                textColorOverride;
+    SDL_Color          textColor;
     e9ui_textbox_completion_mode_t completionMode;
     char               **completionList;
     int                completionCount;
@@ -60,6 +68,89 @@ typedef struct textbox_snapshot {
 
 static void
 textbox_recordUndo(textbox_state_t *st);
+
+static void
+textbox_clearSelection(textbox_state_t *st);
+
+static void
+textbox_completionClear(textbox_state_t *st);
+
+static void
+textbox_history_clear(list_t **list);
+
+static void
+textbox_selectOverlay_toggle(e9ui_context_t *ctx, e9ui_component_t *owner);
+
+static const char *
+textbox_select_displayLabel(const e9ui_textbox_option_t *opt)
+{
+    if (!opt) {
+        return "";
+    }
+    if (opt->label && *opt->label) {
+        return opt->label;
+    }
+    return opt->value ? opt->value : "";
+}
+
+static int
+textbox_select_findIndex(const textbox_state_t *st, const char *value)
+{
+    if (!st || !st->select_options || st->select_optionCount <= 0 || !value) {
+        return -1;
+    }
+    for (int i = 0; i < st->select_optionCount; ++i) {
+        const char *v = st->select_options[i].value;
+        if (v && strcmp(v, value) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static const char *
+textbox_select_selectedValue(const textbox_state_t *st)
+{
+    if (!st || !st->select_options || st->select_selectedIndex < 0 ||
+        st->select_selectedIndex >= st->select_optionCount) {
+        return NULL;
+    }
+    return st->select_options[st->select_selectedIndex].value;
+}
+
+static void
+textbox_select_notify(textbox_state_t *st, e9ui_context_t *ctx, e9ui_component_t *self)
+{
+    if (!st || !st->select_change || !self) {
+        return;
+    }
+    const char *value = textbox_select_selectedValue(st);
+    st->select_change(ctx, self, value ? value : "", st->select_changeUser);
+}
+
+static void
+textbox_select_applyDisplay(textbox_state_t *st, const char *display)
+{
+    if (!st) {
+        return;
+    }
+    if (!display) {
+        display = "";
+    }
+    int len = (int)strlen(display);
+    if (len > st->maxLen) {
+        len = st->maxLen;
+    }
+    memcpy(st->text, display, (size_t)len);
+    st->text[len] = '\0';
+    st->len = len;
+    st->cursor = len;
+    textbox_clearSelection(st);
+    st->scrollX = 0;
+    textbox_completionClear(st);
+    textbox_history_clear(&st->undo);
+    textbox_history_clear(&st->redo);
+}
 
 static void
 textbox_fillScratch(textbox_state_t *st, int count)
@@ -973,8 +1064,11 @@ textbox_renderComp(e9ui_component_t *self, e9ui_context_t *ctx)
     }
     const char *display = (st->len > 0) ? st->text : (st->placeholder ? st->placeholder : "");
     SDL_Color textCol = st->len > 0 ? (SDL_Color){230,230,230,255} : (SDL_Color){150,150,170,255};
-    if (!st->editable) {
+    if (self->disabled) {
         textCol = (SDL_Color){110,110,130,255};
+    }
+    if (st->len > 0 && st->textColorOverride && !self->disabled) {
+        textCol = st->textColor;
     }
     if (st->len > 0) {
         textbox_updateScroll(st, font, viewW);
@@ -1095,7 +1189,10 @@ textbox_onMouseDown(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_mous
         return;
     }
     textbox_state_t *st = (textbox_state_t*)self->state;
-    if (!st || !st->editable) {
+    if (!st) {
+        return;
+    }
+    if (!st->editable) {
         return;
     }
     if (ev->button != E9UI_MOUSE_BUTTON_LEFT) {
@@ -1155,6 +1252,25 @@ textbox_onMouseUp(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_mouse_
         return;
     }
     st->selecting = 0;
+}
+
+static void
+textbox_onClick(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_mouse_event_t *ev)
+{
+    if (!self || !ctx || !ev) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)self->state;
+    if (!st || st->editable) {
+        return;
+    }
+    if (ev->button != E9UI_MOUSE_BUTTON_LEFT) {
+        return;
+    }
+    if (st->select_optionCount <= 0) {
+        return;
+    }
+    textbox_selectOverlay_toggle(ctx, self);
 }
 
 static int
@@ -1464,12 +1580,14 @@ textbox_dtor(e9ui_component_t *self, e9ui_context_t *ctx)
   }
   textbox_state_t *st = (textbox_state_t*)self->state;
   if (st) {
+    e9ui_textbox_selectOverlayCloseForOwner(self);
     textbox_completionClear(st);
     textbox_history_clear(&st->undo);
     textbox_history_clear(&st->redo);
     alloc_free(st->text);
     alloc_free(st->placeholder);
     alloc_free(st->scratch);
+    alloc_free(st->select_options);
     alloc_free(st->completionPrefix);
     alloc_free(st->completionRest);
   }
@@ -1506,6 +1624,14 @@ e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_ch
     st->change = onChange;
     st->user = user;
     st->frame_visible = 1;
+    st->select_options = NULL;
+    st->select_optionCount = 0;
+    st->select_optionCap = 0;
+    st->select_selectedIndex = -1;
+    st->select_change = NULL;
+    st->select_changeUser = NULL;
+    st->textColorOverride = 0;
+    st->textColor = (SDL_Color){0,0,0,0};
     st->completionMode = e9ui_textbox_completion_none;
     st->completionList = NULL;
     st->completionCount = 0;
@@ -1529,6 +1655,7 @@ e9ui_textbox_make(int maxLen, e9ui_textbox_submit_cb_t onSubmit, e9ui_textbox_ch
     comp->render = textbox_renderComp;
     comp->handleEvent = textbox_handleEventComp;
     comp->dtor = textbox_dtor;
+    comp->onClick = textbox_onClick;
     comp->onMouseDown = textbox_onMouseDown;
     comp->onMouseMove = textbox_onMouseMove;
     comp->onMouseUp = textbox_onMouseUp;
@@ -1713,4 +1840,551 @@ e9ui_textbox_getCompletionMode(const e9ui_component_t *comp)
     }
     const textbox_state_t *st = (const textbox_state_t*)comp->state;
     return st->completionMode;
+}
+
+void
+e9ui_textbox_setReadOnly(e9ui_component_t *comp, int readonly)
+{
+    e9ui_textbox_setEditable(comp, readonly ? 0 : 1);
+}
+
+int
+e9ui_textbox_isReadOnly(const e9ui_component_t *comp)
+{
+    return e9ui_textbox_isEditable(comp) ? 0 : 1;
+}
+
+void
+e9ui_textbox_setOptions(e9ui_component_t *comp, const e9ui_textbox_option_t *options, int optionCount)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)comp->state;
+
+    const char *prevValue = textbox_select_selectedValue(st);
+    alloc_free(st->select_options);
+    st->select_options = NULL;
+    st->select_optionCount = 0;
+    st->select_optionCap = 0;
+    st->select_selectedIndex = -1;
+
+    if (!options || optionCount <= 0) {
+        e9ui_textbox_selectOverlayCloseForOwner(comp);
+        return;
+    }
+
+    st->select_options = (e9ui_textbox_option_t*)alloc_calloc((size_t)optionCount, sizeof(*st->select_options));
+    if (!st->select_options) {
+        return;
+    }
+    memcpy(st->select_options, options, (size_t)optionCount * sizeof(*st->select_options));
+    st->select_optionCount = optionCount;
+    st->select_optionCap = optionCount;
+
+    if (prevValue && *prevValue) {
+        int idx = textbox_select_findIndex(st, prevValue);
+        if (idx >= 0) {
+            st->select_selectedIndex = idx;
+            textbox_select_applyDisplay(st, textbox_select_displayLabel(&st->select_options[idx]));
+        }
+    }
+}
+
+void
+e9ui_textbox_setSelectedValue(e9ui_component_t *comp, const char *value)
+{
+    if (!comp || !comp->state || !value) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)comp->state;
+    int idx = textbox_select_findIndex(st, value);
+    if (idx < 0) {
+        return;
+    }
+    st->select_selectedIndex = idx;
+    textbox_select_applyDisplay(st, textbox_select_displayLabel(&st->select_options[idx]));
+}
+
+const char *
+e9ui_textbox_getSelectedValue(const e9ui_component_t *comp)
+{
+    if (!comp || !comp->state) {
+        return NULL;
+    }
+    const textbox_state_t *st = (const textbox_state_t*)comp->state;
+    const char *value = textbox_select_selectedValue(st);
+    return value ? value : (st->text ? st->text : NULL);
+}
+
+void
+e9ui_textbox_setOnOptionSelected(e9ui_component_t *comp, e9ui_textbox_option_change_cb_t cb, void *user)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)comp->state;
+    st->select_change = cb;
+    st->select_changeUser = user;
+}
+
+void
+e9ui_textbox_setTextColor(e9ui_component_t *comp, int enabled, SDL_Color color)
+{
+    if (!comp || !comp->state) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)comp->state;
+    st->textColorOverride = enabled ? 1 : 0;
+    st->textColor = color;
+}
+
+typedef struct textbox_select_overlay_state {
+    int open;
+    e9ui_component_t *owner;
+    int hoverIndex;
+    int scrollIndex;
+    int pressActive;
+    int pressIndex;
+    int justOpened;
+} textbox_select_overlay_state_t;
+
+static textbox_select_overlay_state_t textbox_select_overlay = {0};
+
+static int
+textbox_selectOverlay_pointInRect(const SDL_Rect *r, int x, int y)
+{
+    if (!r) {
+        return 0;
+    }
+    return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
+}
+
+static int
+textbox_selectOverlay_computeLayout(e9ui_context_t *ctx, SDL_Rect *outRect, int *outItemH, int *outVisibleCount)
+{
+    if (!ctx || !outRect || !outItemH || !outVisibleCount) {
+        return 0;
+    }
+    if (!textbox_select_overlay.open || !textbox_select_overlay.owner) {
+        return 0;
+    }
+    e9ui_component_t *owner = textbox_select_overlay.owner;
+    textbox_state_t *st = (textbox_state_t*)owner->state;
+    if (!st || !st->select_options || st->select_optionCount <= 0) {
+        return 0;
+    }
+
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
+    int lh = font ? TTF_FontHeight(font) : 16;
+    if (lh <= 0) {
+        lh = 16;
+    }
+    int itemH = lh + 12;
+    if (itemH < 1) {
+        itemH = 1;
+    }
+    int outerPad = e9ui_scale_px(ctx, 4);
+    if (outerPad < 0) {
+        outerPad = 0;
+    }
+
+    int below = ctx->winH - (owner->bounds.y + owner->bounds.h);
+    int above = owner->bounds.y;
+    int useBelow = 1;
+    int desiredH = st->select_optionCount * itemH + outerPad * 2;
+    if (below < desiredH && above > below) {
+        useBelow = 0;
+    }
+
+    int avail = useBelow ? below : above;
+    int visible = (avail - outerPad * 2) / itemH;
+    if (visible < 1) {
+        visible = 1;
+    }
+    if (visible > st->select_optionCount) {
+        visible = st->select_optionCount;
+    }
+
+    int menuH = visible * itemH + outerPad * 2;
+    SDL_Rect r = { owner->bounds.x, 0, owner->bounds.w, menuH };
+    if (useBelow) {
+        r.y = owner->bounds.y + owner->bounds.h;
+        if (r.y + r.h > ctx->winH) {
+            r.h = ctx->winH - r.y;
+            visible = (r.h - outerPad * 2) / itemH;
+            if (visible < 1) {
+                visible = 1;
+            }
+            r.h = visible * itemH + outerPad * 2;
+        }
+    } else {
+        r.y = owner->bounds.y - menuH;
+        if (r.y < 0) {
+            r.y = 0;
+            visible = (owner->bounds.y - outerPad * 2) / itemH;
+            if (visible < 1) {
+                visible = 1;
+            }
+            if (visible > st->select_optionCount) {
+                visible = st->select_optionCount;
+            }
+            r.h = visible * itemH + outerPad * 2;
+            r.y = owner->bounds.y - r.h;
+            if (r.y < 0) {
+                r.y = 0;
+            }
+        }
+    }
+
+    *outRect = r;
+    *outItemH = itemH;
+    *outVisibleCount = visible;
+    return 1;
+}
+
+static void
+textbox_selectOverlay_close(void)
+{
+    textbox_select_overlay.open = 0;
+    textbox_select_overlay.owner = NULL;
+    textbox_select_overlay.hoverIndex = -1;
+    textbox_select_overlay.scrollIndex = 0;
+    textbox_select_overlay.pressActive = 0;
+    textbox_select_overlay.pressIndex = -1;
+    textbox_select_overlay.justOpened = 0;
+}
+
+void
+e9ui_textbox_selectOverlayCloseForOwner(const e9ui_component_t *owner)
+{
+    if (!textbox_select_overlay.open) {
+        return;
+    }
+    if (!owner || textbox_select_overlay.owner == owner) {
+        textbox_selectOverlay_close();
+    }
+}
+
+static void
+textbox_selectOverlay_toggle(e9ui_context_t *ctx, e9ui_component_t *owner)
+{
+    (void)ctx;
+    if (!owner) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)owner->state;
+    if (!st || !st->select_options || st->select_optionCount <= 0) {
+        return;
+    }
+
+    if (textbox_select_overlay.open && textbox_select_overlay.owner == owner) {
+        textbox_selectOverlay_close();
+        return;
+    }
+
+    textbox_select_overlay.open = 1;
+    textbox_select_overlay.owner = owner;
+    textbox_select_overlay.hoverIndex = (st->select_selectedIndex >= 0) ? st->select_selectedIndex : 0;
+    textbox_select_overlay.scrollIndex = 0;
+    textbox_select_overlay.pressActive = 0;
+    textbox_select_overlay.pressIndex = -1;
+    textbox_select_overlay.justOpened = 1;
+}
+
+static void
+textbox_selectOverlay_clampScroll(const textbox_state_t *st, int visibleCount)
+{
+    if (!st) {
+        textbox_select_overlay.scrollIndex = 0;
+        return;
+    }
+    int maxScroll = st->select_optionCount - visibleCount;
+    if (maxScroll < 0) {
+        maxScroll = 0;
+    }
+    if (textbox_select_overlay.scrollIndex < 0) {
+        textbox_select_overlay.scrollIndex = 0;
+    }
+    if (textbox_select_overlay.scrollIndex > maxScroll) {
+        textbox_select_overlay.scrollIndex = maxScroll;
+    }
+}
+
+static void
+textbox_selectOverlay_ensureIndexVisible(const textbox_state_t *st, int visibleCount, int index)
+{
+    if (!st || visibleCount <= 0) {
+        return;
+    }
+    if (index < textbox_select_overlay.scrollIndex) {
+        textbox_select_overlay.scrollIndex = index;
+    } else if (index >= textbox_select_overlay.scrollIndex + visibleCount) {
+        textbox_select_overlay.scrollIndex = index - visibleCount + 1;
+    }
+    textbox_selectOverlay_clampScroll(st, visibleCount);
+}
+
+static void
+textbox_selectOverlay_selectIndex(e9ui_context_t *ctx, e9ui_component_t *owner, int index)
+{
+    if (!ctx || !owner) {
+        return;
+    }
+    textbox_state_t *st = (textbox_state_t*)owner->state;
+    if (!st || !st->select_options || st->select_optionCount <= 0) {
+        return;
+    }
+    if (index < 0 || index >= st->select_optionCount) {
+        return;
+    }
+    st->select_selectedIndex = index;
+    textbox_select_applyDisplay(st, textbox_select_displayLabel(&st->select_options[index]));
+    textbox_notifyChange(st, ctx);
+    textbox_select_notify(st, ctx, owner);
+}
+
+int
+e9ui_textbox_selectOverlayHandleEvent(e9ui_context_t *ctx, const e9ui_event_t *ev)
+{
+    if (!ctx || !ev) {
+        return 0;
+    }
+    if (!textbox_select_overlay.open || !textbox_select_overlay.owner) {
+        return 0;
+    }
+    e9ui_component_t *owner = textbox_select_overlay.owner;
+    textbox_state_t *st = (textbox_state_t*)owner->state;
+    if (!st || !st->select_options || st->select_optionCount <= 0) {
+        textbox_selectOverlay_close();
+        return 0;
+    }
+
+    SDL_Rect rect = {0};
+    int itemH = 0;
+    int visibleCount = 0;
+    if (!textbox_selectOverlay_computeLayout(ctx, &rect, &itemH, &visibleCount)) {
+        textbox_selectOverlay_close();
+        return 0;
+    }
+    int outerPad = e9ui_scale_px(ctx, 4);
+    if (outerPad < 0) {
+        outerPad = 0;
+    }
+    textbox_selectOverlay_clampScroll(st, visibleCount);
+    textbox_selectOverlay_ensureIndexVisible(st, visibleCount, textbox_select_overlay.hoverIndex);
+
+    if (ev->type == SDL_MOUSEMOTION) {
+        int inside = textbox_selectOverlay_pointInRect(&rect, ev->motion.x, ev->motion.y);
+        if (inside) {
+            int relY = ev->motion.y - (rect.y + outerPad);
+            if (relY < 0 || relY >= visibleCount * itemH) {
+                return 1;
+            }
+            int row = (itemH > 0) ? (relY / itemH) : 0;
+            int idx = textbox_select_overlay.scrollIndex + row;
+            if (idx < 0) {
+                idx = 0;
+            }
+            if (idx >= st->select_optionCount) {
+                idx = st->select_optionCount - 1;
+            }
+            textbox_select_overlay.hoverIndex = idx;
+        }
+        return 1;
+    }
+
+    if (ev->type == SDL_MOUSEWHEEL) {
+        if (st->select_optionCount > visibleCount) {
+            if (ev->wheel.y > 0) {
+                textbox_select_overlay.scrollIndex -= 1;
+            } else if (ev->wheel.y < 0) {
+                textbox_select_overlay.scrollIndex += 1;
+            }
+            textbox_selectOverlay_clampScroll(st, visibleCount);
+        }
+        return 1;
+    }
+
+    if (ev->type == SDL_MOUSEBUTTONDOWN) {
+        if (ev->button.button != SDL_BUTTON_LEFT) {
+            return 1;
+        }
+        int insideMenu = textbox_selectOverlay_pointInRect(&rect, ev->button.x, ev->button.y);
+        if (!insideMenu) {
+            textbox_selectOverlay_close();
+            return 1;
+        }
+        int relY = ev->button.y - (rect.y + outerPad);
+        if (relY < 0 || relY >= visibleCount * itemH) {
+            return 1;
+        }
+        int row = (itemH > 0) ? (relY / itemH) : 0;
+        int idx = textbox_select_overlay.scrollIndex + row;
+        if (idx < 0) {
+            idx = 0;
+        }
+        if (idx >= st->select_optionCount) {
+            idx = st->select_optionCount - 1;
+        }
+        textbox_select_overlay.hoverIndex = idx;
+        textbox_select_overlay.pressActive = 1;
+        textbox_select_overlay.pressIndex = idx;
+        return 1;
+    }
+
+    if (ev->type == SDL_MOUSEBUTTONUP) {
+        if (ev->button.button != SDL_BUTTON_LEFT) {
+            textbox_select_overlay.pressActive = 0;
+            textbox_select_overlay.pressIndex = -1;
+            return 1;
+        }
+        if (textbox_select_overlay.justOpened && !textbox_select_overlay.pressActive) {
+            textbox_select_overlay.justOpened = 0;
+            return 1;
+        }
+        int insideMenu = textbox_selectOverlay_pointInRect(&rect, ev->button.x, ev->button.y);
+        if (textbox_select_overlay.pressActive && insideMenu) {
+            int relY = ev->button.y - (rect.y + outerPad);
+            if (relY < 0 || relY >= visibleCount * itemH) {
+                textbox_select_overlay.pressActive = 0;
+                textbox_select_overlay.pressIndex = -1;
+                textbox_selectOverlay_close();
+                return 1;
+            }
+            int row = (itemH > 0) ? (relY / itemH) : 0;
+            int idx = textbox_select_overlay.scrollIndex + row;
+            if (idx < 0) {
+                idx = 0;
+            }
+            if (idx >= st->select_optionCount) {
+                idx = st->select_optionCount - 1;
+            }
+            if (idx == textbox_select_overlay.pressIndex) {
+                textbox_selectOverlay_selectIndex(ctx, owner, idx);
+            }
+        }
+        textbox_select_overlay.pressActive = 0;
+        textbox_select_overlay.pressIndex = -1;
+        textbox_selectOverlay_close();
+        return 1;
+    }
+
+    if (ev->type == SDL_KEYDOWN) {
+        SDL_Keycode kc = ev->key.keysym.sym;
+        if (kc == SDLK_ESCAPE) {
+            textbox_selectOverlay_close();
+            return 1;
+        }
+        if (kc == SDLK_UP) {
+            if (textbox_select_overlay.hoverIndex < 0) {
+                textbox_select_overlay.hoverIndex = 0;
+            } else if (textbox_select_overlay.hoverIndex > 0) {
+                textbox_select_overlay.hoverIndex -= 1;
+            }
+            textbox_selectOverlay_ensureIndexVisible(st, visibleCount, textbox_select_overlay.hoverIndex);
+            return 1;
+        }
+        if (kc == SDLK_DOWN) {
+            if (textbox_select_overlay.hoverIndex < 0) {
+                textbox_select_overlay.hoverIndex = 0;
+            } else if (textbox_select_overlay.hoverIndex + 1 < st->select_optionCount) {
+                textbox_select_overlay.hoverIndex += 1;
+            }
+            textbox_selectOverlay_ensureIndexVisible(st, visibleCount, textbox_select_overlay.hoverIndex);
+            return 1;
+        }
+        if (kc == SDLK_RETURN || kc == SDLK_KP_ENTER) {
+            if (textbox_select_overlay.hoverIndex >= 0 && textbox_select_overlay.hoverIndex < st->select_optionCount) {
+                textbox_selectOverlay_selectIndex(ctx, owner, textbox_select_overlay.hoverIndex);
+            }
+            textbox_selectOverlay_close();
+            return 1;
+        }
+        return 1;
+    }
+
+    if (ev->type == SDL_TEXTINPUT) {
+        return 1;
+    }
+
+    return 0;
+}
+
+void
+e9ui_textbox_selectOverlayRender(e9ui_context_t *ctx)
+{
+    if (!ctx || !ctx->renderer) {
+        return;
+    }
+    if (!textbox_select_overlay.open || !textbox_select_overlay.owner) {
+        return;
+    }
+    e9ui_component_t *owner = textbox_select_overlay.owner;
+    textbox_state_t *st = (textbox_state_t*)owner->state;
+    if (!st || !st->select_options || st->select_optionCount <= 0) {
+        textbox_selectOverlay_close();
+        return;
+    }
+
+    SDL_Rect rect = {0};
+    int itemH = 0;
+    int visibleCount = 0;
+    if (!textbox_selectOverlay_computeLayout(ctx, &rect, &itemH, &visibleCount)) {
+        textbox_selectOverlay_close();
+        return;
+    }
+    int outerPad = e9ui_scale_px(ctx, 4);
+    if (outerPad < 0) {
+        outerPad = 0;
+    }
+    textbox_selectOverlay_clampScroll(st, visibleCount);
+    if (textbox_select_overlay.hoverIndex < 0) {
+        textbox_select_overlay.hoverIndex = (st->select_selectedIndex >= 0) ? st->select_selectedIndex : 0;
+    }
+    textbox_selectOverlay_ensureIndexVisible(st, visibleCount, textbox_select_overlay.hoverIndex);
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ctx->renderer, 30, 30, 34, 255);
+    SDL_RenderFillRect(ctx->renderer, &rect);
+    SDL_SetRenderDrawColor(ctx->renderer, 80, 80, 90, 255);
+    SDL_RenderDrawRect(ctx->renderer, &rect);
+
+    TTF_Font *font = e9ui->theme.text.prompt ? e9ui->theme.text.prompt : ctx->font;
+    if (!font) {
+        return;
+    }
+
+    const int padPx = 8;
+    for (int row = 0; row < visibleCount; ++row) {
+        int idx = textbox_select_overlay.scrollIndex + row;
+        if (idx < 0 || idx >= st->select_optionCount) {
+            continue;
+        }
+        SDL_Rect item = { rect.x, rect.y + outerPad + row * itemH, rect.w, itemH };
+        int isHover = (idx == textbox_select_overlay.hoverIndex) ? 1 : 0;
+        int isSelected = (idx == st->select_selectedIndex) ? 1 : 0;
+        if (isHover) {
+            SDL_SetRenderDrawColor(ctx->renderer, 52, 52, 60, 255);
+            SDL_RenderFillRect(ctx->renderer, &item);
+        } else if (isSelected) {
+            SDL_SetRenderDrawColor(ctx->renderer, 44, 60, 80, 255);
+            SDL_RenderFillRect(ctx->renderer, &item);
+        }
+
+        const char *label = textbox_select_displayLabel(&st->select_options[idx]);
+        SDL_Color textCol = (SDL_Color){230, 230, 230, 255};
+        int tw = 0;
+        int th = 0;
+        SDL_Texture *tex = e9ui_text_cache_getUTF8(ctx->renderer, font, label ? label : "", textCol, &tw, &th);
+        if (tex) {
+            int tx = item.x + padPx;
+            int ty = item.y + (item.h - th) / 2;
+            if (ty < item.y) {
+                ty = item.y;
+            }
+            SDL_Rect dst = { tx, ty, tw, th };
+            SDL_RenderCopy(ctx->renderer, tex, NULL, &dst);
+        }
+    }
 }

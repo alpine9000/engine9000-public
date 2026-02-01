@@ -223,11 +223,20 @@ libretro_host_getRomPath(void);
 const char *
 libretro_host_getCorePath(void);
 
+const char *
+libretro_host_getSaveDir(void);
+
+const char *
+libretro_host_getSystemDir(void);
+
 bool
 libretro_host_setVblankCallback(void (*cb)(void *), void *user);
 
 bool
 libretro_host_setDebugBaseCallback(void (*cb)(uint32_t section, uint32_t base));
+
+bool
+libretro_host_setDebugBreakpointCallback(void (*cb)(uint32_t addr));
 
 void
 libretro_host_setCoreOption(const char *key, const char *value);
@@ -249,6 +258,12 @@ libretro_host_getCoreOptionValue(const char *key);
 
 const char *
 libretro_host_getCoreOptionDefaultValue(const char *key);
+
+int
+libretro_host_isCoreOptionVisible(const char *key);
+
+void
+libretro_host_refreshCoreOptionVisibility(void);
 
 bool
 libretro_host_setAudioEnabled(int enabled);

@@ -72,3 +72,7 @@ geo_vblank_notify(void);
 // Optional host callback invoked when the target writes a new relocatable base.
 void
 geo_set_debug_base_callback(void (*cb)(uint32_t section, uint32_t base));
+
+// Optional host callback invoked when the target requests a breakpoint via a fake debug peripheral.
+void
+geo_set_debug_breakpoint_callback(void (*cb)(uint32_t addr));

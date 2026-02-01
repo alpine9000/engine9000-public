@@ -669,7 +669,7 @@ console_cmd_break(int argc, char **argv)
         return 0;
     }
     const char *arg = argv[1];
-    const char *elf = debugger.libretro.elfPath;
+    const char *elf = debugger.libretro.exePath;
     uint32_t addr = 0;
     int ok = 0;
     const char *colon = strrchr(arg, ':');
@@ -1459,7 +1459,7 @@ console_cmd_completeBreak(const char *prefix, char ***out_list, int *out_count)
     if (out_count) {
         *out_count = 0;
     }
-    const char *elf = debugger.libretro.elfPath;
+    const char *elf = debugger.libretro.exePath;
     if (!elf || !*elf || !out_list || !out_count) {
         return 0;
     }

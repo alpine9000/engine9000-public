@@ -143,9 +143,9 @@ profile_viewer_run(const char *json_path)
             viewer_args[i++] = (char *)"--toolchain-prefix";
             viewer_args[i++] = debugger.libretro.toolchainPrefix;
         }
-        if (debugger.libretro.elfPath[0]) {
+        if (debugger.libretro.exePath[0]) {
             viewer_args[i++] = (char *)"--elf";
-            viewer_args[i++] = debugger.libretro.elfPath;
+            viewer_args[i++] = debugger.libretro.exePath;
         }
         if (debugger.libretro.sourceDir[0]) {
             viewer_args[i++] = (char *)"--src-base";

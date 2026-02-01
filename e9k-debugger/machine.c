@@ -280,7 +280,7 @@ machine_coreFetchRegs(void)
 }
 
 static void
-machine_fillFrame(machine_frame_t *frame, int level, uint32_t addr, const char *elf)
+machine_fillFrame(machine_frame_t *frame, int level, uint32_t addr, const char *exe)
 {
     if (!frame) {
         return;
@@ -290,10 +290,10 @@ machine_fillFrame(machine_frame_t *frame, int level, uint32_t addr, const char *
     uint32_t addr24 = addr & 0x00ffffffu;
     frame->addr = addr24;
     snprintf(frame->func, sizeof(frame->func), "0x%06X", (unsigned)addr24);
-    if (!elf || !*elf || !debugger.elfValid) {
+    if (!exe || !*exe || !debugger.elfValid) {
         return;
     }
-    if (!addr2line_start(elf)) {
+    if (!addr2line_start(exe)) {
         return;
     }
     char path[512];
@@ -351,7 +351,7 @@ machine_coreFetchStack(void)
     enum { kMaxFrames = 256 };
     uint32_t addrs[kMaxFrames];
     size_t count = 0;
-    const char *elf = debugger.libretro.elfPath;
+    const char *exe = debugger.libretro.exePath;
 
     machine_clearStack(&debugger.machine);
     if (!libretro_host_debugReadCallstack(addrs, kMaxFrames, &count)) {
@@ -371,13 +371,13 @@ machine_coreFetchStack(void)
 
     unsigned long pc = 0;
     (void)machine_findReg(&debugger.machine, "PC", &pc);
-    machine_fillFrame(&debugger.machine.frames[0], 0, (uint32_t)pc, elf);
+    machine_fillFrame(&debugger.machine.frames[0], 0, (uint32_t)pc, exe);
 
     size_t idx = 1;
     for (size_t i = 0; i < count && idx < total; ++i) {
         size_t src = (count - 1u) - i;
         uint32_t addr = addrs[src];
-        machine_fillFrame(&debugger.machine.frames[idx], (int)idx, addr, elf);
+        machine_fillFrame(&debugger.machine.frames[idx], (int)idx, addr, exe);
         idx++;
     }
     return 1;

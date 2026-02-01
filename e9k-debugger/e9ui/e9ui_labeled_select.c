@@ -17,7 +17,7 @@ typedef struct e9ui_labeled_select_state {
     e9ui_select_option_t *options;
     int optionCount;
     int selectedIndex;
-    e9ui_component_t *button;
+    e9ui_component_t *textbox;
     char **infoLines;
     int infoLineCount;
     int infoLineCap;
@@ -403,19 +403,6 @@ e9ui_labeled_select_currentValue(const e9ui_labeled_select_state_t *st)
     return opt ? opt->value : NULL;
 }
 
-static const char *
-e9ui_labeled_select_currentLabel(const e9ui_labeled_select_state_t *st)
-{
-    const e9ui_select_option_t *opt = e9ui_labeled_select_currentOption(st);
-    if (!opt) {
-        return NULL;
-    }
-    if (opt->label && *opt->label) {
-        return opt->label;
-    }
-    return opt->value;
-}
-
 static int
 e9ui_labeled_select_findIndex(const e9ui_labeled_select_state_t *st, const char *value)
 {
@@ -431,14 +418,35 @@ e9ui_labeled_select_findIndex(const e9ui_labeled_select_state_t *st, const char 
     return -1;
 }
 
-static void
-e9ui_labeled_select_syncButtonLabel(e9ui_labeled_select_state_t *st)
+static int
+e9ui_labeled_select_targetHeight(e9ui_context_t *ctx)
 {
-    if (!st || !st->button) {
+    const e9k_theme_button_t *theme = &e9ui->theme.button;
+    TTF_Font *useFont = theme->font ? theme->font : (ctx ? ctx->font : NULL);
+    int lh = useFont ? TTF_FontHeight(useFont) : 16;
+    if (lh <= 0) {
+        lh = 16;
+    }
+    int padding = 0;
+    if (theme->padding > 0) {
+        padding = e9ui_scale_px(ctx, theme->padding);
+    }
+    int h = lh + 8 + padding * 2;
+    return h > 0 ? h : 0;
+}
+
+static void
+e9ui_labeled_select_syncTextboxLabel(e9ui_labeled_select_state_t *st)
+{
+    if (!st || !st->textbox) {
         return;
     }
-    const char *label = e9ui_labeled_select_currentLabel(st);
-    e9ui_button_setLabel(st->button, (label && *label) ? label : "");
+    const char *value = e9ui_labeled_select_currentValue(st);
+    if (value) {
+        e9ui_textbox_setSelectedValue(st->textbox, value);
+    } else {
+        e9ui_textbox_setText(st->textbox, "");
+    }
 }
 
 static void
@@ -452,17 +460,18 @@ e9ui_labeled_select_notifyChange(e9ui_context_t *ctx, e9ui_labeled_select_state_
 }
 
 static void
-e9ui_labeled_select_clicked(e9ui_context_t *ctx, void *user)
+e9ui_labeled_select_optionSelected(e9ui_context_t *ctx, e9ui_component_t *comp, const char *value, void *user)
 {
+    (void)comp;
     e9ui_labeled_select_state_t *st = (e9ui_labeled_select_state_t*)user;
-    if (!st || !st->options || st->optionCount <= 0) {
+    if (!st || !st->options || st->optionCount <= 0 || !value) {
         return;
     }
-    st->selectedIndex++;
-    if (st->selectedIndex >= st->optionCount) {
-        st->selectedIndex = 0;
+    int idx = e9ui_labeled_select_findIndex(st, value);
+    if (idx < 0) {
+        return;
     }
-    e9ui_labeled_select_syncButtonLabel(st);
+    st->selectedIndex = idx;
     e9ui_labeled_select_notifyChange(ctx, st);
 }
 
@@ -495,8 +504,12 @@ e9ui_labeled_select_preferredHeight(e9ui_component_t *self, e9ui_context_t *ctx,
         buttonW = 0;
     }
     int buttonH = 0;
-    if (st->button && st->button->preferredHeight) {
-        buttonH = st->button->preferredHeight(st->button, ctx, buttonW);
+    if (st->textbox && st->textbox->preferredHeight) {
+        buttonH = st->textbox->preferredHeight(st->textbox, ctx, buttonW);
+    }
+    int targetH = e9ui_labeled_select_targetHeight(ctx);
+    if (targetH > buttonH) {
+        buttonH = targetH;
     }
     int extraH = 0;
     if (st->infoLineCount > 0) {
@@ -518,7 +531,7 @@ e9ui_labeled_select_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rec
 {
     self->bounds = bounds;
     e9ui_labeled_select_state_t *st = (e9ui_labeled_select_state_t*)self->state;
-    if (!st || !st->button) {
+    if (!st || !st->textbox) {
         return;
     }
     int gap = e9ui_scale_px(ctx, 8);
@@ -542,11 +555,15 @@ e9ui_labeled_select_layout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_rec
     if (buttonW < 0) {
         buttonW = 0;
     }
-    int buttonH = st->button->preferredHeight ? st->button->preferredHeight(st->button, ctx, buttonW) : 0;
+    int buttonH = st->textbox->preferredHeight ? st->textbox->preferredHeight(st->textbox, ctx, buttonW) : 0;
+    int targetH = e9ui_labeled_select_targetHeight(ctx);
+    if (targetH > buttonH) {
+        buttonH = targetH;
+    }
     int rowX = bounds.x + (bounds.w - totalW) / 2;
     int rowY = bounds.y;
     e9ui_rect_t buttonRect = { rowX + labelW + gap, rowY, buttonW, buttonH };
-    st->button->layout(st->button, ctx, buttonRect);
+    st->textbox->layout(st->textbox, ctx, buttonRect);
 }
 
 static void
@@ -583,10 +600,14 @@ e9ui_labeled_select_render(e9ui_component_t *self, e9ui_context_t *ctx)
         buttonW = 0;
     }
     int buttonH = 0;
-    if (st->button && st->button->bounds.h > 0) {
-        buttonH = st->button->bounds.h;
-    } else if (st->button && st->button->preferredHeight) {
-        buttonH = st->button->preferredHeight(st->button, ctx, buttonW);
+    if (st->textbox && st->textbox->bounds.h > 0) {
+        buttonH = st->textbox->bounds.h;
+    } else if (st->textbox && st->textbox->preferredHeight) {
+        buttonH = st->textbox->preferredHeight(st->textbox, ctx, buttonW);
+    }
+    int targetH = e9ui_labeled_select_targetHeight(ctx);
+    if (targetH > buttonH) {
+        buttonH = targetH;
     }
     e9ui_rect_t buttonRect = { rowX + labelW + gap, self->bounds.y, buttonW, buttonH };
 
@@ -609,8 +630,8 @@ e9ui_labeled_select_render(e9ui_component_t *self, e9ui_context_t *ctx)
             }
         }
     }
-    if (st->button && st->button->render) {
-        st->button->render(st->button, ctx);
+    if (st->textbox && st->textbox->render) {
+        st->textbox->render(st->textbox, ctx);
     }
 
     if (st->infoLineCount > 0) {
@@ -706,8 +727,29 @@ e9ui_labeled_select_make(const char *label, int labelWidth_px, int totalWidth_px
             st->selectedIndex = found;
         }
     }
-    st->button = e9ui_button_make("", e9ui_labeled_select_clicked, st);
-    e9ui_labeled_select_syncButtonLabel(st);
+
+    st->textbox = e9ui_textbox_make(512, NULL, NULL, NULL);
+    if (st->textbox) {
+        e9ui_textbox_setReadOnly(st->textbox, 1);
+        e9ui_textbox_setOptions(st->textbox, NULL, 0);
+        if (options && optionCount > 0) {
+            e9ui_textbox_option_t *tbOpts =
+                (e9ui_textbox_option_t*)alloc_calloc((size_t)optionCount, sizeof(*tbOpts));
+            if (tbOpts) {
+                for (int i = 0; i < optionCount; ++i) {
+                    tbOpts[i].value = options[i].value;
+                    tbOpts[i].label = options[i].label;
+                }
+                e9ui_textbox_setOptions(st->textbox, tbOpts, optionCount);
+                alloc_free(tbOpts);
+            }
+        }
+        e9ui_textbox_setOnOptionSelected(st->textbox, e9ui_labeled_select_optionSelected, st);
+        if (optionCount <= 1) {
+            st->textbox->disabled = 1;
+        }
+    }
+    e9ui_labeled_select_syncTextboxLabel(st);
     st->onChange = cb;
     st->onChangeUser = user;
 
@@ -718,8 +760,8 @@ e9ui_labeled_select_make(const char *label, int labelWidth_px, int totalWidth_px
     c->render = e9ui_labeled_select_render;
     c->dtor = e9ui_labeled_select_dtor;
     st->self = c;
-    if (st->button) {
-        e9ui_child_add(c, st->button, 0);
+    if (st->textbox) {
+        e9ui_child_add(c, st->textbox, 0);
     }
     return c;
 }
@@ -756,7 +798,7 @@ e9ui_labeled_select_setValue(e9ui_component_t *comp, const char *value)
         return;
     }
     st->selectedIndex = found;
-    e9ui_labeled_select_syncButtonLabel(st);
+    e9ui_labeled_select_syncTextboxLabel(st);
 }
 
 const char *
@@ -787,7 +829,7 @@ e9ui_labeled_select_getButton(const e9ui_component_t *comp)
         return NULL;
     }
     const e9ui_labeled_select_state_t *st = (const e9ui_labeled_select_state_t*)comp->state;
-    return st ? st->button : NULL;
+    return st ? st->textbox : NULL;
 }
 
 void

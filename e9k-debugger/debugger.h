@@ -52,7 +52,7 @@ typedef struct {
   char systemDir[PATH_MAX];
   char saveDir[PATH_MAX];
   char sourceDir[PATH_MAX];
-  char elfPath[PATH_MAX];
+  char exePath[PATH_MAX];
   char toolchainPrefix[PATH_MAX];
   int enabled;
   int audioBufferMs;
@@ -136,6 +136,7 @@ typedef struct e9k_debugger {
     int elfValid;
     int restartRequested;
     e9k_debug_options_t opts;
+    int coreOptionsShowHelp;
     e9k_libretro_config_t libretro;
     amiga_debug_t amigaDebug;
     int loopEnabled;

@@ -982,7 +982,7 @@ print_eval_defaultU64(print_index_t *index)
 static int
 print_eval_loadIndex(print_index_t *index)
 {
-    const char *elfPath = debugger.libretro.elfPath;
+    const char *elfPath = debugger.libretro.exePath;
     if (!elfPath || !*elfPath || !index) {
         return 0;
     }
