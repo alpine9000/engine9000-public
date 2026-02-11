@@ -98,4 +98,7 @@ target_iface_t *target_megadrive(void);
 
 void target_ctor(void);
 
+void
+target_releaseUiResources(void);
+
 extern target_iface_t *target;

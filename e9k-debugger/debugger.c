@@ -414,6 +414,7 @@ debugger_cleanup(void)
   custom_ui_shutdown();
   shader_ui_shutdown();
   memory_track_ui_shutdown();
+  target_releaseUiResources();
   e9ui_shutdown();
   resource_status();  
 }

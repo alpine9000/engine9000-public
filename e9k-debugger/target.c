@@ -1,5 +1,6 @@
 #include "debugger.h"
 #include "target.h"
+#include <SDL.h>
 
 target_iface_t* target_targets[3];
 target_iface_t* target;
@@ -25,6 +26,24 @@ target_ctor(void)
 #endif
 
     target_setConfigDefaults();
+}
+
+void
+target_releaseUiResources(void)
+{
+    for (size_t i = 0; i < target_targetCount; i++) {
+        target_iface_t *iface = target_targets[i];
+        if (!iface) {
+            continue;
+        }
+        if (iface->badge) {
+            SDL_DestroyTexture(iface->badge);
+            iface->badge = NULL;
+        }
+        iface->badgeRenderer = NULL;
+        iface->badgeW = 0;
+        iface->badgeH = 0;
+    }
 }
 
 void
