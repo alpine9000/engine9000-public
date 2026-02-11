@@ -286,6 +286,23 @@ libretro_host_runFrame(void)
 }
 
 static void
+libretro_host_detachDebugCallbacks(void)
+{
+    if (libretro_host.setVblankCallback) {
+        libretro_host.setVblankCallback(NULL, NULL);
+    }
+    if (libretro_host.setDebugBreakpointCallback) {
+        libretro_host.setDebugBreakpointCallback(NULL);
+    }
+    if (libretro_host.debugSetSourceLocationResolver) {
+        libretro_host.debugSetSourceLocationResolver(NULL, NULL);
+    }
+    if (libretro_host.setDebugBaseCallback) {
+        libretro_host.setDebugBaseCallback(NULL);
+    }
+}
+
+static void
 libretro_host_clearOptions(void)
 {
     if (!libretro_host.options) {
@@ -1390,12 +1407,18 @@ libretro_host_start(const char *corePath, const char *romPath,
 void
 libretro_host_shutdown(void)
 {
+    libretro_host_detachDebugCallbacks();
     if (libretro_host.gameLoaded && libretro_host.unloadGame) {
         libretro_host.unloadGame();
     }
     if (libretro_host.deinit) {
         libretro_host.deinit();
     }
+#if defined(_WIN32)
+    if (debugger.restartRequested) {
+        SDL_Delay(50);
+    }
+#endif
     if (libretro_host.lib) {
         debugger_platform_closeSharedLibrary(libretro_host.lib);
         libretro_host.lib = NULL;
