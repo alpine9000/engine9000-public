@@ -76,12 +76,9 @@ memory_e9kChipmemRestoreWriteSource(uint32_t previousSource)
 	memory_e9kChipmemWriteSource = previousSource;
 }
 
-static int
+int
 memory_e9kDebugPeripheralReadLong(uaecptr addr, uae_u32 *valueOut)
 {
-	if (!valueOut) {
-		return 0;
-	}
 	addr &= 0x00ffffffu;
 	if ((addr & 3u) != 0u) {
 		return 0;
@@ -99,12 +96,9 @@ memory_e9kDebugPeripheralReadLong(uaecptr addr, uae_u32 *valueOut)
 	return 0;
 }
 
-static int
+int
 memory_e9kDebugPeripheralReadWord(uaecptr addr, uae_u32 *valueOut)
 {
-	if (!valueOut) {
-		return 0;
-	}
 	addr &= 0x00ffffffu;
 	if (addr < E9K_DBG_ARG_BASE_ADDR || addr > E9K_DBG_LAST_ADDR) {
 		return 0;
@@ -112,22 +106,17 @@ memory_e9kDebugPeripheralReadWord(uaecptr addr, uae_u32 *valueOut)
 	if ((addr & 1u) != 0u) {
 		return 0;
 	}
-
-	uaecptr longAddr = addr & ~3u;
 	uae_u32 value = 0;
-	if (!memory_e9kDebugPeripheralReadLong(longAddr, &value)) {
+	if (!memory_e9kDebugPeripheralReadLong(addr & ~3u, &value)) {
 		return 0;
 	}
 	*valueOut = (addr & 2u) ? (value & 0xffffu) : (value >> 16);
 	return 1;
 }
 
-static int
+int
 memory_e9kDebugPeripheralReadByte(uaecptr addr, uae_u32 *valueOut)
 {
-	if (!valueOut) {
-		return 0;
-	}
 	addr &= 0x00ffffffu;
 	if (addr < E9K_DBG_ARG_BASE_ADDR || addr > E9K_DBG_LAST_ADDR) {
 		return 0;

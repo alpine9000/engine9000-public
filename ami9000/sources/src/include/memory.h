@@ -546,6 +546,15 @@ uae_u32 memory_get_byte(uaecptr);
 uae_u32 memory_get_longi(uaecptr);
 uae_u32 memory_get_wordi(uaecptr);
 
+#if E9K_HACK_DEBUGGER_RUNTIME
+int
+memory_e9kDebugPeripheralReadLong(uaecptr addr, uae_u32 *valueOut);
+int
+memory_e9kDebugPeripheralReadWord(uaecptr addr, uae_u32 *valueOut);
+int
+memory_e9kDebugPeripheralReadByte(uaecptr addr, uae_u32 *valueOut);
+#endif
+
 STATIC_INLINE uae_u32 get_long(uaecptr addr)
 {
 	return memory_get_long(addr);

@@ -308,6 +308,12 @@ static ALWAYS_INLINE uae_u16 mmu_get_iword(uaecptr addr, int size)
 
 static ALWAYS_INLINE uae_u32 mmu_get_long(uaecptr addr, bool data, int size)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (data && memory_e9kDebugPeripheralReadLong(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr(addr,regs.s!=0,data) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
@@ -334,6 +340,12 @@ static ALWAYS_INLINE uae_u32 mmu_get_long(uaecptr addr, bool data, int size)
 
 static ALWAYS_INLINE uae_u16 mmu_get_word(uaecptr addr, bool data, int size)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (data && memory_e9kDebugPeripheralReadWord(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr(addr,regs.s!=0,data) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
@@ -360,6 +372,12 @@ static ALWAYS_INLINE uae_u16 mmu_get_word(uaecptr addr, bool data, int size)
 
 static ALWAYS_INLINE uae_u8 mmu_get_byte(uaecptr addr, bool data, int size)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (data && memory_e9kDebugPeripheralReadByte(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr(addr,regs.s!=0,data) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
@@ -464,6 +482,12 @@ static ALWAYS_INLINE void mmu_put_byte(uaecptr addr, uae_u8 val, bool data, int 
 
 static ALWAYS_INLINE uae_u32 mmu_get_user_long(uaecptr addr, bool super, bool write, int size, bool ci)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (!write && memory_e9kDebugPeripheralReadLong(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr_maybe_write(addr,super,true,size,write) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
@@ -492,6 +516,12 @@ static ALWAYS_INLINE uae_u32 mmu_get_user_long(uaecptr addr, bool super, bool wr
 
 static ALWAYS_INLINE uae_u16 mmu_get_user_word(uaecptr addr, bool super, bool write, int size, bool ci)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (!write && memory_e9kDebugPeripheralReadWord(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr_maybe_write(addr,super,true,size,write) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
@@ -520,6 +550,12 @@ static ALWAYS_INLINE uae_u16 mmu_get_user_word(uaecptr addr, bool super, bool wr
 
 static ALWAYS_INLINE uae_u8 mmu_get_user_byte(uaecptr addr, bool super, bool write, int size, bool ci)
 {
+#if E9K_HACK_DEBUGGER_RUNTIME
+	uae_u32 value;
+	if (!write && memory_e9kDebugPeripheralReadByte(addr, &value)) {
+		return value;
+	}
+#endif
 	mmu_cache_state = cache_default_data;
 	if ((!mmu_ttr_enabled || mmu_match_ttr_maybe_write(addr,super,true,size,write) == TTR_NO_MATCH) && regs.mmu_enabled) {
 #if MMU_DPAGECACHE
