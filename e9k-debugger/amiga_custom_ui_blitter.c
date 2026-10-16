@@ -410,8 +410,8 @@ amiga_custom_ui_blitter_updateStatsChart(amiga_custom_ui_state_t *ui)
 
     e9k_debug_ami_blitter_vis_stats_t stats;
     int hasStats = 0;
-    if (amiga_blittervis_getLatestStats(&stats) ||
-        libretro_host_amiga_readBlitterVisStats(&stats)) {
+
+    if (libretro_host_amiga_readBlitterVisStats(&stats)) {
         hasStats = 1;
     }
 
