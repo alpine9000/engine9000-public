@@ -638,6 +638,11 @@ debugger_applyCoreOptions(void)
     } else {
         libretro_host_setCoreOption("geolith_system_type", NULL);
     }
+    if (target == target_neogeo() && debugger.config.neogeo.cdSystemType[0]) {
+        libretro_host_setCoreOption("geolith_cd_system_type", debugger.config.neogeo.cdSystemType);
+    } else {
+        libretro_host_setCoreOption("geolith_cd_system_type", NULL);
+    }
 
     target->applyCoreOptions();
 }

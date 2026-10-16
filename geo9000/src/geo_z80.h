@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -38,12 +38,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 int geo_z80_run(unsigned);
 int geo_z80_stepInstruction(void);
 void geo_z80_debugSuppressBreakpointAtPc(void);
+void geo_z80_busreq(unsigned);
 void geo_z80_nmi(void);
 void geo_z80_assert_irq(unsigned);
 void geo_z80_clear_irq(void);
+void geo_z80_assert_reset(void);
+void geo_z80_clear_reset(void);
 void geo_z80_init(void);
 void geo_z80_reset(void);
 void geo_z80_set_mrom(unsigned);
+void geo_z80_set_cd_mode(void);
 void geo_z80_state_load(uint8_t*);
 void geo_z80_state_save(uint8_t*);
 const void* geo_z80_ram_ptr(void);

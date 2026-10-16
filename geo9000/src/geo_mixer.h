@@ -34,7 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 void geo_mixer_set_buffer(int16_t*);
 void geo_mixer_set_callback(void (*)(size_t));
 void geo_mixer_set_rate(size_t);
-void geo_mixer_set_raw(void);
+void geo_mixer_set_raw(int raw);
 void geo_mixer_deinit(void);
 void geo_mixer_init(void);
 

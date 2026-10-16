@@ -46,7 +46,9 @@
 #endif
 
 #ifdef HAVE_DR_FLAC
+#include <retro_inline.h>
 #define DR_FLAC_IMPLEMENTATION
+#define DRFLAC_API static INLINE
 #include <dr/dr_flac.h>
 #endif
 
@@ -76,6 +78,7 @@
 struct audio_mixer_sound
 {
    enum audio_mixer_type type;
+   void* user_data;
 
    union
    {
@@ -204,12 +207,12 @@ static unsigned s_rate = 0;
 static void audio_mixer_release(audio_mixer_voice_t* voice);
 
 #ifdef HAVE_RWAV
-static bool wav_to_float(const rwav_t* wav, float** pcm, size_t samples_out)
+static bool wav_to_float(const rwav_t* wav, float** pcm, size_t len)
 {
    size_t i;
    /* Allocate on a 16-byte boundary, and pad to a multiple of 16 bytes */
    float *f           = (float*)memalign_alloc(16,
-         ((samples_out + 15) & ~15) * sizeof(float));
+         ((len + 15) & ~15) * sizeof(float));
 
    if (!f)
       return false;
@@ -716,7 +719,7 @@ static bool audio_mixer_play_flac(
    void *flac_buffer                = NULL;
    void *resampler_data            = NULL;
    const retro_resampler_t* resamp = NULL;
-   drflac *dr_flac          = drflac_open_memory((const unsigned char*)sound->types.flac.data,sound->types.flac.size);
+   drflac *dr_flac          = drflac_open_memory((const unsigned char*)sound->types.flac.data, sound->types.flac.size, NULL);
 
    if (!dr_flac)
       return false;
@@ -1199,7 +1202,7 @@ static void audio_mixer_mix_flac(float* buffer, size_t num_frames,
    if (voice->types.flac.position == voice->types.flac.samples)
    {
 again:
-      temp_samples = (unsigned)drflac_read_f32( voice->types.flac.stream, AUDIO_MIXER_TEMP_BUFFER, temp_buffer);
+      temp_samples = (unsigned)drflac_read_pcm_frames_f32( voice->types.flac.stream, AUDIO_MIXER_TEMP_BUFFER, temp_buffer);
       if (temp_samples == 0)
       {
          if (voice->repeat)
@@ -1207,7 +1210,7 @@ again:
             if (voice->stop_cb)
                voice->stop_cb(voice->sound, AUDIO_MIXER_SOUND_REPEATED);
 
-            drflac_seek_to_sample(voice->types.flac.stream,0);
+            drflac_seek_to_pcm_frame(voice->types.flac.stream,0);
             goto again;
          }
 

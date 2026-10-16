@@ -10,13 +10,18 @@ Thanks to all authors for such great software that's so easy to hack!
 
 geolith-libretro
 ----------------
-Geolith is a highly accurate emulator for the Neo Geo AES and MVS.
+Geolith is a highly accurate emulator for the Neo Geo AES, MVS, CD, and CDZ.
 
-This emulator supports TerraOnion's .NEO file format only.
+Cartridge systems support TerraOnion's .NEO file format only.
+
+CD systems support .bin/.cue and .chd format disc images.
 
 BIOS files from a recent MAME set are required:
  - aes.zip for Neo Geo AES (Home Console)
- - neogeo.zip for Neo Geo MVS (Arcade) and Unibios
+ - neogeo.zip for Neo Geo MVS (Arcade) and Universe BIOS
+ - neocd.zip and neocdz.zip for Neo Geo CD (both files required)
+ - neocdz.zip for Neo Geo CDZ and CD Universe BIOS
+ - irrmaze.zip for The Irritating Maze in MVS mode
 
 This is the libretro port of the Geolith emulator, whose upstream repository
 lives at: https://gitlab.com/jgemu/geolith
@@ -28,6 +33,14 @@ LunaGarlic set. It is recommended to use these checksums to verify your
 legally obtained dumps are correct. Check the included "rename-neo.sh" for
 more information.
 
+A note on the .NEO format: These are unencrypted, but also unpatched. This
+means the emulator is still required to emulate challenge-response,
+descrambling, and other protection mechanisms like real hardware -- they have
+not been patched out in the officially supported set. There is one exception
+to this rule, which is that "Super Bubble Pop" (sbp), which is an unlicensed
+title, is prepatched with the same patch done post-load in FinalBurn Neo and
+MAME to make it playable.
+
 Input Devices
 -------------
 geolith-libretro supports the following input devices:
@@ -35,11 +48,15 @@ geolith-libretro supports the following input devices:
 Neo Geo Joystick
 Multiplayer Extension Board (NEO-FTC1B, 4 Player)
 V-Liner
+Trackball (The Irritating Maze)
 
 Compatibility
 -------------
 Geolith is compatible with 100% of the commercially released Neo Geo AES and
 MVS libraries. Most games work in both modes, but some require MVS mode.
+
+Geolith is also compatible with 100% of the commercially released Neo Geo CD
+library.
 
 All bootlegs and hacks from the MAME set are compatible, the majority of which
 require being run in MVS mode. Other bootlegs and hacks not in the MAME set may
@@ -52,12 +69,12 @@ Some early prototypes are not currently possible to emulate, pending new dumps
 or new information:
   Stakes Winner (early development board) - Missing data from SRAM chip
 
-Dedicated JAMMA PCB and Neo Geo CD systems are not currently supported.
-PAL mode is not currently supported.
+Dedicated JAMMA PCB systems are not currently supported. PAL mode is not
+currently supported.
 
-The special inputs for Irritating Maze are not yet supported. It is possible to
-play Irritating Maze using the Universe BIOS with a cheat enabled for joystick
-controls.
+The trackball input for The Irritating Maze is supported in MVS mode. It is
+possible to play Irritating Maze using the Universe BIOS with a cheat enabled
+for joystick controls.
 
 Accuracy/Caveats
 ----------------
@@ -81,7 +98,8 @@ maintainable, and free of regressions.
 Copyright
 ---------
 Geolith (BSD-3-Clause)
-  Copyright (c) 2022-2024 Rupert Carmichael
+  Copyright (c) 2022-2026 Rupert Carmichael
+  Copyright (c) 2026 Romain Tisserand (Neo Geo CD)
   See LICENSE
 
 Jolly Good Z80 (MIT)

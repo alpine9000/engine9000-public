@@ -132,6 +132,9 @@ config_persistConfig(FILE *f)
     if (debugger.config.neogeo.systemType[0]) {
         fprintf(f, "comp.config.neogeo.system_type=%s\n", debugger.config.neogeo.systemType);
     }
+    if (debugger.config.neogeo.cdSystemType[0]) {
+        fprintf(f, "comp.config.neogeo.cd_system_type=%s\n", debugger.config.neogeo.cdSystemType);
+    }
     if (debugger.config.neogeo.libretro.audioBufferMs > 0) {
         fprintf(f, "comp.config.neogeo.audio_ms=%d\n", debugger.config.neogeo.libretro.audioBufferMs);
     }
@@ -286,6 +289,8 @@ config_loadConfigFile(const char *path)
                 config_setConfigValue(debugger.config.neogeo.libretro.sourceDir, sizeof(debugger.config.neogeo.libretro.sourceDir), value);
             } else if (strcmp(prop, "neogeo.system_type") == 0) {
                 config_setConfigValue(debugger.config.neogeo.systemType, sizeof(debugger.config.neogeo.systemType), value);
+            } else if (strcmp(prop, "neogeo.cd_system_type") == 0) {
+                config_setConfigValue(debugger.config.neogeo.cdSystemType, sizeof(debugger.config.neogeo.cdSystemType), value);
             } else if (strcmp(prop, "neogeo.audio_ms") == 0) {
                 char *end = NULL;
                 long ms = strtol(value, &end, 10);

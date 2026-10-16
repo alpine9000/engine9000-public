@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -48,11 +48,26 @@ static romdata_t *romdata = NULL;
 static uint8_t *mrom = NULL;
 
 static uint8_t nmi_enabled = 0;
+static uint8_t busreq = 0;
 static uint8_t zram[SIZE_2K];
 static uint32_t zbank[4];
 static uint8_t debugBreakpoints[0x10000 / 8];
 static uint16_t debugSuppressedBreakpointAddr = 0;
 static int debugSuppressedBreakpointActive = 0;
+
+static uint8_t
+geo_z80_cd_mem_rd(void *userdata, uint16_t addr)
+{
+    (void)userdata;
+    return mrom[addr];
+}
+
+static void
+geo_z80_cd_mem_wr(void *userdata, uint16_t addr, uint8_t data)
+{
+    (void)userdata;
+    mrom[addr] = data;
+}
 
 /* Z80 Memory Map
  * =====================================================================
@@ -313,11 +328,17 @@ static void geo_z80_port_wr(z80 *userdata, uint16_t port, uint8_t value) {
 // Reset the Z80
 void geo_z80_reset(void) {
     z80_reset(&z80ctx);
+    ym2610_reset();
     nmi_enabled = 0;
     debugSuppressedBreakpointActive = 0;
 
-    // Set the M ROM based on system type - AES does not have SM1 ROM
-    geo_z80_set_mrom(geo_get_system() == SYSTEM_AES);
+    if (ngsys.cdmode) {
+        mrom = romdata->m;
+    }
+    else {
+        // Set the M ROM based on system type - AES does not have SM1 ROM
+        geo_z80_set_mrom(geo_get_system() == SYSTEM_AES);
+    }
 
     zbank[0] = geo_z80_initialBankAddress(0, 0x02);
     zbank[1] = geo_z80_initialBankAddress(1, 0x06);
@@ -353,12 +374,21 @@ geo_z80_run(unsigned cycs)
 {
     unsigned done = 0;
     while (done < cycs) {
+        if (busreq) {
+            return 1;
+        }
         if (geo_z80_debugBreakIfNeeded()) {
             break;
         }
         done += z80_step(&z80ctx);
     }
     return (int)done;
+}
+
+void
+geo_z80_busreq(unsigned b)
+{
+    busreq = b ? 1 : 0;
 }
 
 int
@@ -396,8 +426,30 @@ void geo_z80_clear_irq(void) {
     z80_clr_irq(&z80ctx);
 }
 
+// Assert the Z80 RESET line
+void geo_z80_assert_reset(void) {
+    // Halt the Z80, and also reset the YM2610
+    z80ctx.halted = 1;
+    ym2610_reset();
+}
+
+// Clear the Z80 RESET line
+void geo_z80_clear_reset(void) {
+    // Reset the Z80, which also clears the halted flag
+    z80_reset(&z80ctx);
+}
+
 void geo_z80_set_mrom(unsigned m) {
     mrom = m ? romdata->m : romdata->sm;
+}
+
+void
+geo_z80_set_cd_mode(void)
+{
+    mrom = romdata->m;
+    busreq = 1;
+    z80ctx.read_byte = &geo_z80_cd_mem_rd;
+    z80ctx.write_byte = &geo_z80_cd_mem_wr;
 }
 
 // Restore the Z80's state from external data
@@ -435,6 +487,8 @@ void geo_z80_state_load(uint8_t *st) {
     z80ctx.irq_pending = geo_serial_pop8(st);
     z80ctx.nmi_pending = geo_serial_pop8(st);
     nmi_enabled = geo_serial_pop8(st);
+    if (ngsys.cdmode)
+        busreq = geo_serial_pop8(st);
     geo_serial_popblk(zram, st, SIZE_2K);
     for (int i = 0; i < 4; ++i) zbank[i] = geo_serial_pop32(st);
 }
@@ -473,6 +527,8 @@ void geo_z80_state_save(uint8_t *st) {
     geo_serial_push8(st, z80ctx.irq_pending);
     geo_serial_push8(st, z80ctx.nmi_pending);
     geo_serial_push8(st, nmi_enabled);
+    if (ngsys.cdmode)
+        geo_serial_push8(st, busreq);
     geo_serial_pushblk(st, zram, SIZE_2K);
     for (int i = 0; i < 4; ++i) geo_serial_push32(st, zbank[i]);
 }

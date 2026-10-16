@@ -1,27 +1,63 @@
-INCFLAGS := -I$(CORE_DIR)/deps -I$(CORE_DIR)/deps/libretro-common/include \
-	-I$(CORE_DIR)/deps/miniz -I$(CORE_DIR)/src -I$(CORE_DIR)/libretro -I../../e9k-lib
+INCFLAGS := -I$(CORE_DIR)/deps \
+	-I$(CORE_DIR)/deps/libretro-common/include \
+	-I$(CORE_DIR)/deps/miniz \
+	-I$(CORE_DIR)/deps/lzma/include \
+	-I$(CORE_DIR)/deps/zstd/lib \
+	-I$(CORE_DIR)/src \
+	-I$(CORE_DIR)/libretro \
+	-I../../e9k-lib
 
 ## External SDL windows removed; no SDL dependencies needed
 
-ifeq ($(platform),unix)
-LIBS += -lm
-endif
+LIBS += -lz
+FLAGS += -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD \
+	-DZSTD_DISABLE_ASM -DHAVE_CHDR
 
 SOURCES_C := \
 	$(CORE_DIR)/libretro/libretro.c \
+	$(CORE_DIR)/libretro/md5.c \
 	$(CORE_DIR)/deps/libretro-common/compat/compat_posix_string.c \
 	$(CORE_DIR)/deps/libretro-common/compat/compat_strl.c \
 	$(CORE_DIR)/deps/libretro-common/compat/fopen_utf8.c \
 	$(CORE_DIR)/deps/libretro-common/encodings/encoding_utf.c \
 	$(CORE_DIR)/deps/libretro-common/file/file_path.c \
+	$(CORE_DIR)/deps/libretro-common/file/file_path_io.c \
 	$(CORE_DIR)/deps/libretro-common/streams/file_stream.c \
 	$(CORE_DIR)/deps/libretro-common/streams/file_stream_transforms.c \
 	$(CORE_DIR)/deps/libretro-common/string/stdstring.c \
 	$(CORE_DIR)/deps/libretro-common/time/rtime.c \
 	$(CORE_DIR)/deps/libretro-common/vfs/vfs_implementation.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_bitstream.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_cdrom.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_chd.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_flac.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_flac_codec.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_huffman.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_lzma.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_zlib.c \
+	$(CORE_DIR)/deps/libretro-common/formats/libchdr/libchdr_zstd.c \
+	$(CORE_DIR)/deps/lzma/src/Alloc.c \
+	$(CORE_DIR)/deps/lzma/src/CpuArch.c \
+	$(CORE_DIR)/deps/lzma/src/LzFind.c \
+	$(CORE_DIR)/deps/lzma/src/LzmaDec.c \
+	$(CORE_DIR)/deps/lzma/src/LzmaEnc.c \
 	$(CORE_DIR)/deps/miniz/miniz.c \
 	$(CORE_DIR)/deps/speex/resample.c \
+	$(CORE_DIR)/deps/zstd/lib/common/entropy_common.c \
+	$(CORE_DIR)/deps/zstd/lib/common/error_private.c \
+	$(CORE_DIR)/deps/zstd/lib/common/fse_decompress.c \
+	$(CORE_DIR)/deps/zstd/lib/common/zstd_common.c \
+	$(CORE_DIR)/deps/zstd/lib/common/xxhash.c \
+	$(CORE_DIR)/deps/zstd/lib/decompress/huf_decompress.c \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_ddict.c \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_decompress.c \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_decompress_block.c \
 	$(CORE_DIR)/src/geo.c \
+	$(CORE_DIR)/src/geo_cd.c \
+	$(CORE_DIR)/src/geo_chd.c \
+	$(CORE_DIR)/src/geo_cue.c \
+	$(CORE_DIR)/src/geo_disc.c \
+	$(CORE_DIR)/src/geo_lc8951.c \
 	$(CORE_DIR)/src/geo_lspc.c \
 	$(CORE_DIR)/src/geo_m68k.c \
 	$(CORE_DIR)/src/geo_memcard.c \

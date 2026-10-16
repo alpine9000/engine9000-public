@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "m68k/m68kcpu.h"
 
 #include "geo.h"
+#include "geo_cd.h"
 #include "geo_lspc.h"
 #include "geo_m68k.h"
 #include "geo_rtc.h"
@@ -51,6 +52,16 @@ void geo_irq2_acknowledgePending(void);
 void geo_irq2_deferCounterLoadDisplayCounter(void);
 void geo_irq2_displayCounterSetHigh(uint16_t value);
 void geo_irq2_displayCounterSetLow(uint16_t value);
+
+static unsigned (*m68k_read_8_fn)(unsigned);
+static unsigned (*m68k_read_16_fn)(unsigned);
+static void (*m68k_write_8_fn)(unsigned, unsigned);
+static void (*m68k_write_16_fn)(unsigned, unsigned);
+
+static unsigned geo_m68k_cart_read_8(unsigned address);
+static unsigned geo_m68k_cart_read_16(unsigned address);
+static void geo_m68k_cart_write_8(unsigned address, unsigned value);
+static void geo_m68k_cart_write_16(unsigned address, unsigned value);
 
 #define SMATAP 0x98ec // NEO-SMA Tapped bits - 2, 3, 5, 6, 7, 11, 12, and 15
 #define GEO_DBG_TEXT_ADDR 0xFFFF0 // Fake debug output register
@@ -850,7 +861,7 @@ static void geo_m68k_write_banksw_16_kof10th(uint32_t addr, uint16_t data) {
  * ---------------------------------------------------------------------
  */
 
-unsigned m68k_read_memory_8(unsigned address) {
+static unsigned geo_m68k_cart_read_8(unsigned address) {
     unsigned result = 0xff;
     uint32_t addr24 = (uint32_t)(address & 0x00ffffffu);
     if (address < 0x000080) { // Vector Table
@@ -1057,7 +1068,7 @@ uint8_t geo_m68k_debug_peek_8(uint32_t address) {
     return 0xff;
 }
 
-unsigned m68k_read_memory_16(unsigned address) {
+static unsigned geo_m68k_cart_read_16(unsigned address) {
     unsigned result = 0xffff;
     uint32_t addr24 = (uint32_t)(address & 0x00ffffffu);
     if (address & 0x01) {
@@ -1149,18 +1160,26 @@ out:
     return result;
 }
 
+unsigned m68k_read_memory_8(unsigned address) {
+    return m68k_read_8_fn(address);
+}
+
+unsigned m68k_read_memory_16(unsigned address) {
+    return m68k_read_16_fn(address);
+}
+
 unsigned m68k_read_memory_32(unsigned address) {
     uint32_t addr24 = (uint32_t)(address & 0x00ffffffu);
     e9k_debugger_watchpoint_suspend();
-    unsigned hi = m68k_read_memory_16(address);
-    unsigned lo = m68k_read_memory_16(address + 2);
+    unsigned hi = m68k_read_16_fn(address);
+    unsigned lo = m68k_read_16_fn(address + 2);
     e9k_debugger_watchpoint_resume();
     unsigned result = (hi << 16) | (lo & 0xffffu);
     e9k_debugger_watchpoint_read(addr24, (uint32_t)result, 32);
     return result;
 }
 
-void m68k_write_memory_8(unsigned address, unsigned value) {
+static void geo_m68k_cart_write_8(unsigned address, unsigned value) {
     uint32_t addr24 = (uint32_t)(address & 0x00ffffffu);
     uint32_t old_value = 0;
     int old_value_valid = 0;
@@ -1373,7 +1392,7 @@ out:
     e9k_debugger_watchpoint_write(addr24, (uint32_t)v8, old_value, 8, old_value_valid);
 }
 
-void m68k_write_memory_16(unsigned address, unsigned value) {
+static void geo_m68k_cart_write_16(unsigned address, unsigned value) {
     if (address & 0x01)
         geo_log(GEO_LOG_WRN, "Unaligned 16-bit Write: %06x %04x\n",
             address, value);
@@ -1545,6 +1564,14 @@ out:
     e9k_debugger_watchpoint_write(addr24, (uint32_t)v16, old_value, 16, old_value_valid);
 }
 
+void m68k_write_memory_8(unsigned address, unsigned value) {
+    m68k_write_8_fn(address, value);
+}
+
+void m68k_write_memory_16(unsigned address, unsigned value) {
+    m68k_write_16_fn(address, value);
+}
+
 void m68k_write_memory_32(unsigned address, unsigned value) {
     uint32_t addr24 = (uint32_t)(address & 0x00ffffffu);
     uint32_t v32 = (uint32_t)value;
@@ -1555,10 +1582,10 @@ void m68k_write_memory_32(unsigned address, unsigned value) {
         return;
     }
     e9k_debugger_watchpoint_suspend();
-    unsigned old_hi = m68k_read_memory_16(address);
-    unsigned old_lo = m68k_read_memory_16(address + 2);
-    m68k_write_memory_16(address, (v32 >> 16) & 0xffffu);
-    m68k_write_memory_16(address + 2, v32 & 0xffffu);
+    unsigned old_hi = m68k_read_16_fn(address);
+    unsigned old_lo = m68k_read_16_fn(address + 2);
+    m68k_write_16_fn(address, (v32 >> 16) & 0xffffu);
+    m68k_write_16_fn(address + 2, v32 & 0xffffu);
     e9k_debugger_watchpoint_resume();
     uint32_t old_value = ((uint32_t)old_hi << 16) | ((uint32_t)old_lo & 0xffffu);
     e9k_debugger_watchpoint_write(addr24, v32, old_value, 32, 1);
@@ -1582,10 +1609,27 @@ void geo_m68k_reset(void) {
         banksw_addr = 0;
 }
 
+void geo_m68k_set_memmap_cart(void) {
+    m68k_read_8_fn = &geo_m68k_cart_read_8;
+    m68k_read_16_fn = &geo_m68k_cart_read_16;
+    m68k_write_8_fn = &geo_m68k_cart_write_8;
+    m68k_write_16_fn = &geo_m68k_cart_write_16;
+}
+
+void geo_m68k_set_memmap_cd(void) {
+    m68k_read_8_fn = &geo_cd_m68k_read_8;
+    m68k_read_16_fn = &geo_cd_m68k_read_16;
+    m68k_write_8_fn = &geo_cd_m68k_write_8;
+    m68k_write_16_fn = &geo_cd_m68k_write_16;
+}
+
 void geo_m68k_init(void) {
     // Initialize the 68K CPU
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
+
+    // Default to cartridge memory map
+    geo_m68k_set_memmap_cart();
 
     // Zero the cartridge registers (most games do not use these)
     cartreg[0] = cartreg[1] = 0;
@@ -1614,8 +1658,32 @@ geo_m68k_setInterruptLine(unsigned level, unsigned state)
 
 // Acknowledge interrupts
 int geo_m68k_int_ack(int level) {
-    if (level) { }
-    //geo_log(GEO_LOG_INF, "IRQ ACK Level: %02x\n", level);
+    if (ngsys.cdmode) {
+        /* CD Mode Custom Vectoring
+           Level 1: VBLANK vector at offset 0x68 (vector 26)
+           Level 2: CD vector at offset 0x54 or 0x58
+           Level 3: Timer/HBLANK vector at offset 0x64 (vector 25)
+        */
+        switch (level) {
+            case 1:
+                m68k_set_virq(1, 0);
+                return 0x68 / 4; // VBLANK
+            case 2: {
+                m68k_set_virq(2, 0);
+                if (geo_cd_irq_pending() & CD_INT_DECODER) {
+                    geo_cd_irq_clear(CD_INT_DECODER);
+                    return 0x54 / 4; // Vector 21
+                }
+                else {
+                    geo_cd_irq_clear(CD_INT_COMMUNICATION);
+                    return 0x58 / 4; // Vector 22
+                }
+            }
+            case 3:
+                m68k_set_virq(3, 0);
+                return 0x64 / 4; // Timer/HBLANK
+        }
+    }
     return M68K_INT_ACK_AUTOVECTOR;
 }
 
@@ -1728,9 +1796,13 @@ unsigned m68k_read_disassembler_32(unsigned address) {
     return m68k_read_memory_32(address);
 }
 
+void geo_m68k_bios_bswap(void) {
+    swapb16_range(romdata->b, romdata->bsz);
+}
+
 void geo_m68k_postload(void) {
     // Byteswap the BIOS and P ROM
-    swapb16_range(romdata->b, romdata->bsz);
+    geo_m68k_bios_bswap();
     swapb16_range(romdata->p, romdata->psz);
 
     // Calculate the switchable PROM bank mask

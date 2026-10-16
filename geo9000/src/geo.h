@@ -43,10 +43,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SIZE_32K    0x008000
 #define SIZE_64K    0x010000
 #define SIZE_128K   0x020000
+#define SIZE_512K   0x080000
+#define SIZE_1M     0x100000
+#define SIZE_2M     0x200000
+#define SIZE_4M     0x400000
 
 #define SYSTEM_AES  0x00 // Console
 #define SYSTEM_MVS  0x01 // Arcade
 #define SYSTEM_UNI  0x02 // Universe BIOS
+#define SYSTEM_CDF  0x03 // CD Front Loader
+#define SYSTEM_CDT  0x04 // CD Top Loader
+#define SYSTEM_CDZ  0x05 // CDZ
+#define SYSTEM_CDU  0x06 // CD Universe BIOS
 
 #define REGION_US   0x00 // USA
 #define REGION_JP   0x01 // Japan
@@ -69,6 +77,7 @@ enum geo_memtype {
     GEO_MEMTYPE_EXTRAM,
     GEO_MEMTYPE_MEMCARD,
     GEO_MEMTYPE_DYNFIX,
+    GEO_MEMTYPE_CDBRAM,
     GEO_MEMTYPE_MAX
 };
 
@@ -76,6 +85,7 @@ enum geo_savedata {
     GEO_SAVEDATA_NVRAM,
     GEO_SAVEDATA_CARTRAM,
     GEO_SAVEDATA_MEMCARD,
+    GEO_SAVEDATA_CDBRAM,
     GEO_SAVEDATA_MAX
 };
 
@@ -118,6 +128,13 @@ typedef struct _ngsys_t {
 
     // Cartridge RAM (Battery Backed SRAM) Presence
     uint8_t sram_present;
+
+    // System type/region
+    uint8_t sys;
+    uint8_t region;
+
+    // Convenience variables, not part of the state
+    unsigned cdmode;
 } ngsys_t;
 
 typedef struct _romdata_t {
@@ -165,10 +182,13 @@ typedef struct _romdata_t {
 romdata_t* geo_romdata_ptr(void);
 
 int geo_bios_load_mem(void*, size_t);
+int geo_bios_load_mem_aux(void*, size_t);
 int geo_bios_load_file(const char*);
+int geo_bios_load_file_aux(const char*);
 void geo_bios_unload(void);
 
 void geo_watchdog_reset(void);
+void geo_watchdog_enable(unsigned);
 
 int geo_savedata_load(unsigned, const char*);
 int geo_savedata_save(unsigned, const char*);
@@ -177,6 +197,7 @@ unsigned geo_cartram_present(void);
 void geo_exec(void);
 int geo_stepZ80Instruction(void);
 void geo_init(void);
+void geo_deinit(void);
 void geo_reset(int);
 
 void geo_log_set_callback(void (*)(int, const char *, ...));
@@ -193,7 +214,12 @@ int geo_get_system(void);
 void geo_set_system(int);
 void geo_set_div68k(int);
 void geo_set_adpcm_wrap(int);
-void geo_set_watchdog_frames(unsigned);
+void geo_set_watchdog_tolerance(int);
+void geo_irq2_acknowledgePending(void);
+void geo_irq2_counterLoadDisplayCounter(void);
+void geo_irq2_deferCounterLoadDisplayCounter(void);
+void geo_irq2_displayCounterSetHigh(uint16_t);
+void geo_irq2_displayCounterSetLow(uint16_t);
 
 uint32_t geo_calc_mask(unsigned, unsigned);
 
@@ -209,8 +235,9 @@ size_t geo_state_size(void);
 const void* geo_mem_ptr(unsigned, size_t*);
 
 extern void (*geo_log)(int, const char *, ...);
-
 extern unsigned (*geo_input_cb[NUMINPUTS_NG])(unsigned);
 extern unsigned (*geo_input_sys_cb[NUMINPUTS_SYS])(void);
 
 extern ngsys_t ngsys;
+extern unsigned irq_vbl_level;
+extern unsigned irq_timer_level;

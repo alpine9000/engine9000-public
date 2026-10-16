@@ -58,6 +58,7 @@ typedef struct e9k_path_config {
     e9k_libretro_config_t libretro;
     char romFolder[PATH_MAX];
     char systemType[16];
+    char cdSystemType[16];
     int  skipBiosLogo;
 } e9k_neogeo_config_t;
 

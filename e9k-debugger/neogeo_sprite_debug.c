@@ -127,6 +127,15 @@ static void
 neogeo_sprite_debug_updateScrollContentSize(void);
 
 static void
+neogeo_sprite_debug_captureScrollState(void);
+
+static void
+neogeo_sprite_debug_releaseRenderResources(void);
+
+static void
+neogeo_sprite_debug_clearUiPointers(void);
+
+static void
 neogeo_sprite_debug_adjustZoom(e9ui_context_t *ctx, void *user);
 
 static void
@@ -302,6 +311,50 @@ neogeo_sprite_debug_updateScrollContentSize(void)
         e9ui_scroll_setContentWidthPx(neogeo_sprite_debugState.overlayScroll, contentW);
         e9ui_scroll_setContentHeightPx(neogeo_sprite_debugState.overlayScroll, contentH);
     }
+}
+
+static void
+neogeo_sprite_debug_captureScrollState(void)
+{
+    if (!neogeo_sprite_debugState.overlayScroll) {
+        return;
+    }
+    e9ui_scroll_getScrollPx(neogeo_sprite_debugState.overlayScroll,
+                            &neogeo_sprite_debugState.savedScrollX,
+                            &neogeo_sprite_debugState.savedScrollY);
+    neogeo_sprite_debugState.hasSavedScroll = 1;
+}
+
+static void
+neogeo_sprite_debug_releaseRenderResources(void)
+{
+    if (neogeo_sprite_debugState.texture) {
+        SDL_DestroyTexture(neogeo_sprite_debugState.texture);
+        neogeo_sprite_debugState.texture = NULL;
+    }
+    if (neogeo_sprite_debugState.pixels) {
+        free(neogeo_sprite_debugState.pixels);
+        neogeo_sprite_debugState.pixels = NULL;
+        neogeo_sprite_debugState.pixelsCap = 0;
+    }
+    neogeo_sprite_debugState.texW = 0;
+    neogeo_sprite_debugState.texH = 0;
+    neogeo_sprite_debugState.histGradReady = 0;
+    neogeo_sprite_debugState.cachedValid = 0;
+    neogeo_sprite_debugState.lastHash = 0;
+}
+
+static void
+neogeo_sprite_debug_clearUiPointers(void)
+{
+    neogeo_sprite_debugState.overlayBodyHost = NULL;
+    neogeo_sprite_debugState.overlayScroll = NULL;
+    neogeo_sprite_debugState.root = NULL;
+    memset(neogeo_sprite_debugState.modeButtons, 0, sizeof(neogeo_sprite_debugState.modeButtons));
+    neogeo_sprite_debugState.windowState.open = 0;
+    neogeo_sprite_debugState.hasLastState = 0;
+    neogeo_sprite_debugState.window = NULL;
+    neogeo_sprite_debugState.renderer = NULL;
 }
 
 static void
@@ -958,6 +1011,17 @@ neogeo_sprite_debug_drawShrinkLegend(uint32_t *pixels, int pitch, int extW, int 
     neogeo_sprite_debug_drawDigits3x5(pixels, pitch, extW, extH, plotX, plotY + plotH - labelH, "255", colWhite);
 }
 
+static void
+neogeo_sprite_debug_overlayBodyDtor(e9ui_component_t *self, e9ui_context_t *ctx)
+{
+    (void)ctx;
+    if (self != neogeo_sprite_debugState.overlayBodyHost) {
+        return;
+    }
+    neogeo_sprite_debug_releaseRenderResources();
+    neogeo_sprite_debug_clearUiPointers();
+}
+
 static e9ui_component_t *
 neogeo_sprite_debug_makeOverlayBodyHost(void)
 {
@@ -969,6 +1033,7 @@ neogeo_sprite_debug_makeOverlayBodyHost(void)
     host->layout = neogeo_sprite_debug_overlayBodyLayout;
     host->render = neogeo_sprite_debug_overlayBodyRender;
     host->onClick = neogeo_sprite_debug_overlayBodyClick;
+    host->dtor = neogeo_sprite_debug_overlayBodyDtor;
     return host;
 }
 
@@ -1466,7 +1531,9 @@ neogeo_sprite_debug_toggle(void)
     if (!neogeo_sprite_debugState.windowState.open) {
         e9ui_component_t *controlsRow = NULL;
 
-        neogeo_sprite_debugState.windowState.windowHost = e9ui_windowCreate(neogeo_sprite_debug_windowBackend());
+        if (!neogeo_sprite_debugState.windowState.windowHost) {
+            neogeo_sprite_debugState.windowState.windowHost = e9ui_windowCreate(neogeo_sprite_debug_windowBackend());
+        }
         if (!neogeo_sprite_debugState.windowState.windowHost) {
             return;
         }
@@ -1508,39 +1575,17 @@ neogeo_sprite_debug_toggle(void)
         neogeo_sprite_debugState.renderer = e9ui->ctx.renderer;
         neogeo_sprite_debugState.windowState.open = 1;
     } else {
-        if (neogeo_sprite_debugState.overlayScroll) {
-            e9ui_scroll_getScrollPx(neogeo_sprite_debugState.overlayScroll,
-                                    &neogeo_sprite_debugState.savedScrollX,
-                                    &neogeo_sprite_debugState.savedScrollY);
-            neogeo_sprite_debugState.hasSavedScroll = 1;
-        }
+        e9ui_window_t *windowHost = neogeo_sprite_debugState.windowState.windowHost;
+        neogeo_sprite_debug_captureScrollState();
         neogeo_sprite_3d_close();
-        if (neogeo_sprite_debugState.texture) {
-            SDL_DestroyTexture(neogeo_sprite_debugState.texture);
-            neogeo_sprite_debugState.texture = NULL;
+        neogeo_sprite_debug_releaseRenderResources();
+        neogeo_sprite_debug_clearUiPointers();
+        if (windowHost) {
+            e9ui_windowDestroy(windowHost);
         }
-        if (neogeo_sprite_debugState.pixels) {
-            free(neogeo_sprite_debugState.pixels);
-            neogeo_sprite_debugState.pixels = NULL;
-            neogeo_sprite_debugState.pixelsCap = 0;
-        }
-        neogeo_sprite_debugState.texW = 0;
-        neogeo_sprite_debugState.texH = 0;
-        neogeo_sprite_debugState.histGradReady = 0;
-        neogeo_sprite_debugState.cachedValid = 0;
-        neogeo_sprite_debugState.lastHash = 0;
-        if (neogeo_sprite_debugState.windowState.windowHost) {
-            e9ui_windowDestroy(neogeo_sprite_debugState.windowState.windowHost);
+        if (neogeo_sprite_debugState.windowState.windowHost == windowHost) {
             neogeo_sprite_debugState.windowState.windowHost = NULL;
         }
-        neogeo_sprite_debugState.overlayBodyHost = NULL;
-        neogeo_sprite_debugState.overlayScroll = NULL;
-        neogeo_sprite_debugState.root = NULL;
-        memset(neogeo_sprite_debugState.modeButtons, 0, sizeof(neogeo_sprite_debugState.modeButtons));
-        neogeo_sprite_debugState.windowState.open = 0;
-        neogeo_sprite_debugState.hasLastState = 0;
-        neogeo_sprite_debugState.window = NULL;
-        neogeo_sprite_debugState.renderer = NULL;
     }
 }
 

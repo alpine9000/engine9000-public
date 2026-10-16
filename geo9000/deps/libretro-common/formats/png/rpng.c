@@ -163,7 +163,7 @@ static bool rpng_process_ihdr(struct png_ihdr *ihdr)
       case PNG_IHDR_COLOR_RGBA:
          if (ihdr_depth != 8 && ihdr_depth != 16)
          {
-            fprintf(stderr, "[RPNG]: Error in line %d.\n", __LINE__);
+            fprintf(stderr, "[RPNG] Error in line %d.\n", __LINE__);
             return false;
          }
          break;
@@ -171,7 +171,7 @@ static bool rpng_process_ihdr(struct png_ihdr *ihdr)
          /* Valid bitdepths are: 1, 2, 4, 8, 16 */
          if (ihdr_depth > 16 || (0x977F7FFF << ihdr_depth) & 0x80000000)
          {
-            fprintf(stderr, "[RPNG]: Error in line %d.\n", __LINE__);
+            fprintf(stderr, "[RPNG] Error in line %d.\n", __LINE__);
             return false;
          }
          break;
@@ -179,12 +179,12 @@ static bool rpng_process_ihdr(struct png_ihdr *ihdr)
          /* Valid bitdepths are: 1, 2, 4, 8 */
          if (ihdr_depth > 8 || (0x977F7FFF << ihdr_depth)  & 0x80000000)
          {
-            fprintf(stderr, "[RPNG]: Error in line %d.\n", __LINE__);
+            fprintf(stderr, "[RPNG] Error in line %d.\n", __LINE__);
             return false;
          }
          break;
       default:
-         fprintf(stderr, "[RPNG]: Error in line %d.\n", __LINE__);
+         fprintf(stderr, "[RPNG] Error in line %d.\n", __LINE__);
          return false;
    }
 
@@ -500,7 +500,7 @@ static int rpng_reverse_filter_init(const struct png_ihdr *ihdr,
 {
    size_t pass_size;
 
-   if (   !(pngp->flags & RPNG_PROCESS_FLAG_ADAM7_PASS_INITIALIZED) 
+   if (   !(pngp->flags & RPNG_PROCESS_FLAG_ADAM7_PASS_INITIALIZED)
          && ihdr->interlace)
    {
       if (     ihdr->width  <= rpng_passes[pngp->pass_pos].x
@@ -753,7 +753,7 @@ static int rpng_load_image_argb_process_inflate_init(
       rpng_t *rpng, uint32_t **data)
 {
    bool zstatus;
-   enum trans_stream_error terror;
+   enum trans_stream_error err;
    uint32_t rd, wn;
    struct rpng_process *process = (struct rpng_process*)rpng->process;
    bool to_continue        = (process->avail_in > 0
@@ -762,16 +762,16 @@ static int rpng_load_image_argb_process_inflate_init(
    if (!to_continue)
       goto end;
 
-   zstatus = process->stream_backend->trans(process->stream, false, &rd, &wn, &terror);
+   zstatus = process->stream_backend->trans(process->stream, false, &rd, &wn, &err);
 
-   if (!zstatus && terror != TRANS_STREAM_ERROR_BUFFER_FULL)
+   if (!zstatus && err != TRANS_STREAM_ERROR_BUFFER_FULL)
       goto error;
 
    process->avail_in -= rd;
    process->avail_out -= wn;
    process->total_out += wn;
 
-   if (terror)
+   if (err)
       return 0;
 
 end:
@@ -924,7 +924,7 @@ static enum png_chunk_type rpng_read_chunk_header(
       type[i]      = byte;
    }
 
-   if (     
+   if (
             type[0] == 'I'
          && type[1] == 'H'
          && type[2] == 'D'
@@ -998,7 +998,7 @@ bool rpng_iterate_image(rpng_t *rpng)
          return false;
 
       case PNG_CHUNK_IHDR:
-         if (     (rpng->flags & RPNG_FLAG_HAS_IHDR) 
+         if (     (rpng->flags & RPNG_FLAG_HAS_IHDR)
                || (rpng->flags & RPNG_FLAG_HAS_IDAT)
                || (rpng->flags & RPNG_FLAG_HAS_IEND))
             return false;
@@ -1016,8 +1016,8 @@ bool rpng_iterate_image(rpng_t *rpng)
          rpng->ihdr.filter       = buf[11];
          rpng->ihdr.interlace    = buf[12];
 
-         if (     rpng->ihdr.width  == 0 
-               || rpng->ihdr.height == 0 
+         if (     rpng->ihdr.width  == 0
+               || rpng->ihdr.height == 0
                /* ensure multiplications don't overflow and wrap around, that'd give buffer overflow crashes */
                || (uint64_t)rpng->ihdr.width*rpng->ihdr.height*sizeof(uint32_t) >= 0x80000000)
             return false;
@@ -1028,7 +1028,7 @@ bool rpng_iterate_image(rpng_t *rpng)
          if (rpng->ihdr.compression != 0)
          {
 #if defined(DEBUG) || defined(RPNG_TEST)
-            fprintf(stderr, "[RPNG]: Error in line %d.\n", __LINE__);
+            fprintf(stderr, "[RPNG] Error in line %d.\n", __LINE__);
 #endif
             return false;
          }
@@ -1091,10 +1091,10 @@ bool rpng_iterate_image(rpng_t *rpng)
          break;
 
       case PNG_CHUNK_IDAT:
-         if (     !(rpng->flags & RPNG_FLAG_HAS_IHDR) 
+         if (     !(rpng->flags & RPNG_FLAG_HAS_IHDR)
                ||  (rpng->flags & RPNG_FLAG_HAS_IEND)
-               ||  (rpng->ihdr.color_type == PNG_IHDR_COLOR_PLT 
-                  && 
+               ||  (rpng->ihdr.color_type == PNG_IHDR_COLOR_PLT
+                  &&
                   !(rpng->flags & RPNG_FLAG_HAS_PLTE)))
             return false;
 
@@ -1112,7 +1112,7 @@ bool rpng_iterate_image(rpng_t *rpng)
          break;
 
       case PNG_CHUNK_IEND:
-         if (     !(rpng->flags & RPNG_FLAG_HAS_IHDR) 
+         if (     !(rpng->flags & RPNG_FLAG_HAS_IHDR)
                || !(rpng->flags & RPNG_FLAG_HAS_IDAT))
             return false;
 
@@ -1129,7 +1129,7 @@ bool rpng_iterate_image(rpng_t *rpng)
 }
 
 int rpng_process_image(rpng_t *rpng,
-      void **_data, size_t size, unsigned *width, unsigned *height)
+      void **_data, size_t len, unsigned *width, unsigned *height)
 {
    uint32_t **data = (uint32_t**)_data;
 
@@ -1205,8 +1205,7 @@ bool rpng_start(rpng_t *rpng)
    if (rpng->buff_end - rpng->buff_data < 8)
       return false;
 
-   if (string_is_not_equal_fast(
-            rpng->buff_data, png_magic, sizeof(png_magic)))
+   if (memcmp(rpng->buff_data, png_magic, sizeof(png_magic)) != 0)
       return false;
 
    rpng->buff_data += 8;

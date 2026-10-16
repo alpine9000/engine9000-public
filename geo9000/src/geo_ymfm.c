@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -53,7 +53,6 @@ static romdata_t *romdata = NULL;
 static int16_t ymbuf[SIZE_YMBUF];
 static size_t bufpos;
 static int32_t busytimer;
-static int32_t busyfrac;
 static int32_t timer[2];
 static int32_t output[3];
 
@@ -99,23 +98,15 @@ void ymfm_sync_check_interrupts(void) {
 }
 
 void ymfm_set_timer(uint32_t tnum, int32_t duration) {
-    if (duration >= 0)
-        timer[tnum] += (duration / DIVISOR);
-    else // -1 means disabled
-        timer[tnum] = duration;
+    timer[tnum] = duration;
 }
 
 void ymfm_set_busy_end(uint32_t clocks) {
-    busytimer += clocks / DIVISOR;
-    busyfrac += clocks % DIVISOR;
-    if (busyfrac >= DIVISOR) {
-        ++busytimer;
-        busyfrac -= DIVISOR;
-    }
+    busytimer += clocks;
 }
 
 bool ymfm_is_busy(void) {
-    return busytimer ? true : false;
+    return busytimer > 0;
 }
 
 void ymfm_update_irq(bool asserted) {
@@ -123,14 +114,21 @@ void ymfm_update_irq(bool asserted) {
 }
 
 static inline void geo_ymfm_timer_tick(void) {
-    if (busytimer)
-        --busytimer;
+    if (busytimer > 0) {
+        busytimer -= DIVISOR;
+        if (busytimer < 0) {
+            busytimer = 0;
+        }
+    }
 
     for (int i = 0; i < 2; ++i) {
-        if (timer[i] < 0)
+        if (timer[i] < 0) {
             continue;
-        else if (--timer[i] == 0)
+        }
+        timer[i] -= DIVISOR;
+        if (timer[i] <= 0) {
             fm_engine_timer_expired(i);
+        }
     }
 }
 
@@ -362,11 +360,21 @@ void geo_ymfm_adpcm_wrap(int w) {
 }
 
 // States
-void geo_ymfm_state_load(uint8_t *st) {
+void geo_ymfm_state_load(uint8_t *st, unsigned version) {
     busytimer = geo_serial_pop32(st);
-    busyfrac = geo_serial_pop32(st);
+    if (version == 3u) {
+        uint32_t busyfrac = geo_serial_pop32(st);
+        busytimer = (busytimer * DIVISOR) + busyfrac;
+    }
     timer[0] = geo_serial_pop32(st);
     timer[1] = geo_serial_pop32(st);
+    if (version == 3u) {
+        for (unsigned i = 0; i < 2; ++i) {
+            if (timer[i] >= 0) {
+                timer[i] *= DIVISOR;
+            }
+        }
+    }
     opn_state_load(st);
     adpcm_state_load(st);
     ssg_state_load(st);
@@ -374,7 +382,6 @@ void geo_ymfm_state_load(uint8_t *st) {
 
 void geo_ymfm_state_save(uint8_t *st) {
     geo_serial_push32(st, busytimer);
-    geo_serial_push32(st, busyfrac);
     geo_serial_push32(st, timer[0]);
     geo_serial_push32(st, timer[1]);
     opn_state_save(st);

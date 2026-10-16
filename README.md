@@ -577,11 +577,11 @@ BIOS files are not included. You must supply a valid Neo Geo BIOS set in the **s
 - Set via Settings UI: `BIOS FOLDER`
 - Or via CLI: `--system-dir PATH` (use `--neogeo` to force Neo Geo mode)
 
-In this repo, the default `./system` directory corresponds to `e9k-debugger/system` when running from the `e9k-debugger` directory. In practice this is typically a BIOS archive such as `neogeo.zip` (MVS / UniBIOS) or `aes.zip` (AES), placed inside the system directory.
+In this repo, the default `./system` directory corresponds to `e9k-debugger/system` when running from the `e9k-debugger` directory. In practice this is typically a BIOS archive such as `neogeo.zip` (MVS / UniBIOS) or `aes.zip` (AES), placed inside the system directory. Neo Geo CD media also requires `neocd.zip` for front/top loader mode or `neocdz.zip` for CDZ/CDZ UniBIOS mode.
 
 ### Game ROMS
 
-`e9k-debugger` can load .neo files or attempt to automatically create a .neo file from a mame style rom set. 
+`e9k-debugger` can load .neo files or attempt to automatically create a .neo file from a mame style rom set. Neo Geo CD `.cue` and `.chd` media can be loaded through the same ROM path setting.
 
 - It uses two naming conventions:
   - the files with a rom specific file extension (.p1, .m1, .v1 etc)
@@ -701,8 +701,10 @@ Run `e9k-debugger --help` for the full list. The current options include:
 
 #### Neo Geo options (use with `--neogeo`)
 - `--elf PATH`
-- `--rom PATH` (Neo Geo `.neo` file)
+- `--rom PATH` (Neo Geo `.neo`, `.cue`, or `.chd` file)
 - `--rom-folder PATH` (generates a `.neo`)
+- `--aes`, `--mvs`, `--uni` (cartridge system type)
+- `--cdz`, `--cd-front`, `--cd-top`, `--cdz-uni` (CD system type; CD media is selected by loading `.cue` or `.chd`)
 
 #### Amiga options (use with `--amiga`)
 - `--hunk PATH` (Amiga debug binary path)

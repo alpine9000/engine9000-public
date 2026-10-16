@@ -123,6 +123,11 @@ struct rjpeg
 
 #endif
 
+/* Auto-detect NEON support */
+#if !defined(RJPEG_NO_SIMD) && !defined(RJPEG_NEON) && (defined(__ARM_NEON__) || defined(HAVE_NEON))
+#define RJPEG_NEON
+#endif
+
 /* ARM NEON */
 #if defined(RJPEG_NO_SIMD) && defined(RJPEG_NEON)
 #undef RJPEG_NEON
@@ -330,7 +335,7 @@ static void rjpeg_build_fast_ac(int16_t *fast_ac, rjpeg_huffman *h)
             int k = ((i << len) & ((1 << FAST_BITS) - 1)) >> (FAST_BITS - magbits);
             int m = 1 << (magbits - 1);
             if (k < m)
-               k += (-1 << magbits) + 1;
+               k += (~0U << magbits) + 1;
 
             /* if the result is small enough, we can fit it in fast_ac table */
             if (k >= -128 && k <= 127)
@@ -771,7 +776,7 @@ static INLINE uint8_t rjpeg_clamp(int x)
 {
    /* trick to use a single test to catch both cases */
    if ((unsigned int) x > 255)
-      return 255;
+      return (x < 0) ? 0 : 255;
    return (uint8_t) x;
 }
 
@@ -823,9 +828,9 @@ static void rjpeg_idct_block(uint8_t *out, int out_stride, short data[64])
    for (i = 0; i < 8; ++i,++d, ++v)
    {
       /* if all zeroes, shortcut -- this avoids dequantizing 0s and IDCTing */
-      if (     d[ 8] == 0 
-            && d[16] == 0 
-            && d[24] == 0 
+      if (     d[ 8] == 0
+            && d[16] == 0
+            && d[24] == 0
             && d[32] == 0
             && d[40] == 0
             && d[48] == 0
@@ -870,7 +875,7 @@ static void rjpeg_idct_block(uint8_t *out, int out_stride, short data[64])
        * we've got an extra 1<<3, so 1<<17 total we need to remove.
        * so we want to round that, which means adding 0.5 * 1<<17,
        * aka 65536. Also, we'll end up with -128 to 127 that we want
-       * to encode as 0..255 by adding 128, so we'll add that before the shift 
+       * to encode as 0..255 by adding 128, so we'll add that before the shift
        */
       x0 += 65536 + (128<<17);
       x1 += 65536 + (128<<17);
@@ -1322,7 +1327,7 @@ static void rjpeg_jpeg_reset(rjpeg_jpeg *j)
    j->todo                = j->restart_interval ? j->restart_interval : 0x7fffffff;
    j->eob_run             = 0;
 
-   /* no more than 1<<31 MCUs if no restart_interal? that's plenty safe,
+   /* no more than 1<<31 MCUs if no restart_interval? that's plenty safe,
     * since we don't even allow 1<<30 pixels */
 }
 
@@ -2214,11 +2219,11 @@ static void rjpeg_YCbCr_to_RGB_row(uint8_t *out, const uint8_t *y,
       g >>= 20;
       b >>= 20;
       if ((unsigned) r > 255)
-         r = 255;
+         r = (r < 0) ? 0 : 255;
       if ((unsigned) g > 255)
-         g = 255;
+         g = (g < 0) ? 0 : 255;
       if ((unsigned) b > 255)
-         b = 255;
+         b = (b < 0) ? 0 : 255;
       out[0] = (uint8_t)r;
       out[1] = (uint8_t)g;
       out[2] = (uint8_t)b;
@@ -2358,11 +2363,11 @@ static void rjpeg_YCbCr_to_RGB_simd(uint8_t *out, const uint8_t *y,
       g >>= 20;
       b >>= 20;
       if ((unsigned) r > 255)
-         r = 255;
+         r = (r < 0) ? 0 : 255;
       if ((unsigned) g > 255)
-         g = 255;
+         g = (g < 0) ? 0 : 255;
       if ((unsigned) b > 255)
-         b = 255;
+         b = (b < 0) ? 0 : 255;
       out[0] = (uint8_t)r;
       out[1] = (uint8_t)g;
       out[2] = (uint8_t)b;

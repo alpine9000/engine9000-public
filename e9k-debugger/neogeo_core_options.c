@@ -282,6 +282,9 @@ neogeo_coreOptionsLoadFromFile(const char *saveDir, const char *romPath)
         if (strcmp(key, "geolith_system_type") == 0) {
             continue;
         }
+        if (strcmp(key, "geolith_cd_system_type") == 0) {
+            continue;
+        }
         neogeo_core_options_kv_t *ent = neogeo_coreOptions_getOrAddEntry(key);
         if (!ent) {
             continue;
@@ -324,6 +327,9 @@ neogeo_coreOptionsWriteToFile(const char *saveDir, const char *romPath)
         if (strcmp(k, "geolith_system_type") == 0) {
             continue;
         }
+        if (strcmp(k, "geolith_cd_system_type") == 0) {
+            continue;
+        }
         fprintf(out, "%s=%s\n", k, v ? v : "");
     }
     fclose(out);
@@ -357,9 +363,11 @@ neogeo_coreOptionsApplyFileToHost(const char *saveDir, const char *romPath)
         if (strcmp(key, "geolith_system_type") == 0) {
             continue;
         }
+        if (strcmp(key, "geolith_cd_system_type") == 0) {
+            continue;
+        }
         libretro_host_setCoreOption(key, value);
     }
     fclose(f);
     return 1;
 }
-

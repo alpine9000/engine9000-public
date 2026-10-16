@@ -1,22 +1,35 @@
 Confirmed Non-bugs
 ------------------
-Bugs listed here have been confirmed to exist on real hardware.
+Bugs listed here have been confirmed to exist on real hardware. This means they
+are not emulation bugs.
 
 System ROM (MVS)
 ----------------
  - Top right corner of FIX layer is slow to update leading to a tearing effect
    on the bootup screen
 
+Cyber Lip (CD)
+--------------
+ - Requires manual BRAM format from BIOS screen
+
+Galaxy Fight (CD)
+-----------------
+ - Timer interrupt problems in "Demo" mode cause glitched backgrounds
+
 Ganryu
 ------
  - Clicks and pops when performing some actions and in some background music
+
+Karnov's Revenge (CD)
+---------------------
+- Karnov and blue flames are misaligned in "Demo" mode
 
 King of Fighters 2003 (Bootlegs)
 --------------------------------
  - Incorrect zooming
 
-Master of Syougi (Master of Shougi)
------------------------------------
+Master of Syougi/Master of Shougi
+---------------------------------
  - Reflection raster effect in title screen starts one line too late, leading
    to the top line of text data not moving as part of the reflection
 
@@ -55,6 +68,10 @@ Shock Troopers: 2nd Squad
 -------------------------
  - Graphical corruption near top of screen during intro sequence and during
    gameplay
+
+Stakes Winner - GI Kanzen Seiha e no Michi (CD)
+-----------------------------------------------
+- Requires manual BRAM format from BIOS screen
 
 Super Sidekicks 2
 -----------------

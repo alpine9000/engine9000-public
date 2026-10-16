@@ -26,6 +26,7 @@ typedef void (*retro_set_input_poll_fn_t)(retro_input_poll_t);
 typedef void (*retro_set_input_state_fn_t)(retro_input_state_t);
 typedef void (*retro_init_fn_t)(void);
 typedef void (*retro_deinit_fn_t)(void);
+typedef void (*retro_get_system_info_fn_t)(struct retro_system_info *);
 typedef bool (*retro_load_game_fn_t)(const struct retro_game_info *);
 typedef void (*retro_unload_game_fn_t)(void);
 typedef void (*retro_reset_fn_t)(void);
@@ -212,6 +213,7 @@ typedef struct {
     retro_set_input_state_fn_t setInputState;
     retro_init_fn_t init;
     retro_deinit_fn_t deinit;
+    retro_get_system_info_fn_t getSystemInfo;
     retro_load_game_fn_t loadGame;
     retro_unload_game_fn_t unloadGame;
     retro_run_fn_t run;

@@ -53,6 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define LSPC_FIXTILES_V     32
 #define LSPC_FIX_BOARD      0
 #define LSPC_FIX_CART       1
+#define LSPC_FIX_CD         2
 
 #define FIX_BANKSW_NONE 0
 #define FIX_BANKSW_LINE 1
@@ -94,6 +95,10 @@ void geo_lspc_set_fix(unsigned);
 void geo_lspc_set_sprlimit(unsigned);
 unsigned geo_lspc_get_sprlimit(void);
 void geo_lspc_set_palette(unsigned);
+void geo_lspc_set_skip_render(unsigned);
+void geo_lspc_disblspr_wr(unsigned);
+void geo_lspc_disblfix_wr(unsigned);
+void geo_lspc_envideo_wr(unsigned);
 void geo_lspc_setSpriteGrayscaleSelection(const e9k_debug_sprite_grayscale_selection_t*);
 void geo_lspc_setPaletteGrayscaleMask(const e9k_debug_palette_grayscale_mask_t*);
 size_t geo_lspc_getPaletteGrayscaleMask(e9k_debug_palette_grayscale_mask_t*, size_t);

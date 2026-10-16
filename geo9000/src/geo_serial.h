@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -45,6 +45,7 @@ uint8_t geo_serial_pop8(uint8_t*);
 uint16_t geo_serial_pop16(uint8_t*);
 uint32_t geo_serial_pop32(uint8_t*);
 uint64_t geo_serial_pop64(uint8_t*);
+uint32_t geo_serial_peek32(uint8_t*);
 size_t geo_serial_size(void);
 
 #endif

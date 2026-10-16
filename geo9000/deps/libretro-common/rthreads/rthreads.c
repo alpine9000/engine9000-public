@@ -364,25 +364,28 @@ scond_t *scond_new(void)
     *
     * Note: We might could simplify this using vista+ condition variables,
     * but we wanted an XP compatible solution. */
-   if (!(cond->event      = CreateEvent(NULL, FALSE, FALSE, NULL)))
-      goto error;
+   if (!(cond->event = CreateEvent(NULL, FALSE, FALSE, NULL)))
+   {
+      free(cond);
+      return NULL;
+   }
    if (!(cond->hot_potato = CreateEvent(NULL, FALSE, FALSE, NULL)))
    {
       CloseHandle(cond->event);
-      goto error;
+      free(cond);
+      return NULL;
    }
 
    InitializeCriticalSection(&cond->cs);
 #else
    if (pthread_cond_init(&cond->cond, NULL) != 0)
-      goto error;
+   {
+      free(cond);
+      return NULL;
+   }
 #endif
 
    return cond;
-
-error:
-   free(cond);
-   return NULL;
 }
 
 void scond_free(scond_t *cond)
@@ -684,7 +687,7 @@ bool scond_wait_timeout(scond_t *cond, slock_t *lock, int64_t timeout_us)
     * of the minimum length */
    /* The implementation of a 0 timeout here with pthreads is sketchy.
     * It isn't clear what happens if pthread_cond_timedwait is called with NOW.
-    * Moreover, it is possible that this thread gets pre-empted after the
+    * Moreover, it is possible that this thread gets preempted after the
     * clock_gettime but before the pthread_cond_timedwait.
     * In order to help smoke out problems caused by this strange usage,
     * let's treat a 0 timeout as always timing out.
@@ -765,6 +768,7 @@ bool sthread_tls_delete(sthread_tls_t *tls)
 #ifdef USE_WIN32_THREADS
    return TlsFree(*tls) != 0;
 #else
+   /* TODO/FIXME - broken for UCRT */
    return pthread_key_delete(*tls) == 0;
 #endif
 }
@@ -774,6 +778,7 @@ void *sthread_tls_get(sthread_tls_t *tls)
 #ifdef USE_WIN32_THREADS
    return TlsGetValue(*tls);
 #else
+   /* TODO/FIXME - broken for UCRT */
    return pthread_getspecific(*tls);
 #endif
 }
@@ -783,6 +788,7 @@ bool sthread_tls_set(sthread_tls_t *tls, const void *data)
 #ifdef USE_WIN32_THREADS
    return TlsSetValue(*tls, (void*)data) != 0;
 #else
+   /* TODO/FIXME - broken for UCRT */
    return pthread_setspecific(*tls, data) == 0;
 #endif
 }

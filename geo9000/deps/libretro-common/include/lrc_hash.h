@@ -35,21 +35,42 @@
 
 #include <retro_common_api.h>
 
+#ifdef __APPLE__
+#include <CommonCrypto/CommonDigest.h>
+#endif
+
 RETRO_BEGIN_DECLS
 
 /**
  * sha256_hash:
- * @out               : Output.
+ * @s                 : Output.
  * @in                : Input.
- * @size              : Size of @out.
+ * @len               : Size of @out.
  *
  * Hashes SHA256 and outputs a human readable string.
  **/
-void sha256_hash(char *out, const uint8_t *in, size_t size);
+void sha256_hash(char *s, const uint8_t *in, size_t len);
+
+/**
+ * SHA1Digest:
+ * @data              : Input.
+ * @len               : Size of @data.
+ * @digest            : Output.
+ *
+ * Hashes SHA1
+ **/
+void SHA1Digest(const uint8_t* data, size_t len, uint8_t digest[20]);
 
 int sha1_calculate(const char *path, char *result);
 
 uint32_t djb2_calculate(const char *str);
+
+#ifdef __APPLE__
+typedef CC_MD5_CTX MD5_CTX;
+#define MD5_Init CC_MD5_Init
+#define MD5_Update CC_MD5_Update
+#define MD5_Final CC_MD5_Final
+#else
 
 /* Any 32-bit or wider unsigned integer data type will do */
 typedef unsigned int MD5_u32plus;
@@ -89,6 +110,8 @@ typedef struct {
 void MD5_Init(MD5_CTX *ctx);
 void MD5_Update(MD5_CTX *ctx, const void *data, unsigned long size);
 void MD5_Final(unsigned char *result, MD5_CTX *ctx);
+
+#endif
 
 RETRO_END_DECLS
 

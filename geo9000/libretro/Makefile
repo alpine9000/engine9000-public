@@ -676,7 +676,7 @@ ifneq (,$(findstring msvc,$(platform)))
    CXXFLAGS += -MT
 endif
    CFLAGS   += -flto -O3 -DNDEBUG
-   CXXFLAGS += -lfto -O3 -DNDEBUG
+   CXXFLAGS += -flto -O3 -DNDEBUG
 endif
 
 LDFLAGS += -flto $(fpic) $(SHARED)
@@ -704,7 +704,7 @@ endif
 
 E9K_HACK_AUDIO_VIS ?= 1
 
-FLAGS += -D__LIBRETRO__ -DE9K_HACK_REGISTER_LOG $(WARNINGS)
+FLAGS += -D__LIBRETRO__ -DZ7_ST -DE9K_HACK_REGISTER_LOG $(WARNINGS)
 ifeq ($(E9K_HACK_AUDIO_VIS),1)
 FLAGS += -DE9K_HACK_AUDIO_VIS
 endif

@@ -1715,10 +1715,6 @@ libretro_host_start(const char *corePath, const char *romPath,
         strncpy(libretro_host.saveDir, libretro_host.systemDir, PATH_MAX - 1);
         libretro_host.saveDir[PATH_MAX - 1] = '\0';
     }
-    if (!libretro_host_loadRomData(libretro_host.romPath, &libretro_host.romData, &libretro_host.romSize)) {
-        libretro_host_shutdown();
-        return false;
-    }
     if (!libretro_host_mkdir_p(libretro_host.systemDir) || !libretro_host_mkdir_p(libretro_host.saveDir)) {
         fprintf(stderr, "libretro: failed to create directories\n");
         return false;
@@ -1735,6 +1731,7 @@ libretro_host_start(const char *corePath, const char *romPath,
     libretro_host.setInputPoll = (retro_set_input_poll_fn_t)libretro_host_loadSymbol("retro_set_input_poll");
     libretro_host.setInputState = (retro_set_input_state_fn_t)libretro_host_loadSymbol("retro_set_input_state");
     libretro_host.init = (retro_init_fn_t)libretro_host_loadSymbol("retro_init");
+    libretro_host.getSystemInfo = (retro_get_system_info_fn_t)libretro_host_loadSymbol("retro_get_system_info");
     libretro_host.loadGame = (retro_load_game_fn_t)libretro_host_loadSymbol("retro_load_game");
     libretro_host.getSystemAvInfo = (retro_get_system_av_info_fn_t)libretro_host_loadSymbol("retro_get_system_av_info");
     libretro_host.run = (retro_run_fn_t)libretro_host_loadSymbol("retro_run");
@@ -1831,6 +1828,19 @@ libretro_host_start(const char *corePath, const char *romPath,
         !libretro_host.run || !libretro_host.deinit) {
         libretro_host_shutdown();
         return false;
+    }
+    int needFullpath = 0;
+    if (libretro_host.getSystemInfo) {
+        struct retro_system_info systemInfo;
+        memset(&systemInfo, 0, sizeof(systemInfo));
+        libretro_host.getSystemInfo(&systemInfo);
+        needFullpath = systemInfo.need_fullpath ? 1 : 0;
+    }
+    if (!needFullpath) {
+        if (!libretro_host_loadRomData(libretro_host.romPath, &libretro_host.romData, &libretro_host.romSize)) {
+            libretro_host_shutdown();
+            return false;
+        }
     }
     libretro_host.setEnvironment(libretro_host_environment);
     libretro_host.setVideoRefresh(libretro_host_videoCallback);

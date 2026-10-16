@@ -109,6 +109,14 @@ cli_setNeogeoSystemType(const char *value)
                     value);
 }
 
+static void
+cli_setNeogeoCdSystemType(const char *value)
+{
+    strutil_strlcpy(debugger.cliConfig.neogeo.cdSystemType,
+                    sizeof(debugger.cliConfig.neogeo.cdSystemType),
+                    value);
+}
+
 static int
 cli_uiTestSessionConfigExists(const char *folder, char *outCfgPath, size_t outCap)
 {
@@ -267,6 +275,38 @@ cli_parseArgs(int argc, char **argv)
                 return;
             }
             cli_setNeogeoSystemType("uni");
+            continue;
+        }
+        if (strcmp(argv[i], "--cdz") == 0) {
+            if (targetSystem != target_neogeo()) {
+                cli_setError("cdz: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            cli_setNeogeoCdSystemType("cdz");
+            continue;
+        }
+        if (strcmp(argv[i], "--cd-front") == 0) {
+            if (targetSystem != target_neogeo()) {
+                cli_setError("cd-front: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            cli_setNeogeoCdSystemType("cd_front");
+            continue;
+        }
+        if (strcmp(argv[i], "--cd-top") == 0) {
+            if (targetSystem != target_neogeo()) {
+                cli_setError("cd-top: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            cli_setNeogeoCdSystemType("cd_top");
+            continue;
+        }
+        if (strcmp(argv[i], "--cdz-uni") == 0) {
+            if (targetSystem != target_neogeo()) {
+                cli_setError("cdz-uni: only supported for Neo Geo (use --neogeo)");
+                return;
+            }
+            cli_setNeogeoCdSystemType("cdz_unibios");
             continue;
         }
         if (strcmp(argv[i], "--elf") == 0) {
@@ -872,10 +912,15 @@ cli_printUsage(const char *argv0)
     printf("  --elf PATH                   ELF file path\n");
     printf("  --symbols PATH               Text symbol map path\n");
     printf("  --rom PATH                   Neo Geo ROM (.neo) path\n");
+    printf("                               Also accepts Neo Geo CD .cue/.chd media\n");
     printf("  --rom-folder PATH            ROM folder (generates a .neo)\n");
     printf("  --aes                        Use Neo Geo AES system type\n");
     printf("  --mvs                        Use Neo Geo MVS system type\n");
     printf("  --uni                        Use Neo Geo Universe BIOS system type\n");
+    printf("  --cdz                        Use Neo Geo CDZ system type for CD media\n");
+    printf("  --cd-front                   Use Neo Geo CD front loader system type\n");
+    printf("  --cd-top                     Use Neo Geo CD top loader system type\n");
+    printf("  --cdz-uni                    Use Neo Geo CDZ Universe BIOS system type\n");
     printf("\n");
 #endif
 #if E9K_ENABLE_MEGADRIVE
@@ -946,6 +991,11 @@ cli_applyOverrides(void)
         strutil_strlcpy(debugger.config.neogeo.systemType,
                         sizeof(debugger.config.neogeo.systemType),
                         debugger.cliConfig.neogeo.systemType);
+    }
+    if (debugger.cliConfig.neogeo.cdSystemType[0]) {
+        strutil_strlcpy(debugger.config.neogeo.cdSystemType,
+                        sizeof(debugger.config.neogeo.cdSystemType),
+                        debugger.cliConfig.neogeo.cdSystemType);
     }
     if (debugger.cliConfig.neogeo.libretro.audioBufferMs > 0) {
         debugger.config.neogeo.libretro.audioBufferMs = debugger.cliConfig.neogeo.libretro.audioBufferMs;

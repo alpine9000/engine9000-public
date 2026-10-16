@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -133,6 +133,15 @@ uint64_t geo_serial_pop64(uint8_t *mem) {
     ret |= (uint64_t)(mem[pos++]) << 16;
     ret |= (uint64_t)(mem[pos++]) << 8;
     ret |= (uint64_t)(mem[pos++]);
+    return ret;
+}
+
+// Peek at a 32-bit integer
+uint32_t geo_serial_peek32(uint8_t *mem) {
+    uint32_t ret = mem[pos] << 24;
+    ret |= mem[pos + 1] << 16;
+    ret |= mem[pos + 2] << 8;
+    ret |= mem[pos + 3];
     return ret;
 }
 

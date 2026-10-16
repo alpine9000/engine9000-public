@@ -31,7 +31,9 @@ typedef struct target_neogeo_systemtype_state {
     e9ui_component_t *aesCheckbox;
     e9ui_component_t *mvsCheckbox;
     e9ui_component_t *uniCheckbox;
+    e9ui_component_t *cdCheckbox;
     char *systemType;
+    char *cdSystemType;
     int updating;
 } target_neogeo_systemtype_state_t;
 
@@ -118,6 +120,7 @@ target_neogeo_setConfigDefaults(e9k_system_config_t *config)
     config->neogeo.skipBiosLogo = 0;
     strncpy(config->neogeo.systemType, "aes", sizeof(config->neogeo.systemType) - 1);
     config->neogeo.systemType[sizeof(config->neogeo.systemType) - 1] = '\0';
+    config->neogeo.cdSystemType[0] = '\0';
     config->neogeo.libretro.exePath[0] = '\0';
 }
 
@@ -138,14 +141,18 @@ target_neogeo_systemTypeSync(target_neogeo_systemtype_state_t *st, const char *v
     int aesSelected = (strcmp(st->systemType, "aes") == 0);
     int mvsSelected = (strcmp(st->systemType, "mvs") == 0);
     int uniSelected = (strcmp(st->systemType, "uni") == 0);
+    int cdSelected = (st->cdSystemType && st->cdSystemType[0]);
     if (st->aesCheckbox) {
-        e9ui_checkbox_setSelected(st->aesCheckbox, aesSelected, ctx);
+        e9ui_checkbox_setSelected(st->aesCheckbox, cdSelected ? 0 : aesSelected, ctx);
     }
     if (st->mvsCheckbox) {
-        e9ui_checkbox_setSelected(st->mvsCheckbox, mvsSelected, ctx);
+        e9ui_checkbox_setSelected(st->mvsCheckbox, cdSelected ? 0 : mvsSelected, ctx);
     }
     if (st->uniCheckbox) {
-        e9ui_checkbox_setSelected(st->uniCheckbox, uniSelected, ctx);
+        e9ui_checkbox_setSelected(st->uniCheckbox, cdSelected ? 0 : uniSelected, ctx);
+    }
+    if (st->cdCheckbox) {
+        e9ui_checkbox_setSelected(st->cdCheckbox, cdSelected, ctx);
     }
     st->updating = 0;
     settings_updateSaveLabel();
@@ -160,6 +167,7 @@ target_neogeo_systemTypeAesChanged(e9ui_component_t *self, e9ui_context_t *ctx, 
         return;
     }
     if (selected) {
+        settings_config_setValue(st->cdSystemType, 16, "");
         target_neogeo_systemTypeSync(st, "aes", ctx);
     } else if (st->mvsCheckbox && e9ui_checkbox_isSelected(st->mvsCheckbox)) {
         target_neogeo_systemTypeSync(st, "mvs", ctx);
@@ -179,6 +187,7 @@ target_neogeo_systemTypeMvsChanged(e9ui_component_t *self, e9ui_context_t *ctx, 
         return;
     }
     if (selected) {
+        settings_config_setValue(st->cdSystemType, 16, "");
         target_neogeo_systemTypeSync(st, "mvs", ctx);
     } else if (st->aesCheckbox && e9ui_checkbox_isSelected(st->aesCheckbox)) {
         target_neogeo_systemTypeSync(st, "aes", ctx);
@@ -198,6 +207,7 @@ target_neogeo_systemTypeUniChanged(e9ui_component_t *self, e9ui_context_t *ctx, 
         return;
     }
     if (selected) {
+        settings_config_setValue(st->cdSystemType, 16, "");
         target_neogeo_systemTypeSync(st, "uni", ctx);
     } else if (st->mvsCheckbox && e9ui_checkbox_isSelected(st->mvsCheckbox)) {
         target_neogeo_systemTypeSync(st, "mvs", ctx);
@@ -205,6 +215,23 @@ target_neogeo_systemTypeUniChanged(e9ui_component_t *self, e9ui_context_t *ctx, 
         target_neogeo_systemTypeSync(st, "aes", ctx);
     } else {
         target_neogeo_systemTypeSync(st, "", ctx);
+    }
+}
+
+static void
+target_neogeo_systemTypeCdChanged(e9ui_component_t *self, e9ui_context_t *ctx, int selected, void *user)
+{
+    (void)self;
+    target_neogeo_systemtype_state_t *st = (target_neogeo_systemtype_state_t *)user;
+    if (!st || st->updating || !st->cdSystemType) {
+        return;
+    }
+    if (selected) {
+        settings_config_setValue(st->cdSystemType, 16, "cdz");
+        target_neogeo_systemTypeSync(st, "", ctx);
+    } else {
+        settings_config_setValue(st->cdSystemType, 16, "");
+        target_neogeo_systemTypeSync(st, st->systemType && st->systemType[0] ? st->systemType : "aes", ctx);
     }
 }
 
@@ -221,7 +248,6 @@ target_neogeo_skipBiosChanged(e9ui_component_t *self, e9ui_context_t *ctx, int s
     settings_updateSaveLabel();
 }
 
-
 static void
 target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *out)
 {
@@ -231,7 +257,7 @@ target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *o
     out->body = NULL;
     out->footerWarning = NULL;
 
-    const char *romExts[] = { "*.neo", "*.zip" };
+    const char *romExts[] = { "*.neo", "*.zip", "*.cue", "*.chd" };
     const char *elfExts[] = { "*.elf", "*.txt" };
 
     settings_romselect_state_t *romState = (settings_romselect_state_t *)alloc_calloc(1, sizeof(*romState));
@@ -312,7 +338,7 @@ target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *o
         settings_romSelectRefreshRecents(romState);
     }
 
-    // System row: [MVS] [AES] [UNIBIOS] [SKIP BIOS LOGO]
+    // System row: [MVS] [AES] [UNIBIOS] [CD] [SKIP BIOS LOGO]
     e9ui_component_t *rowSystem = e9ui_flow_make();
     if (rowSystem) {
         e9ui_flow_setWrap(rowSystem, 0);
@@ -320,13 +346,16 @@ target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *o
         target_neogeo_systemtype_state_t *sys = (target_neogeo_systemtype_state_t *)alloc_calloc(1, sizeof(*sys));
         if (sys) {
             sys->systemType = debugger.settingsEdit.neogeo.systemType;
+            sys->cdSystemType = debugger.settingsEdit.neogeo.cdSystemType;
         }
-        int aesSelected = (strcmp(debugger.settingsEdit.neogeo.systemType, "aes") == 0);
-        int mvsSelected = (strcmp(debugger.settingsEdit.neogeo.systemType, "mvs") == 0);
-        int uniSelected = (strcmp(debugger.settingsEdit.neogeo.systemType, "uni") == 0);
+        int cdSelected = debugger.settingsEdit.neogeo.cdSystemType[0] ? 1 : 0;
+        int aesSelected = !cdSelected && (strcmp(debugger.settingsEdit.neogeo.systemType, "aes") == 0);
+        int mvsSelected = !cdSelected && (strcmp(debugger.settingsEdit.neogeo.systemType, "mvs") == 0);
+        int uniSelected = !cdSelected && (strcmp(debugger.settingsEdit.neogeo.systemType, "uni") == 0);
         e9ui_component_t *cbMvs = e9ui_checkbox_make("MVS", mvsSelected, target_neogeo_systemTypeMvsChanged, sys);
         e9ui_component_t *cbAes = e9ui_checkbox_make("AES", aesSelected, target_neogeo_systemTypeAesChanged, sys);
         e9ui_component_t *cbUni = e9ui_checkbox_make("UNIBIOS", uniSelected, target_neogeo_systemTypeUniChanged, sys);
+        e9ui_component_t *cbCd = e9ui_checkbox_make("CD", cdSelected, target_neogeo_systemTypeCdChanged, sys);
         e9ui_component_t *cbSkip = e9ui_checkbox_make("SKIP BIOS LOGO",
                                                       debugger.settingsEdit.neogeo.skipBiosLogo,
                                                       target_neogeo_skipBiosChanged,
@@ -335,6 +364,7 @@ target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *o
             sys->aesCheckbox = cbAes;
             sys->mvsCheckbox = cbMvs;
             sys->uniCheckbox = cbUni;
+            sys->cdCheckbox = cbCd;
         }
         if (cbMvs) {
             e9ui_flow_add(rowSystem, cbMvs);
@@ -344,6 +374,9 @@ target_neogeo_settingsBuildModal(e9ui_context_t *ctx, target_settings_modal_t *o
         }
         if (cbUni) {
             e9ui_flow_add(rowSystem, cbUni);
+        }
+        if (cbCd) {
+            e9ui_flow_add(rowSystem, cbCd);
         }
         if (cbSkip) {
             e9ui_flow_add(rowSystem, cbSkip);
@@ -493,10 +526,11 @@ target_negeo_restartNeededForNeogeo(const e9k_neogeo_config_t *before, const e9k
     int savesChanged = strcmp(before->libretro.saveDir, after->libretro.saveDir) != 0;
     int sourceChanged = strcmp(before->libretro.sourceDir, after->libretro.sourceDir) != 0;
     int sysChanged = strcmp(before->systemType, after->systemType) != 0;
+    int cdSysChanged = strcmp(before->cdSystemType, after->cdSystemType) != 0;
     int audioBefore = settings_audioBufferNormalized(before->libretro.audioBufferMs);
     int audioAfter = settings_audioBufferNormalized(after->libretro.audioBufferMs);
     int audioChanged = audioBefore != audioAfter;
-    return romChanged || elfChanged || toolchainChanged || biosChanged || savesChanged || sourceChanged || sysChanged || audioChanged;
+    return romChanged || elfChanged || toolchainChanged || biosChanged || savesChanged || sourceChanged || sysChanged || cdSysChanged || audioChanged;
 }
 
 
@@ -733,6 +767,9 @@ target_neogeo_coreOptionsSaveClicked(e9ui_context_t *ctx,core_options_modal_stat
       continue;
     }
     if (strcmp(key, "geolith_system_type") == 0) {
+      continue;
+    }
+    if (strcmp(key, "geolith_cd_system_type") == 0) {
       continue;
     }
     if (debugger_input_bindings_isOptionKey(key)) {

@@ -13,21 +13,14 @@
 
 /*
  ********************************
- * VERSION: 1.3
+ * VERSION: 2.0
  ********************************
  *
+ * - 2.0: Migrate to core options v2 with categories
+ *        and visibility callback support
  * - 1.3: Move translations to libretro_core_options_intl.h
- *        - libretro_core_options_intl.h includes BOM and utf-8
- *          fix for MSVC 2010-2013
- *        - Added HAVE_NO_LANGEXTRA flag to disable translations
- *          on platforms/compilers without BOM support
- * - 1.2: Use core options v1 interface when
- *        RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION is >= 1
- *        (previously required RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION == 1)
- * - 1.1: Support generation of core options v0 retro_core_option_value
- *        arrays containing options with a single value
  * - 1.0: First commit
-*/
+ */
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,24 +28,44 @@ extern "C" {
 
 /*
  ********************************
- * Core Option Definitions
+ * Core Option Categories
  ********************************
-*/
+ */
 
-/* RETRO_LANGUAGE_ENGLISH */
+static struct retro_core_option_v2_category option_cats_us[] = {
+   {
+      "system",
+      "System",
+      "System hardware and region settings"
+   },
+   {
+      "video",
+      "Video",
+      "Display and rendering settings"
+   },
+   {
+      "hacks",
+      "Hacks",
+      "Performance hacks and accuracy trade-offs"
+   },
+   { NULL, NULL, NULL },
+};
 
-/* Default language:
- * - All other languages must include the same keys and values
- * - Will be used as a fallback in the event that frontend language
- *   is not available
- * - Will be used as a fallback for any missing entries in
- *   frontend language definition */
+/*
+ ********************************
+ * Core Option Definitions (v2)
+ ********************************
+ */
 
-struct retro_core_option_definition option_defs_us[] = {
+static struct retro_core_option_v2_definition option_defs_us[] = {
+   /* System */
    {
       "geolith_system_type",
       "System Type (Restart)",
+      "System Type",
       "Specify the System Type: AES, MVS, or Universe BIOS System",
+      NULL,
+      "system",
       {
          { "aes", "Neo Geo AES (Home Console)" },
          { "mvs", "Neo Geo MVS (Arcade)" },
@@ -64,7 +77,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_unibios_hw",
       "Universe BIOS Hardware (Restart)",
+      "Universe BIOS Hardware",
       "Specify the hardware the Universe BIOS should detect",
+      NULL,
+      "system",
       {
          { "aes", "Neo Geo AES (Home Console)" },
          { "mvs", "Neo Geo MVS (Arcade)" },
@@ -73,9 +89,28 @@ struct retro_core_option_definition option_defs_us[] = {
       "mvs"
    },
    {
+      "geolith_cd_system_type",
+      "CD System Type (Restart)",
+      "CD System Type",
+      "Specify the CD System Type when loading Neo Geo CD disc images",
+      NULL,
+      "system",
+      {
+         { "cd_front", "Neo Geo CD (Front Loader)" },
+         { "cd_top", "Neo Geo CD (Top Loader)" },
+         { "cdz", "Neo Geo CDZ" },
+         { "cdz_unibios", "Neo Geo CDZ (Universe BIOS)" },
+         { NULL, NULL },
+      },
+      "cdz"
+   },
+   {
       "geolith_region",
       "Region (Restart)",
+      "Region",
       "Specify the Region: USA, Japan, Asia, Europe",
+      NULL,
+      "system",
       {
          { "us", "USA" },
          { "jp", "Japan" },
@@ -88,7 +123,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_memcard",
       "Memory Card",
+      NULL,
       "Enable or Disable the Memory Card",
+      NULL,
+      "system",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -99,7 +137,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_memcard_wp",
       "Memory Card Write Protect",
+      NULL,
       "Enable or Disable the Memory Card Write Protect pin",
+      NULL,
+      "system",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -110,19 +151,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_settingmode",
       "Setting Mode (Restart, DIP Switch)",
+      "Setting Mode",
       "Bring up the System ROM menu at boot on arcade systems",
-      {
-         { "off", "Off" },
-         { "on", "On" },
-         { NULL, NULL },
-      },
-      "off"
-   },
-   {
-      "geolith_force_int_timing",
-      "Force Integer Timing (Restart)",
-      "Force the use of exactly 60Hz internal refresh rate and 48000Hz audio "
-      "sample rate",
+      NULL,
+      "system",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -133,7 +165,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_4player",
       "Four Player Mode (Restart, Asia/Japan MVS Only)",
+      "Four Player Mode",
       "Set Four Player (dual MVS cabinet) mode for Asia/Japan MVS systems",
+      NULL,
+      "system",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -144,7 +179,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_freeplay",
       "Freeplay (DIP Switch)",
+      "Freeplay",
       "Play MVS games without the need to insert coins",
+      NULL,
+      "system",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -152,10 +190,14 @@ struct retro_core_option_definition option_defs_us[] = {
       },
       "off"
    },
+   /* Video */
    {
       "geolith_overscan_t",
       "Mask Overscan (Top)",
+      NULL,
       "Mask off pixels hidden by a bezel or border on original CRTs (top)",
+      NULL,
+      "video",
       {
          { "16", NULL },
          { "12", NULL },
@@ -169,7 +211,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_overscan_b",
       "Mask Overscan (Bottom)",
+      NULL,
       "Mask off pixels hidden by a bezel or border on original CRTs (bottom)",
+      NULL,
+      "video",
       {
          { "16", NULL },
          { "12", NULL },
@@ -183,7 +228,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_overscan_l",
       "Mask Overscan (Left)",
+      NULL,
       "Mask off pixels hidden by a bezel or border on original CRTs (left)",
+      NULL,
+      "video",
       {
          { "16", NULL },
          { "12", NULL },
@@ -197,7 +245,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_overscan_r",
       "Mask Overscan (Right)",
+      NULL,
       "Mask off pixels hidden by a bezel or border on original CRTs (right)",
+      NULL,
+      "video",
       {
          { "16", NULL },
          { "12", NULL },
@@ -211,7 +262,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_palette",
       "Palette",
+      NULL,
       "Set the Palette",
+      NULL,
+      "video",
       {
          { "resnet", "Resistor Network" },
          { "raw", "Raw" },
@@ -222,7 +276,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_aspect",
       "Aspect Ratio",
+      NULL,
       "Set the Aspect Ratio",
+      NULL,
+      "video",
       {
          { "1:1", "Perfectly Square Pixels (1:1 PAR)" },
          { "45:44", "Ostensibly Accurate NTSC Aspect Ratio (45:44 PAR)" },
@@ -231,10 +288,14 @@ struct retro_core_option_definition option_defs_us[] = {
       },
       "1:1"
    },
+   /* Hacks */
    {
       "geolith_sprlimit",
       "Sprites-per-line limit (Hack)",
+      "Sprites-per-line Limit",
       "Set the sprites-per-line limit - increasing causes glitches in some games",
+      NULL,
+      "hacks",
       {
          { "96", "Hardware Accurate (96)" },
          { "192", "Double (192)" },
@@ -247,7 +308,10 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_oc",
       "Overclocking (Hack)",
+      "Overclocking",
       "Annihilate your accuracy with The 24MHz Shock - expect glitches",
+      NULL,
+      "hacks",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -258,9 +322,12 @@ struct retro_core_option_definition option_defs_us[] = {
    {
       "geolith_disable_adpcm_wrap",
       "Disable ADPCM Accumulator Wrap (Hack)",
+      "Disable ADPCM Accumulator Wrap",
       "ADPCM Accumulator Wrap may be disabled to fix sound effects in buggy "
       "games, for example Ganryu and Nightmare in the Dark. This is a hack, "
       "and should remain Off for most games.",
+      NULL,
+      "hacks",
       {
          { "off", "Off" },
          { "on", "On" },
@@ -268,42 +335,75 @@ struct retro_core_option_definition option_defs_us[] = {
       },
       "off"
    },
-   { NULL, NULL, NULL, {{0}}, NULL },
+   {
+      "geolith_cd_speed_hack",
+      "CD Speed Hack",
+      NULL,
+      "Patch BIOS busy-wait loops to reduce loading times (Does not work for "
+      "Universe BIOS)",
+      NULL,
+      "hacks",
+      {
+         { "enabled", "Enabled" },
+         { "disabled", "Disabled" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      "geolith_cd_skip_loading",
+      "Skip CD Loading",
+      NULL,
+      "Fast-forward through CD loading screens",
+      NULL,
+      "hacks",
+      {
+         { "enabled", "Enabled" },
+         { "disabled", "Disabled" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   { NULL, NULL, NULL, NULL, NULL, NULL, {{0}}, NULL },
+};
+
+static struct retro_core_options_v2 options_us = {
+   option_cats_us,
+   option_defs_us,
 };
 
 /*
  ********************************
  * Language Mapping
  ********************************
-*/
+ */
 
 #ifndef HAVE_NO_LANGEXTRA
-struct retro_core_option_definition *option_defs_intl[RETRO_LANGUAGE_LAST] = {
-   option_defs_us, /* RETRO_LANGUAGE_ENGLISH */
-   NULL,           /* RETRO_LANGUAGE_JAPANESE */
-   NULL,           /* RETRO_LANGUAGE_FRENCH */
-   NULL,           /* RETRO_LANGUAGE_SPANISH */
-   NULL,           /* RETRO_LANGUAGE_GERMAN */
-   NULL,           /* RETRO_LANGUAGE_ITALIAN */
-   NULL,           /* RETRO_LANGUAGE_DUTCH */
-   NULL,           /* RETRO_LANGUAGE_PORTUGUESE_BRAZIL */
-   NULL,           /* RETRO_LANGUAGE_PORTUGUESE_PORTUGAL */
-   NULL,           /* RETRO_LANGUAGE_RUSSIAN */
-   NULL,           /* RETRO_LANGUAGE_KOREAN */
-   NULL,           /* RETRO_LANGUAGE_CHINESE_TRADITIONAL */
-   NULL,           /* RETRO_LANGUAGE_CHINESE_SIMPLIFIED */
-   NULL,           /* RETRO_LANGUAGE_ESPERANTO */
-   NULL,           /* RETRO_LANGUAGE_POLISH */
-   NULL,           /* RETRO_LANGUAGE_VIETNAMESE */
-   NULL,           /* RETRO_LANGUAGE_ARABIC */
-   NULL,           /* RETRO_LANGUAGE_GREEK */
-   NULL,           /* RETRO_LANGUAGE_TURKISH */
-   NULL,           /* RETRO_LANGUAGE_SLOVAK */
-   NULL,           /* RETRO_LANGUAGE_PERSIAN */
-   NULL,           /* RETRO_LANGUAGE_HEBREW */
-   NULL,           /* RETRO_LANGUAGE_ASTURIAN */
-   NULL,           /* RETRO_LANGUAGE_FINNISH */
-
+static struct retro_core_options_v2 *options_intl[RETRO_LANGUAGE_LAST] = {
+   &options_us,  /* RETRO_LANGUAGE_ENGLISH */
+   NULL,         /* RETRO_LANGUAGE_JAPANESE */
+   NULL,         /* RETRO_LANGUAGE_FRENCH */
+   NULL,         /* RETRO_LANGUAGE_SPANISH */
+   NULL,         /* RETRO_LANGUAGE_GERMAN */
+   NULL,         /* RETRO_LANGUAGE_ITALIAN */
+   NULL,         /* RETRO_LANGUAGE_DUTCH */
+   NULL,         /* RETRO_LANGUAGE_PORTUGUESE_BRAZIL */
+   NULL,         /* RETRO_LANGUAGE_PORTUGUESE_PORTUGAL */
+   NULL,         /* RETRO_LANGUAGE_RUSSIAN */
+   NULL,         /* RETRO_LANGUAGE_KOREAN */
+   NULL,         /* RETRO_LANGUAGE_CHINESE_TRADITIONAL */
+   NULL,         /* RETRO_LANGUAGE_CHINESE_SIMPLIFIED */
+   NULL,         /* RETRO_LANGUAGE_ESPERANTO */
+   NULL,         /* RETRO_LANGUAGE_POLISH */
+   NULL,         /* RETRO_LANGUAGE_VIETNAMESE */
+   NULL,         /* RETRO_LANGUAGE_ARABIC */
+   NULL,         /* RETRO_LANGUAGE_GREEK */
+   NULL,         /* RETRO_LANGUAGE_TURKISH */
+   NULL,         /* RETRO_LANGUAGE_SLOVAK */
+   NULL,         /* RETRO_LANGUAGE_PERSIAN */
+   NULL,         /* RETRO_LANGUAGE_HEBREW */
+   NULL,         /* RETRO_LANGUAGE_ASTURIAN */
+   NULL,         /* RETRO_LANGUAGE_FINNISH */
 };
 #endif
 
@@ -311,14 +411,6 @@ struct retro_core_option_definition *option_defs_intl[RETRO_LANGUAGE_LAST] = {
  ********************************
  * Functions
  ********************************
-*/
-
-/* Handles configuration/setting of core options.
- * Should be called as early as possible - ideally inside
- * retro_set_environment(), and no later than retro_load_game()
- * > We place the function body in the header to avoid the
- *   necessity of adding more .c files (i.e. want this to
- *   be as painless as possible for core devs)
  */
 
 static INLINE void libretro_set_core_options(retro_environment_t environ_cb)
@@ -328,23 +420,65 @@ static INLINE void libretro_set_core_options(retro_environment_t environ_cb)
    if (!environ_cb)
       return;
 
-   if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && (version >= 1))
+   if (environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &version) && (version >= 2))
    {
 #ifndef HAVE_NO_LANGEXTRA
-      struct retro_core_options_intl core_options_intl;
+      struct retro_core_options_v2_intl core_options_intl;
       unsigned language = 0;
 
-      core_options_intl.us    = option_defs_us;
+      core_options_intl.us    = &options_us;
       core_options_intl.local = NULL;
 
       if (environ_cb(RETRO_ENVIRONMENT_GET_LANGUAGE, &language) &&
           (language < RETRO_LANGUAGE_LAST) && (language != RETRO_LANGUAGE_ENGLISH))
-         core_options_intl.local = option_defs_intl[language];
+         core_options_intl.local = options_intl[language];
 
-      environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL, &core_options_intl);
+      environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL, &core_options_intl);
 #else
-      environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, &option_defs_us);
+      environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options_us);
 #endif
+   }
+   else if (version >= 1)
+   {
+      /* Build v1 option definitions from v2 (strip category fields) */
+      size_t i;
+      size_t num_options = 0;
+      struct retro_core_option_definition *option_v1 = NULL;
+
+      for (;;)
+      {
+         if (!option_defs_us[num_options].key)
+            break;
+         num_options++;
+      }
+
+      option_v1 = (struct retro_core_option_definition *)
+         calloc(num_options + 1, sizeof(struct retro_core_option_definition));
+
+      if (!option_v1)
+         return;
+
+      for (i = 0; i < num_options; i++)
+      {
+         option_v1[i].key           = option_defs_us[i].key;
+         option_v1[i].desc          = option_defs_us[i].desc;
+         option_v1[i].info          = option_defs_us[i].info;
+         option_v1[i].default_value = option_defs_us[i].default_value;
+         memcpy(option_v1[i].values, option_defs_us[i].values,
+            sizeof(option_v1[i].values));
+      }
+
+#ifndef HAVE_NO_LANGEXTRA
+      {
+         struct retro_core_options_intl core_options_intl;
+         core_options_intl.us    = option_v1;
+         core_options_intl.local = NULL;
+         environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL, &core_options_intl);
+      }
+#else
+      environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, &option_v1);
+#endif
+      free(option_v1);
    }
    else
    {
@@ -374,7 +508,7 @@ static INLINE void libretro_set_core_options(retro_environment_t environ_cb)
          const char *key                        = option_defs_us[i].key;
          const char *desc                       = option_defs_us[i].desc;
          const char *default_value              = option_defs_us[i].default_value;
-         struct retro_core_option_value *values = option_defs_us[i].values;
+         struct retro_core_option_value *values  = option_defs_us[i].values;
          size_t buf_len                         = 3;
          size_t default_index                   = 0;
 
