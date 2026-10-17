@@ -641,6 +641,11 @@ else
 	CC ?= gcc
 	SHARED := -shared -Wl,--no-undefined -Wl,--version-script=link.T
 	LDFLAGS += -static-libgcc -static-libstdc++ -lwinmm
+	INCFLAGS_PLATFORM += -I$(CORE_DIR)/deps/libretro-common/include/compat/zlib
+	ifeq ($(system_platform),osx)
+		MINGW_HOME ?= /usr/local/mingw
+		LDFLAGS += -L$(MINGW_HOME)/lib
+	endif
 
 endif
 
