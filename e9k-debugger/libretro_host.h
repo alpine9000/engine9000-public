@@ -79,6 +79,9 @@ libretro_host_addMouseMotion(unsigned port, int dx, int dy);
 void
 libretro_host_setMouseButton(unsigned port, unsigned id, int pressed);
 
+void
+libretro_host_clearMouseState(void);
+
 unsigned
 libretro_host_getMousePort(void);
 

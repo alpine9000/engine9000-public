@@ -479,6 +479,9 @@ input_record_init(void)
 void
 input_record_shutdown(void)
 {
+    input_record_recordPath[0] = '\0';
+    input_record_playbackPath[0] = '\0';
+    input_record_uiEventPath[0] = '\0';
     if (input_record_out) {
         fclose(input_record_out);
         input_record_out = NULL;

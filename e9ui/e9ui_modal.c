@@ -308,6 +308,9 @@ e9ui_modal_show(e9ui_context_t *ctx, const char *title, e9ui_rect_t rect,
     } else {
         e9ui_child_add(hostRoot, modal, alloc_strdup("modal"));
     }
+    if (ctx->blockingWindowOpened) {
+        ctx->blockingWindowOpened(ctx);
+    }
     return modal;
 }
 

@@ -841,6 +841,9 @@ debugger_main(int argc, char **argv)
     return 2;
   }
 
+  if (!ui_test_prepareSessionConfig()) {
+    return 1;
+  }
   config_loadConfig();
   debugger_captureBootSaveDirs();
 

@@ -8,6 +8,11 @@
 
 #pragma once
 
+#define CLI_RESTART_ARGV_CAP 6
+
+int
+cli_buildRestartArgs(char **restartArgv);
+
 void
 cli_setArgv0(const char *argv0);
 

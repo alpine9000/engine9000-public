@@ -1079,6 +1079,9 @@ e9ui_windowOpen(e9ui_window_t *window,
     }
     window->windowComp = host;
     window->open = 1;
+    if (ctx->blockingWindowOpened) {
+        ctx->blockingWindowOpened(ctx);
+    }
     return 1;
 }
 

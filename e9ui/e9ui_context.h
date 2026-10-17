@@ -59,6 +59,8 @@ typedef struct e9ui_context {
                                    int width,
                                    int height);
     void (*setMainWindowFocused)(struct e9ui_context *ctx, int focused);
+    void (*blockingWindowOpened)(struct e9ui_context *ctx);
+    int (*handleHostEvent)(struct e9ui_context *ctx, const SDL_Event *ev);
     int (*handleGlobalKeydown)(struct e9ui_context *ctx, const SDL_KeyboardEvent *kev);
     void (*shutdownHostUi)(struct e9ui_context *ctx);
     void (*prepareMainWindow)(struct e9ui_context *ctx,

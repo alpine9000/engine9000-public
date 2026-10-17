@@ -116,7 +116,7 @@ static const hotkeys_config_spec_t hotkeys_configSpecs[] = {
     { "hex_convert", "Hex Converter", SDLK_i, KMOD_CTRL },
     { "hex_convert_inline", "In-place Hex Convert", SDLK_h, KMOD_CTRL },
     { "fullscreen", "Fullscreen", SDLK_RETURN, KMOD_ALT },
-    { "mouse_release", "Mouse Release", SDLK_LALT, (SDL_Keymod)(KMOD_CTRL | KMOD_ALT) },
+    { "mouse_release", "Capture/Release Mouse", SDLK_LALT, (SDL_Keymod)(KMOD_CTRL | KMOD_ALT) },
     { "prompt_focus", "Prompt Focus", SDLK_TAB, 0 },
     { "continue", "Continue", SDLK_c, KMOD_ALT },
     { "pause", "Pause", SDLK_p, KMOD_ALT },
@@ -2178,6 +2178,24 @@ hotkeys_dispatchHotkey(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
 }
 
 int
+hotkeys_handleMouseCaptureKeydown(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
+{
+    if (hotkeys_eventMatchesAction(kev, "mouse_release")) {
+        if (!kev->repeat && emu_mouseCaptureRelease(ctx)) {
+            return 1;
+        }
+        if (hotkeys_configModal) {
+            return 0;
+        }
+        if (kev->repeat) {
+            return 1;
+        }
+        return emu_mouseCaptureStart(ctx);
+    }
+    return 0;
+}
+
+int
 hotkeys_handleKeydown(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
 {
     if (!ctx || !kev) {
@@ -2223,12 +2241,6 @@ hotkeys_handleKeydown(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev)
         hotkeys_enabled = hotkeys_enabled ? 0 : 1;
         e9ui_showTransientMessage(hotkeys_enabled ? "HOTKEYS ON" : "HOTKEYS OFF");
         return 1;
-    }
-    if (kev->repeat == 0 && hotkeys_eventMatchesAction(kev, "mouse_release")) {
-        if (emu_mouseCaptureRelease(ctx)) {
-            e9ui_showTransientMessage("MOUSE RELEASED");
-            return 1;
-        }
     }
     if (kev->repeat == 0 && hotkeys_eventMatchesAction(kev, "hex_convert")) {
         hex_convert_toggle(ctx);

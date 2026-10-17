@@ -20,7 +20,7 @@ e9ui_event_pointInBounds(const e9ui_component_t *comp, int x, int y)
            y >= comp->bounds.y && y < comp->bounds.y + comp->bounds.h;
 }
 
-static int
+int
 e9ui_event_componentContainsBlockingWindow(e9ui_component_t *comp)
 {
     if (!comp || e9ui_getHidden(comp)) {

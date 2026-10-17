@@ -568,7 +568,7 @@ target_amiga_coreOptionsSyntheticDefAt(size_t index)
     static const struct retro_core_option_v2_definition defs[] = {
         {
             .key = "e9k_debugger_amiga_mouse_capture",
-            .desc = "Mouse Capture",
+            .desc = "Capture Mouse on Click",
             .default_value = "disabled",
             .values = {
                 { "enabled", "Enabled" },

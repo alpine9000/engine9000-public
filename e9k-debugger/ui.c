@@ -652,8 +652,25 @@ ui_runFullscreenTransition(e9ui_context_t *ctx,
 void
 ui_setMainWindowFocused(e9ui_context_t *ctx, int focused)
 {
-    (void)ctx;
+    if (!focused) {
+        (void)emu_mouseCaptureRelease(ctx);
+    }
     aux_window_setFocus(focused);
+}
+
+static void
+ui_blockingWindowOpened(e9ui_context_t *ctx)
+{
+    (void)emu_mouseCaptureRelease(ctx);
+}
+
+static int
+ui_handleHostEvent(e9ui_context_t *ctx, const SDL_Event *ev)
+{
+    if (ev->type == SDL_KEYDOWN && hotkeys_handleMouseCaptureKeydown(ctx, &ev->key)) {
+        return 1;
+    }
+    return emu_handleCapturedMouseEvent(ctx, ev);
 }
 
 int
@@ -1284,6 +1301,8 @@ ui_configureE9uiHost(void)
     e9ui->ctx.recordUiEvent = ui_hostRecordUiEvent;
     e9ui->ctx.runFullscreenTransition = ui_runFullscreenTransition;
     e9ui->ctx.setMainWindowFocused = ui_setMainWindowFocused;
+    e9ui->ctx.blockingWindowOpened = ui_blockingWindowOpened;
+    e9ui->ctx.handleHostEvent = ui_handleHostEvent;
     e9ui->ctx.handleGlobalKeydown = ui_handleGlobalKeydown;
     e9ui->ctx.shutdownHostUi = ui_shutdownHostUi;
     e9ui->ctx.prepareMainWindow = ui_prepareMainWindow;

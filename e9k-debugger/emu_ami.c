@@ -610,7 +610,7 @@ emu_ami_rangeBarSetPercentFromCoreLines(e9ui_component_t *bar, int startLine, in
 }
 
 int
-emu_ami_mouseCaptureCanEnable(void)
+emu_ami_mouseCaptureOnClickEnabled(void)
 {
     const char *settingValue = NULL;
     const char *customValue = NULL;
@@ -2651,7 +2651,8 @@ const emu_system_iface_t emu_ami_iface = {
     .translateModifiers = emu_ami_translateModifiers,
     .translateKey = emu_ami_translateKey,
     .mapKeyToJoypad = emu_ami_mapKeyToJoypad,
-    .mouseCaptureCanEnable = emu_ami_mouseCaptureCanEnable,
+    .mouseCaptureSupported = 1,
+    .mouseCaptureOnClickEnabled = emu_ami_mouseCaptureOnClickEnabled,
     .rangeBarCount = emu_ami_rangeBarCount,
     .rangeBarDescribe = emu_ami_rangeBarDescribe,
     .rangeBarChanged = emu_ami_rangeBarChanged,

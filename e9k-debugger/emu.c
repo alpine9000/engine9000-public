@@ -7,6 +7,7 @@
  */
 
 #include "emu.h"
+#include "e9ui_event.h"
 #include "runtime.h"
 #include "gl_composite.h"
 #include "alloc.h"
@@ -81,6 +82,7 @@ typedef enum emu_overlay_button_mode {
 } emu_overlay_button_mode_t;
 
 static int emu_mouseCaptured = 0;
+static e9ui_component_t *emu_mouseView;
 static char emu_mouseCaptureMessage[160];
 
 static int
@@ -93,19 +95,31 @@ emu_mouseButtonMask(Uint8 button)
 }
 
 static int
-emu_mouseCaptureEnabledForCurrentTarget(void)
+emu_mouseCaptureBlocked(void)
 {
-    if (!target || !target->emu || !target->emu->mouseCaptureCanEnable) {
+    return e9ui_event_componentContainsBlockingWindow(e9ui->root) ||
+           e9ui_event_componentContainsBlockingWindow(e9ui_getOverlayHost());
+}
+
+static int
+emu_mouseCaptureSupportedForCurrentTarget(void)
+{
+    return target && target->emu && target->emu->mouseCaptureSupported;
+}
+
+static int
+emu_mouseCaptureOnClickEnabledForCurrentTarget(void)
+{
+    if (!target || !target->emu || !target->emu->mouseCaptureOnClickEnabled) {
         return 0;
     }
-    return target->emu->mouseCaptureCanEnable() ? 1 : 0;
+    return target->emu->mouseCaptureOnClickEnabled() ? 1 : 0;
 }
 
 static int
 emu_mouseCaptureEnable(e9ui_context_t *ctx)
 {
     int relativeEnabled = 0;
-    int canCapture = 0;
     char releaseBinding[64];
 
     if (!ctx) {
@@ -114,19 +128,23 @@ emu_mouseCaptureEnable(e9ui_context_t *ctx)
     if (emu_mouseCaptured) {
         return 1;
     }
-    canCapture = emu_mouseCaptureEnabledForCurrentTarget();
-    if (!canCapture) {
+    // Let the UI drag owner receive its button release before capturing.
+    if (ctx->cursorCaptureOwner) {
+        return 0;
+    }
+    if (!emu_mouseCaptureSupportedForCurrentTarget() || emu_mouseCaptureBlocked()) {
         return 0;
     }
     if (SDL_SetRelativeMouseMode(SDL_TRUE) == 0) {
         relativeEnabled = 1;
     }
+    libretro_host_clearMouseState();
     if (ctx->window) {
         SDL_SetWindowGrab(ctx->window, SDL_TRUE);
     }
     (void)SDL_CaptureMouse(SDL_TRUE);
     SDL_ShowCursor(SDL_DISABLE);
-    if (!relativeEnabled && ctx && ctx->window) {
+    if (!relativeEnabled && ctx->window) {
         SDL_RaiseWindow(ctx->window);
     }
     emu_mouseCaptured = 1;
@@ -154,6 +172,8 @@ emu_mouseCaptureRelease(e9ui_context_t *ctx)
     SDL_SetRelativeMouseMode(SDL_FALSE);
     SDL_ShowCursor(SDL_ENABLE);
     emu_mouseCaptured = 0;
+    libretro_host_clearMouseState();
+    e9ui_showTransientMessage("MOUSE RELEASED");
     return 1;
 }
 
@@ -163,10 +183,44 @@ emu_mouseCaptureValidate(e9ui_context_t *ctx)
     if (!emu_mouseCaptured) {
         return;
     }
-    if (emu_mouseCaptureEnabledForCurrentTarget()) {
+    if (emu_mouseCaptureSupportedForCurrentTarget() && !emu_mouseCaptureBlocked()) {
         return;
     }
     (void)emu_mouseCaptureRelease(ctx);
+}
+
+int
+emu_mouseCaptureStart(e9ui_context_t *ctx)
+{
+    if (emu_mouseCaptureEnable(ctx)) {
+        e9ui_component_t *view = emu_mouseView;
+        if (view) {
+            e9ui_setFocus(ctx, view);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+int
+emu_handleCapturedMouseEvent(e9ui_context_t *ctx, const SDL_Event *ev)
+{
+    emu_mouseCaptureValidate(ctx);
+    if (!emu_mouseCaptured ||
+        (ev->type != SDL_MOUSEMOTION && ev->type != SDL_MOUSEBUTTONDOWN &&
+         ev->type != SDL_MOUSEBUTTONUP && ev->type != SDL_MOUSEWHEEL)) {
+        return 0;
+    }
+    unsigned port = target->mousePort >= 0 ? (unsigned)target->mousePort : libretro_host_getMousePort();
+    if (ev->type == SDL_MOUSEMOTION) {
+        libretro_host_addMouseMotion(port, ev->motion.xrel, ev->motion.yrel);
+    } else if (ev->type == SDL_MOUSEBUTTONDOWN || ev->type == SDL_MOUSEBUTTONUP) {
+        if (ev->button.button == SDL_BUTTON_LEFT || ev->button.button == SDL_BUTTON_RIGHT) {
+            unsigned id = ev->button.button == SDL_BUTTON_LEFT ? RETRO_DEVICE_ID_MOUSE_LEFT : RETRO_DEVICE_ID_MOUSE_RIGHT;
+            libretro_host_setMouseButton(port, id, ev->type == SDL_MOUSEBUTTONDOWN);
+        }
+    }
+    return 1;
 }
 
 static void
@@ -730,8 +784,11 @@ emu_handleEvent(e9ui_component_t *self, e9ui_context_t *ctx, const e9ui_event_t 
                 return 1;
             }
         }
-        if (ev->type == SDL_MOUSEBUTTONDOWN) {
-            (void)emu_mouseCaptureEnable(ctx);
+        if (emu_mouseCaptureSupportedForCurrentTarget()) {
+            if (ev->type == SDL_MOUSEBUTTONDOWN && emu_mouseCaptureOnClickEnabledForCurrentTarget()) {
+                (void)emu_mouseCaptureEnable(ctx);
+            }
+            return 1;
         }
         unsigned port = libretro_host_getMousePort();
         if (target->mousePort >= 0) {
@@ -1149,7 +1206,8 @@ emu_dtor(e9ui_component_t *self, e9ui_context_t *ctx)
 static void
 emu_viewDtor(e9ui_component_t *self, e9ui_context_t *ctx)
 {
-    (void)ctx;
+    (void)emu_mouseCaptureRelease(ctx);
+    emu_mouseView = NULL;
     if (!self) {
         return;
     }
@@ -1178,6 +1236,7 @@ emu_makeComponent(void)
     comp->dtor = emu_dtor;
     comp->state = state;
 
+    emu_mouseView = view;
     view->name = "emu_view";
     view->layout = emu_viewLayout;
     view->render = emu_viewRender;

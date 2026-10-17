@@ -16,7 +16,7 @@
 extern const emu_system_iface_t emu_ami_iface;
 
 int
-emu_ami_mouseCaptureCanEnable(void);
+emu_ami_mouseCaptureOnClickEnabled(void);
 
 size_t
 emu_ami_rangeBarCount(void);

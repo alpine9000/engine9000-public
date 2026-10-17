@@ -2040,6 +2040,27 @@ libretro_host_clearJoypadState(void)
 }
 
 void
+libretro_host_clearMouseState(void)
+{
+    if (input_record_isPlayback() && !input_record_isInjecting()) {
+        return;
+    }
+    for (unsigned port = 0; port < LIBRETRO_HOST_MAX_PORTS; ++port) {
+        for (unsigned id = 0; id <= RETRO_DEVICE_ID_MOUSE_BUTTON_5; ++id) {
+            if (libretro_host.mouseButtonMask[port] & (1u << id)) {
+                libretro_host_setMouseButton(port, id, 0);
+            }
+        }
+        if (libretro_host.mousePendingX[port] || libretro_host.mousePendingY[port]) {
+            libretro_host_addMouseMotion(port, -libretro_host.mousePendingX[port],
+                                        -libretro_host.mousePendingY[port]);
+        }
+        libretro_host.mouseFrameX[port] = 0;
+        libretro_host.mouseFrameY[port] = 0;
+    }
+}
+
+void
 libretro_host_addMouseMotion(unsigned port, int dx, int dy)
 {
     if (input_record_isPlayback() && !input_record_isInjecting()) {

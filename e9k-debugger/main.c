@@ -8,7 +8,6 @@
 
 #include "debugger.h"
 #include "cli.h"
-
 int
 main_impl(int argc, char **argv)
 {
@@ -17,10 +16,8 @@ main_impl(int argc, char **argv)
   int testRestartCount = 0;
   int currentArgc = argc;
   char **currentArgv = argv;
-  char *clearedArgv[2];
+  char *restartArgv[CLI_RESTART_ARGV_CAP];
 
-  clearedArgv[0] = (argc > 0 && argv) ? argv[0] : NULL;
-  clearedArgv[1] = NULL;
   cli_setArgv0((argc > 0 && argv) ? argv[0] : NULL);
   do {
     debugger_setLoadTestTempConfig(loadTestTempConfig);
@@ -28,8 +25,10 @@ main_impl(int argc, char **argv)
     rc = debugger_main(currentArgc, currentArgv);
     if (rc == 2) {
       if (cli_shouldClearRestartArgs()) {
-        currentArgc = clearedArgv[0] ? 1 : 0;
-        currentArgv = clearedArgv;
+        // Settings replace startup overrides, but the test must continue into
+        // its next recording/replay segment using the saved temporary config.
+        currentArgc = cli_buildRestartArgs(restartArgv);
+        currentArgv = restartArgv;
       }
       loadTestTempConfig = 1;
       testRestartCount++;

@@ -2836,6 +2836,10 @@ e9ui_processEvents(void)
         if (e9ui->ctx.window) {
             mainWindowId = SDL_GetWindowID(e9ui->ctx.window);
         }
+        if (evWindowId == mainWindowId && e9ui->ctx.handleHostEvent &&
+            e9ui->ctx.handleHostEvent(&e9ui->ctx, &ev)) {
+            continue;
+        }
         if (ev.type == SDL_MOUSEMOTION &&
             evWindowId &&
             mainWindowId &&

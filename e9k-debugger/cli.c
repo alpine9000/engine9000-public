@@ -23,6 +23,50 @@ static int cli_errorFlag = 0;
 static char cli_savedArgv0[PATH_MAX];
 static int cli_resetCfgConsumed = 0;
 static int cli_clearRestartArgs = 0;
+static ui_test_mode_t cli_restartTestMode;
+static char cli_restartTestFolder[PATH_MAX];
+static int cli_restartHeadless;
+static int cli_restartOpenOnFail;
+
+static void
+cli_registerUiTest(const char *folder, ui_test_mode_t mode)
+{
+    cli_restartTestMode = mode;
+    strutil_strlcpy(cli_restartTestFolder, sizeof(cli_restartTestFolder), folder);
+    ui_test_registerRequestedMode(folder, mode);
+}
+
+int
+cli_buildRestartArgs(char **restartArgv)
+{
+    int count = 0;
+    restartArgv[count++] = cli_savedArgv0;
+    if (cli_restartTestMode != UI_TEST_MODE_NONE) {
+        switch (cli_restartTestMode) {
+        case UI_TEST_MODE_RECORD:
+            restartArgv[count++] = "--make-test";
+            break;
+        case UI_TEST_MODE_REMAKE:
+            restartArgv[count++] = "--remake-test";
+            break;
+        case UI_TEST_MODE_COMPARE:
+            restartArgv[count++] = "--test";
+            break;
+        default:
+            break;
+        }
+        restartArgv[count++] = cli_restartTestFolder;
+        if (cli_restartHeadless) {
+            restartArgv[count++] = "--headless";
+        }
+        if (cli_restartOpenOnFail) {
+            restartArgv[count++] = "--test-auto-open-fail";
+        }
+    }
+    restartArgv[count] = NULL;
+    return count;
+}
+
 
 static void
 cli_copyPath(char *dest, size_t capacity, const char *src)
@@ -190,6 +234,9 @@ cli_shouldClearRestartArgs(void)
 void
 cli_parseArgs(int argc, char **argv)
 {
+    cli_restartTestMode = UI_TEST_MODE_NONE;
+    cli_restartHeadless = 0;
+    cli_restartOpenOnFail = 0;
 #if !E9K_ENABLE_AMIGA
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--amiga") == 0) {
@@ -688,7 +735,7 @@ cli_parseArgs(int argc, char **argv)
             char folder[PATH_MAX];
             folder[0] = '\0';
             cli_copyPath(folder, sizeof(folder), argv[++i]);
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_RECORD);
+            cli_registerUiTest(folder, UI_TEST_MODE_RECORD);
             continue;
         }
         if (strcmp(argv[i], "--make-test") == 0) {
@@ -703,7 +750,7 @@ cli_parseArgs(int argc, char **argv)
             char folder[PATH_MAX];
             folder[0] = '\0';
             cli_copyPath(folder, sizeof(folder), argv[i] + sizeof("--make-test=") - 1);
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_RECORD);
+            cli_registerUiTest(folder, UI_TEST_MODE_RECORD);
             continue;
         }
         if (strcmp(argv[i], "--remake-test") == 0 && i + 1 < argc) {
@@ -719,7 +766,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError(msg);
                 return;
             }
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_REMAKE);
+            cli_registerUiTest(folder, UI_TEST_MODE_REMAKE);
             continue;
         }
         if (strcmp(argv[i], "--remake-test") == 0) {
@@ -743,7 +790,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError(msg);
                 return;
             }
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_REMAKE);
+            cli_registerUiTest(folder, UI_TEST_MODE_REMAKE);
             continue;
         }
         if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
@@ -759,7 +806,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError(msg);
                 return;
             }
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_COMPARE);
+            cli_registerUiTest(folder, UI_TEST_MODE_COMPARE);
             continue;
         }
         if (strcmp(argv[i], "--test") == 0) {
@@ -783,7 +830,7 @@ cli_parseArgs(int argc, char **argv)
                 cli_setError(msg);
                 return;
             }
-            ui_test_registerRequestedMode(folder, UI_TEST_MODE_COMPARE);
+            cli_registerUiTest(folder, UI_TEST_MODE_COMPARE);
             continue;
         }
         if (strcmp(argv[i], "--smoke-open") == 0) {
@@ -791,6 +838,7 @@ cli_parseArgs(int argc, char **argv)
             continue;
         }
         if (strcmp(argv[i], "--test-auto-open-fail") == 0) {
+            cli_restartOpenOnFail = 1;
             ui_test_setOpenOnFail(1);
             continue;
         }
@@ -825,6 +873,7 @@ cli_parseArgs(int argc, char **argv)
 #endif
         }
         if (strcmp(argv[i], "--headless") == 0) {
+            cli_restartHeadless = 1;
             debugger.cliHeadless = 1;
             continue;
         }

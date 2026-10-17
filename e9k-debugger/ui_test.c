@@ -524,10 +524,23 @@ ui_test_copySessionConfigForRecord(void)
         debug_error("ui-test: failed to create session config %s", dstPath);
         return 0;
     }
-    config_persistConfig(dst);
     fclose(dst);
-    debug_printf("ui-test: created session config %s", dstPath);
     return 1;
+}
+
+int
+ui_test_prepareSessionConfig(void)
+{
+    if (ui_test_mode != UI_TEST_MODE_RECORD) {
+        return 1;
+    }
+    // Freeze the initial config before config_loadConfig reads it, so recording
+    // and replay load the same settings even when the test folder is new.
+    if (!ui_test_makeDir(ui_test_folder)) {
+        debug_error("ui-test: failed to create folder %s", ui_test_folder);
+        return 0;
+    }
+    return ui_test_copySessionConfigForRecord();
 }
 
 static void

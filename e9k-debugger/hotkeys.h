@@ -31,6 +31,9 @@ int
 hotkeys_dispatchHotkey(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev);
 
 int
+hotkeys_handleMouseCaptureKeydown(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev);
+
+int
 hotkeys_handleKeydown(e9ui_context_t *ctx, const SDL_KeyboardEvent *kev);
 
 int

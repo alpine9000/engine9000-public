@@ -26,7 +26,8 @@ typedef struct {
   uint16_t (*translateModifiers)(SDL_Keymod mod);
   unsigned (*translateKey)(SDL_Keycode key);
   int (*mapKeyToJoypad)(SDL_Keycode key, unsigned *id);
-  int (*mouseCaptureCanEnable)(void);
+  int mouseCaptureSupported;
+  int (*mouseCaptureOnClickEnabled)(void);
   size_t (*rangeBarCount)(void);
   int (*rangeBarDescribe)(size_t index, emu_range_bar_desc_t *outDesc);
   void (*rangeBarChanged)(size_t index, float startPercent, float endPercent);
@@ -44,6 +45,12 @@ typedef struct {
 
 e9ui_component_t *
 emu_makeComponent(void);
+
+int
+emu_handleCapturedMouseEvent(e9ui_context_t *ctx, const SDL_Event *ev);
+
+int
+emu_mouseCaptureStart(e9ui_context_t *ctx);
 
 int
 emu_mouseCaptureRelease(e9ui_context_t *ctx);

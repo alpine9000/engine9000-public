@@ -38,6 +38,9 @@ const char *
 ui_test_getFolder(void);
 
 int
+ui_test_prepareSessionConfig(void);
+
+int
 ui_test_bootstrap(void);
 
 int
