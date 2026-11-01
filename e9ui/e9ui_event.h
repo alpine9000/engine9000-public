@@ -16,5 +16,8 @@ int
 e9ui_event_componentContainsBlockingWindow(e9ui_component_t *comp);
 
 int
+e9ui_event_componentContainsModal(e9ui_component_t *comp);
+
+int
 e9ui_event_process(e9ui_component_t *comp, e9ui_context_t *ctx, const e9ui_event_t *ev);
 

@@ -22,6 +22,9 @@
 #define LIBRETRO_HOST_MAX_PORTS 4
 
 bool
+libretro_host_makeDirs(const char *path);
+
+bool
 libretro_host_init(SDL_Renderer *renderer);
 
 bool

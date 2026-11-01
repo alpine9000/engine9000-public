@@ -6,6 +6,7 @@
  * See COPYING for license details
  */
 
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -536,28 +537,75 @@ libretro_host_applyOptionOverrides(void)
     }
 }
 
-static bool
-libretro_host_mkdir_p(const char *path)
+static int
+libretro_host_isPathSeparator(char character)
+{
+    return character == '/'
+#ifdef _WIN32
+        || character == '\\'
+#endif
+        ;
+}
+
+bool
+libretro_host_makeDirs(const char *path)
 {
     if (!path || !*path) {
         return false;
     }
     char buffer[PATH_MAX];
-    strncpy(buffer, path, sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = '\0';
-    size_t len = strlen(buffer);
-    for (size_t i = 1; i < len; ++i) {
-        if (buffer[i] == '/') {
-            char prev = buffer[i];
-            buffer[i] = '\0';
-            if (!debugger_platform_makeDir(buffer)) {
-                return false;
+    if (strlen(path) >= sizeof(buffer)) {
+        printf("libretro_host: directory path is too long: '%s'\n", path);
+        return false;
+    }
+    memcpy(buffer, path, strlen(path) + 1);
+    size_t length = strlen(buffer);
+    size_t rootLength = 0;
+#ifdef _WIN32
+    if (length >= 2 && libretro_host_isPathSeparator(buffer[0]) && libretro_host_isPathSeparator(buffer[1])) {
+        // Keep the server and share together as the UNC root.
+        rootLength = 2;
+        for (int component = 0; component < 2; ++component) {
+            while (rootLength < length && !libretro_host_isPathSeparator(buffer[rootLength])) {
+                ++rootLength;
             }
-            buffer[i] = prev;
+            if (component == 0 && rootLength < length) {
+                ++rootLength;
+            }
+        }
+    } else if (length >= 2 && isalpha((unsigned char)buffer[0]) && buffer[1] == ':') {
+        rootLength = 2;
+        if (libretro_host_isPathSeparator(buffer[rootLength])) {
+            ++rootLength;
         }
     }
-    if (!debugger_platform_makeDir(buffer)) {
-        return false;
+#endif
+    if (rootLength == 0 && libretro_host_isPathSeparator(buffer[0])) {
+        rootLength = 1;
+    }
+    for (size_t i = rootLength ? rootLength : 1; i <= length; ++i) {
+        if (!libretro_host_isPathSeparator(buffer[i]) && buffer[i] != '\0') {
+            continue;
+        }
+        char separator = buffer[i];
+        buffer[i] = '\0';
+        struct stat info;
+        if (stat(buffer, &info) != 0) {
+            if (rootLength && i == rootLength) {
+                printf("libretro_host: cannot access directory root '%s': %s\n",
+                       buffer, strerror(errno));
+                return false;
+            }
+            if (!debugger_platform_makeDir(buffer)) {
+                printf("libretro_host: cannot create directory '%s': %s\n",
+                       buffer, strerror(errno));
+                return false;
+            }
+        } else if (!S_ISDIR(info.st_mode)) {
+            printf("libretro_host: directory '%s' is not a directory\n", buffer);
+            return false;
+        }
+        buffer[i] = separator;
     }
     return true;
 }
@@ -1715,7 +1763,7 @@ libretro_host_start(const char *corePath, const char *romPath,
         strncpy(libretro_host.saveDir, libretro_host.systemDir, PATH_MAX - 1);
         libretro_host.saveDir[PATH_MAX - 1] = '\0';
     }
-    if (!libretro_host_mkdir_p(libretro_host.systemDir) || !libretro_host_mkdir_p(libretro_host.saveDir)) {
+    if (!libretro_host_makeDirs(libretro_host.systemDir) || !libretro_host_makeDirs(libretro_host.saveDir)) {
         fprintf(stderr, "libretro: failed to create directories\n");
         return false;
     }

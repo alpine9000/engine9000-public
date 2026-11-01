@@ -97,8 +97,9 @@ emu_mouseButtonMask(Uint8 button)
 static int
 emu_mouseCaptureBlocked(void)
 {
-    return e9ui_event_componentContainsBlockingWindow(e9ui->root) ||
-           e9ui_event_componentContainsBlockingWindow(e9ui_getOverlayHost());
+    // Tool windows can remain visible while the emulator owns the mouse.
+    return e9ui_event_componentContainsModal(e9ui->root) ||
+           e9ui_event_componentContainsModal(e9ui_getOverlayHost());
 }
 
 static int

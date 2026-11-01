@@ -7,6 +7,7 @@
  */
 
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -15,6 +16,7 @@
 #include <sys/stat.h>
 
 #include "romset.h"
+#include "libretro_host.h"
 #include "debugger.h"
 #include "romset_crypto.h"
 #include "strutil.h"
@@ -1287,8 +1289,15 @@ romset_buildNeoFromScannedInput(const char *inputPath, int isZip, char *outPath,
     memcpy(&header[44], name, strlen(name));
     memcpy(&header[77], manu, strlen(manu));
 
+    const char *saveDir = debugger.config.neogeo.libretro.saveDir;
+    if (!libretro_host_makeDirs(saveDir[0] ? saveDir : debugger.config.neogeo.libretro.systemDir)) {
+        romset_romsetFree(&set);
+        return 0;
+    }
     FILE *output = fopen(outPath, "wb");
     if (!output) {
+        printf("romset: cannot write generated ROM '%s': %s (check --save-dir PATH)\n",
+               outPath, strerror(errno));
         romset_romsetFree(&set);
         return 0;
     }

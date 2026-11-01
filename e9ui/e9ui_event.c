@@ -20,15 +20,15 @@ e9ui_event_pointInBounds(const e9ui_component_t *comp, int x, int y)
            y >= comp->bounds.y && y < comp->bounds.y + comp->bounds.h;
 }
 
-int
-e9ui_event_componentContainsBlockingWindow(e9ui_component_t *comp)
+static int
+e9ui_event_componentContainsWindow(e9ui_component_t *comp, int includeOverlays)
 {
     if (!comp || e9ui_getHidden(comp)) {
         return 0;
     }
     if (comp->name &&
         (strcmp(comp->name, "e9ui_modal") == 0 ||
-         strcmp(comp->name, "e9ui_window_overlay") == 0)) {
+         (includeOverlays && strcmp(comp->name, "e9ui_window_overlay") == 0))) {
         return 1;
     }
     e9ui_child_reverse_iterator iter;
@@ -41,11 +41,23 @@ e9ui_event_componentContainsBlockingWindow(e9ui_component_t *comp)
         if (!it->child) {
             continue;
         }
-        if (e9ui_event_componentContainsBlockingWindow(it->child)) {
+        if (e9ui_event_componentContainsWindow(it->child, includeOverlays)) {
             return 1;
         }
     }
     return 0;
+}
+
+int
+e9ui_event_componentContainsBlockingWindow(e9ui_component_t *comp)
+{
+    return e9ui_event_componentContainsWindow(comp, 1);
+}
+
+int
+e9ui_event_componentContainsModal(e9ui_component_t *comp)
+{
+    return e9ui_event_componentContainsWindow(comp, 0);
 }
 
 static int
