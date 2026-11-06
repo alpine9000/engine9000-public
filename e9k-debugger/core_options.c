@@ -29,6 +29,7 @@ typedef struct core_options_keybind_row_state
     int labelWidthPx;
     int totalWidthPx;
     e9ui_component_t *button;
+    e9ui_component_t *clearButton;
 } core_options_keybind_row_state_t;
 
 
@@ -220,7 +221,7 @@ core_options_findOptionCbForFocusComp(core_options_modal_state_t *st, const e9ui
     }
     for (size_t i = 0; i < st->optionCallbackCount; ++i) {
         core_options_option_cb_t *cb = st->optionCallbacks[i];
-        if (cb && cb->focusComp == comp) {
+        if (cb && (cb->focusComp == comp || cb->clearButton == comp)) {
             return cb;
         }
     }
@@ -265,6 +266,12 @@ core_options_optionFocusHandleEvent(e9ui_component_t *self, e9ui_context_t *ctx,
         }
     }
 
+    if (cb && self == cb->clearButton) {
+        if (cb->clearOrigHandleEvent) {
+            return cb->clearOrigHandleEvent(self, ctx, ev);
+        }
+        return 0;
+    }
     if (cb && cb->origHandleEvent) {
         return cb->origHandleEvent(self, ctx, ev);
     }
@@ -1109,6 +1116,16 @@ core_options_keybindButtonClicked(e9ui_context_t *ctx, void *user)
     core_options_beginKeyCapture(cb, ctx);
 }
 
+static void
+core_options_keybindClearClicked(e9ui_context_t *ctx, void *user)
+{
+    core_options_option_cb_t *cb = (core_options_option_cb_t *)user;
+    core_options_endKeyCapture(cb->st, ctx, 1);
+    core_options_setValue(cb->st, cb->key, DEBUGGER_INPUT_BINDINGS_UNBOUND_VALUE);
+    core_options_keybindUpdateButtonLabel(cb);
+    core_options_setSavePending(cb->st);
+}
+
 static int
 core_options_keybindRowPreferredHeight(e9ui_component_t *self, e9ui_context_t *ctx, int availW)
 {
@@ -1125,7 +1142,9 @@ core_options_keybindRowPreferredHeight(e9ui_component_t *self, e9ui_context_t *c
             totalW = scaled;
         }
     }
-    int buttonW = totalW - labelW - gap;
+    int clearW = 0;
+    e9ui_button_measure(st->clearButton, ctx, &clearW, NULL);
+    int buttonW = totalW - labelW - gap * 2 - clearW;
     if (buttonW < 0) {
         buttonW = 0;
     }
@@ -1153,7 +1172,9 @@ core_options_keybindRowLayout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_
             totalW = scaled;
         }
     }
-    int buttonW = totalW - labelW - gap;
+    int clearW = 0;
+    e9ui_button_measure(st->clearButton, ctx, &clearW, NULL);
+    int buttonW = totalW - labelW - gap * 2 - clearW;
     if (buttonW < 0) {
         buttonW = 0;
     }
@@ -1165,6 +1186,8 @@ core_options_keybindRowLayout(e9ui_component_t *self, e9ui_context_t *ctx, e9ui_
     if (st->button->layout) {
         st->button->layout(st->button, ctx, buttonRect);
     }
+    e9ui_rect_t clearRect = { buttonRect.x + buttonW + gap, rowY, clearW, rowH };
+    st->clearButton->layout(st->clearButton, ctx, clearRect);
 }
 
 static void
@@ -1207,6 +1230,7 @@ core_options_keybindRowRender(e9ui_component_t *self, e9ui_context_t *ctx)
     if (st->button && st->button->render) {
         st->button->render(st->button, ctx);
     }
+    st->clearButton->render(st->clearButton, ctx);
 }
 
 static void
@@ -1258,7 +1282,7 @@ core_options_makeKeybindRow(core_options_modal_state_t *st,
     rowSt->labelWidthPx = labelWidthPx;
     rowSt->totalWidthPx = totalWidthPx;
 
-    e9ui_component_t *button = e9ui_button_make("Unbound", core_options_keybindButtonClicked, cb);
+    e9ui_component_t *button = e9ui_button_make("", core_options_keybindButtonClicked, cb);
     cb->button = button;
     cb->focusComp = button;
     cb->origHandleEvent = button->handleEvent;
@@ -1272,6 +1296,12 @@ core_options_makeKeybindRow(core_options_modal_state_t *st,
         e9ui_setTooltip(row, def->info);
     }
     e9ui_child_add(row, button, 0);
+    rowSt->clearButton = e9ui_button_make("Clear", core_options_keybindClearClicked, cb);
+    cb->clearButton = rowSt->clearButton;
+    cb->clearOrigHandleEvent = cb->clearButton->handleEvent;
+    cb->clearButton->handleEvent = core_options_optionFocusHandleEvent;
+    e9ui_setTooltip(rowSt->clearButton, "Remove this key binding.");
+    e9ui_child_add(row, rowSt->clearButton, 0);
 
     return row;
 }
@@ -1618,13 +1648,6 @@ core_options_containerHandleEvent(e9ui_component_t *self, e9ui_context_t *ctx, c
     core_options_option_cb_t *cb = st->capturingKeybind;
 
     if (key == SDLK_ESCAPE) {
-        core_options_endKeyCapture(st, ctx, 1);
-        return 1;
-    }
-
-    if (key == SDLK_BACKSPACE || key == SDLK_DELETE) {
-        core_options_setValue(st, cb->key, "");
-        core_options_setSavePending(st);
         core_options_endKeyCapture(st, ctx, 1);
         return 1;
     }

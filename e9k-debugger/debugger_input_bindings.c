@@ -437,6 +437,13 @@ debugger_input_bindings_mapKeyToJoypadPort(int targetIndex,
         return 0;
     }
 
+    if (targetIndex == TARGET_AMIGA && getValue) {
+        const char *enabled = getValue(DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION);
+        if (enabled && strcmp(enabled, "disabled") == 0) {
+            return 0;
+        }
+    }
+
     for (size_t i = 0; i < debugger_input_bindings_specCount(); ++i) {
         const debugger_input_bindings_spec_t *spec = &debugger_input_bindings_specs[i];
         SDL_Keycode boundKey = SDLK_UNKNOWN;
@@ -445,7 +452,7 @@ debugger_input_bindings_mapKeyToJoypadPort(int targetIndex,
             storedValue = getValue(spec->optionKey);
         }
         if (!debugger_input_bindings_parseStoredValue(storedValue, &boundKey)) {
-            boundKey = debugger_input_bindings_defaultKeyForJoypad(targetIndex, spec->joypadId);
+            boundKey = debugger_input_bindings_defaultKeyForTarget(targetIndex, spec->optionKey);
         }
         if (boundKey == SDLK_UNKNOWN || boundKey == 0) {
             continue;

@@ -108,7 +108,7 @@ target_amiga_portDeviceOptionKeyAt(size_t index)
 }
 
 #define TARGET_AMIGA_FLOPPY_RECENTS_MAX 8
-#define TARGET_AMIGA_ROM_CONFIG_FIXED_OPTION_COUNT 6
+#define TARGET_AMIGA_ROM_CONFIG_FIXED_OPTION_COUNT 7
 static const char target_amiga_floppyRecentClearLabel[] = "<CLEAR RECENTS>";
 static const char target_amiga_floppyRecentClearValue[] = "__e9k_amiga_clear_floppy_recents__";
 
@@ -168,6 +168,7 @@ target_amiga_normalizeMouseCaptureOverrideValue(const char *value)
 static char target_amiga_activeRomMouseCaptureOverride[16];
 static int target_amiga_hasActiveRomMouseCaptureOverride = 0;
 static char target_amiga_activeRomPortDevice[2][16];
+static char target_amiga_activeRomKeyboardJoystick[16];
 static char target_amiga_activeRomMemorySpace[16];
 static char target_amiga_activeRomMemoryAddress[32];
 static char target_amiga_activeRomMemorySearch[128];
@@ -425,6 +426,9 @@ target_amiga_romConfigCustomOptionKeyAt(size_t index)
     if (index == 5) {
         return target_amiga_memorySearchOptionKey();
     }
+    if (index == 6) {
+        return DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION;
+    }
     index -= TARGET_AMIGA_ROM_CONFIG_FIXED_OPTION_COUNT;
     if (index < TARGET_AMIGA_FLOPPY_RECENTS_MAX) {
         return target_amiga_df0RecentOptionKeyAt(index);
@@ -444,6 +448,9 @@ target_amiga_romConfigGetActiveCustomOptionValue(const char *key)
     }
     if (strcmp(key, target_amiga_mouseCaptureOptionKey()) == 0) {
         return target_amiga_getActiveMouseCaptureOverride();
+    }
+    if (strcmp(key, DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION) == 0) {
+        return target_amiga_activeRomKeyboardJoystick[0] ? target_amiga_activeRomKeyboardJoystick : NULL;
     }
     if (strcmp(key, target_amiga_memorySpaceOptionKey()) == 0) {
         return target_amiga_activeRomMemorySpace[0] ? target_amiga_activeRomMemorySpace : NULL;
@@ -476,6 +483,10 @@ target_amiga_romConfigSetActiveCustomOptionValue(const char *key, const char *va
     }
     if (strcmp(key, target_amiga_mouseCaptureOptionKey()) == 0) {
         target_amiga_setActiveMouseCaptureOverride(value);
+        return;
+    }
+    if (strcmp(key, DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION) == 0) {
+        strutil_strlcpy(target_amiga_activeRomKeyboardJoystick, sizeof(target_amiga_activeRomKeyboardJoystick), value ? value : "");
         return;
     }
     if (strcmp(key, target_amiga_memorySpaceOptionKey()) == 0) {
@@ -511,6 +522,7 @@ target_amiga_romConfigClearActiveCustomOptions(void)
 {
     target_amiga_setActiveMouseCaptureOverride(NULL);
     memset(target_amiga_activeRomPortDevice, 0, sizeof(target_amiga_activeRomPortDevice));
+    target_amiga_activeRomKeyboardJoystick[0] = '\0';
     target_amiga_activeRomMemorySpace[0] = '\0';
     target_amiga_activeRomMemoryAddress[0] = '\0';
     target_amiga_activeRomMemorySearch[0] = '\0';
@@ -544,6 +556,9 @@ target_amiga_coreOptionsIsSyntheticOptionKey(const char *key)
     if (!key) {
         return 0;
     }
+    if (strcmp(key, DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION) == 0) {
+        return 1;
+    }
     if (strcmp(key, target_amiga_mouseCaptureOptionKey()) == 0) {
         return 1;
     }
@@ -559,7 +574,7 @@ target_amiga_coreOptionsIsSyntheticOptionKey(const char *key)
 static size_t
 target_amiga_coreOptionsSyntheticDefCount(void)
 {
-    return 3;
+    return 4;
 }
 
 static const struct retro_core_option_v2_definition *
@@ -597,6 +612,16 @@ target_amiga_coreOptionsSyntheticDefAt(size_t index)
                 { "joystick", "Joystick" },
                 { "cd32pad", "CD32 Pad" },
                 { "mouse", "Mouse" },
+                { NULL, NULL }
+            }
+        },
+        {
+            .key = DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION,
+            .desc = "Keyboard Joystick Emulation",
+            .default_value = "enabled",
+            .values = {
+                { "enabled", "Enabled" },
+                { "disabled", "Disabled" },
                 { NULL, NULL }
             }
         }
@@ -1053,6 +1078,17 @@ target_amiga_coreOptionsSaveClicked(e9ui_context_t *ctx,core_options_modal_state
         goto next_entry;
       }
     }
+    if (strcmp(key, DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION) == 0) {
+      const char *desired = (value && strcmp(value, "disabled") == 0) ? "disabled" : NULL;
+      const char *existing = target_amiga_romConfigGetActiveCustomOptionValue(key);
+      if (!core_options_stringsEqual(existing, desired)) {
+        target_amiga_romConfigSetActiveCustomOptionValue(key, desired);
+        libretro_host_clearJoypadState();
+        anyChange = 1;
+        anyRomConfigBindingChange = 1;
+      }
+      continue;
+    }
     if (debugger_input_bindings_isOptionKey(key)) {
       const char *existingBinding = rom_config_getActiveInputBindingValue(key);
       const char *desiredBinding = (value && *value) ? value : NULL;
@@ -1135,6 +1171,8 @@ target_amiga_coreOptionGetValue(const char* key)
     value = target_amiga_activeRomPortDevice[0][0] ? target_amiga_activeRomPortDevice[0] : "automatic";
   } else if (strcmp(key, target_amiga_portDeviceOptionKeyAt(1)) == 0) {
     value = target_amiga_activeRomPortDevice[1][0] ? target_amiga_activeRomPortDevice[1] : "automatic";
+  } else if (strcmp(key, DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION) == 0) {
+    value = target_amiga_activeRomKeyboardJoystick[0] ? target_amiga_activeRomKeyboardJoystick : "enabled";
   } else if (debugger_input_bindings_isOptionKey(key)) {
     value = rom_config_getActiveInputBindingValue(key);
   } else {

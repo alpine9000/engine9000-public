@@ -702,6 +702,10 @@ cli_parseArgs(int argc, char **argv)
             }
             continue;
         }
+        if (strcmp(argv[i], "--smoke-no-audio") == 0) {
+            debugger.smokeTestNoAudio = 1;
+            continue;
+        }
         if (strcmp(argv[i], "--smoke-threshold") == 0) {
             if (i + 1 >= argc) {
                 cli_setError("smoke-threshold: missing value");
@@ -943,6 +947,7 @@ cli_printUsage(const char *argv0)
     printf("  --smoke-start-on-write       Start smoke capture after Amiga debug write\n");
     printf("  --profile-start-on-write     Start profiling after Amiga debug write\n");
     printf("  --smoke-threshold N          Fail after N smoke screen mismatches\n");
+    printf("  --smoke-no-audio             Skip smoke-test audio checks\n");
     printf("  --debug-arg VALUE            Set Amiga debug arg register (repeat up to 10)\n");
     printf("  --smoke-open                 Open montage on smoke-test failure\n");
     printf("  --make-test PATH             Record inputs + UI test frame captures\n");

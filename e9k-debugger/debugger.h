@@ -130,6 +130,7 @@ typedef struct e9k_debugger {
     int smokeTestOpenOnFail;
     int smokeTestStartOnWrite;
     int smokeTestThreshold;
+    int smokeTestNoAudio;
     int profileStartOnWrite;
     uint32_t debugArgs[10];
     int debugArgCount;

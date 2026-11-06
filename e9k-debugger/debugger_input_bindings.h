@@ -11,6 +11,9 @@
 #include <stddef.h>
 #include <SDL.h>
 
+#define DEBUGGER_INPUT_BINDINGS_AMIGA_JOYSTICK_OPTION "e9k_debugger_amiga_keyboard_joystick"
+#define DEBUGGER_INPUT_BINDINGS_UNBOUND_VALUE "sdlk:0"
+
 typedef struct debugger_input_bindings_spec
 {
     const char *optionKey;

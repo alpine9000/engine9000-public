@@ -30,6 +30,7 @@ static uint64_t smoke_test_frameBase = 0;
 static smoke_test_mode_t smoke_test_mode = SMOKE_TEST_MODE_NONE;
 static int smoke_test_openOnFail = 0;
 static int smoke_test_threshold = 1;
+static int smoke_test_noAudio = 0;
 static int smoke_test_compareFailures = 0;
 static FILE *smoke_test_audioOut = NULL;
 static FILE *smoke_test_audioIn = NULL;
@@ -262,6 +263,9 @@ smoke_test_openAudioOut(void)
 static int
 smoke_test_openAudioIn(void)
 {
+    if (smoke_test_noAudio) {
+        return 1;
+    }
     char path[PATH_MAX];
     if (!smoke_test_audioPath(path, sizeof(path))) {
         return 0;
@@ -377,6 +381,7 @@ smoke_test_shutdown(void)
     smoke_test_mode = SMOKE_TEST_MODE_NONE;
     smoke_test_openOnFail = 0;
     smoke_test_threshold = 1;
+    smoke_test_noAudio = 0;
     smoke_test_compareFailures = 0;
 }
 
@@ -450,6 +455,7 @@ smoke_test_reset(struct e9k_debugger *dbg)
     dbg->smokeTestOpenOnFail = 0;
     dbg->smokeTestStartOnWrite = 0;
     dbg->smokeTestThreshold = 1;
+    dbg->smokeTestNoAudio = 0;
 }
 
 int
@@ -490,6 +496,7 @@ smoke_test_bootstrap(struct e9k_debugger *dbg)
     smoke_test_setMode((smoke_test_mode_t)dbg->smokeTestMode);
     smoke_test_setOpenOnFail(dbg->smokeTestOpenOnFail);
     smoke_test_setThreshold(dbg->smokeTestThreshold);
+    smoke_test_noAudio = dbg->smokeTestNoAudio;
     smoke_test_setStartOnWrite(dbg->smokeTestStartOnWrite);
     if (!smoke_test_init()) {
         return 0;
@@ -832,6 +839,9 @@ smoke_test_setAudioFormat(int sampleRate, int channels)
 int
 smoke_test_captureAudio(const int16_t *data, size_t frames)
 {
+    if (smoke_test_mode == SMOKE_TEST_MODE_COMPARE && smoke_test_noAudio) {
+        return 0;
+    }
     if (!smoke_test_enabled || !smoke_test_started || !data || frames == 0) {
         return smoke_test_audioFailed ? 1 : 0;
     }
@@ -904,6 +914,9 @@ smoke_test_captureAudio(const int16_t *data, size_t frames)
 int
 smoke_test_finishAudioCompare(void)
 {
+    if (smoke_test_mode == SMOKE_TEST_MODE_COMPARE && smoke_test_noAudio) {
+        return 0;
+    }
     if (!smoke_test_enabled) {
         return 0;
     }
